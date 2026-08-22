@@ -2,7 +2,7 @@
 
 ## 1. 왜 회귀가 아니라 선언인가
 
-드라이버 26개(§2) × 테마 109개(`01-theme-universe.md` §3 초안 기준) = **2,834개 잠재 엣지**.
+드라이버 26개(§2) × 테마 134개(`state/themes.yaml` 확정 기준) = **3,484개 잠재 엣지**.
 여기에 시차까지 탐색하면 수만 개다.
 이걸 데이터로 학습하면 무엇이 나오는가 — 우연한 상관의 최대치가 나온다.
 표본은 사이클 2~3바퀴뿐이므로 검증도 불가능하다.
@@ -185,50 +185,55 @@ final(t) = 0.70 · cycle_score(t)  +  0.30 · normalize(tailwind(t))
 전체는 `state/macro-dag.yaml` (스키마 예시는 `specs/macro-dag.example.yaml`).
 감사 결과는 `macro-dag-audit.md`.
 
-**현황** — 드라이버 26개 · 엣지 레코드 72개(개별 69 + 공통 인자 3) ·
-**테마-엣지 쌍 380개** (공통 인자 제외, 하한 220).
+**현황** (134 버킷 기준, M4-134 재감사) — 드라이버 26개 · 엣지 레코드 86개(개별 83 + 공통 인자 3) ·
+**테마-엣지 쌍 451개** (공통 인자 제외, 하한 268 = 2 × 134).
 테마 in-degree **min 2 · median 3 · max 6**. 입력 엣지 2개를 못 채운 테마는 **없다.**
-강도 분포 strong 20 · moderate 31 · weak 21, 부호 +1 37 · −1 35,
-`contradicts_when` 을 가진 엣지 22개.
+강도 분포 strong 22 · moderate 37 · weak 27, 부호 +1 47 · −1 39,
+`contradicts_when` 을 가진 엣지 26개.
 
-> 테마 id 의 정본은 `state/themes.yaml` 이다. 위 수치는 `01-theme-universe.md` §3
-> 초안(109개) 기준이며, M2 에서 테마가 확정되면 `scripts/audit_dag.py` 를 다시 돌려
-> 하한을 재확인해야 한다.
+> 테마 id 의 정본은 `state/themes.yaml` 이다. 위 수치는 M2 확정 버킷 134개 기준이다.
+> 초안 109개 기준(엣지 72 · 쌍 380)에서 확정 버킷으로 재감사하자 폐기 id 6개와 신설 버킷
+> 31개 때문에 22건이 실패했고, 재매핑과 엣지 14개 추가로 해소했다 — 내역은
+> `macro-dag-audit.md` §10. 기존 엣지의 부호·강도·채널은 그 과정에서 바꾸지 않았다.
 
 밀도가 높은 부분과 부호가 갈리는 부분만 옮긴다.
 
 | from | to | sign | strength | 채널 요약 |
 |---|---|---|---|---|
-| `dollar_broad` | 광물 12종 (`gold_miners`…`fertilizer_potash`) | −1 | strong | 달러 표시 가격 + 현지통화 원가의 이중 확대 |
+| `dollar_broad` | 광물 11종 (`gold_miners`…`fertilizer_potash`) | −1 | strong | 달러 표시 가격 + 현지통화 원가의 이중 확대 |
 | `dollar_broad` | `apparel_footwear` | **+1** | weak | 매출은 달러·소싱 원가는 아시아 — 소비재와 부호 반대 |
 | `real_rate_10y` | `gold_miners`, `silver_miners`, `pgm_miners` | −1 | strong | 무이자 자산의 캐리 코스트 |
 | `real_rate_10y` | `biotech_clinical` | −1 | strong | 원거리 현금흐름 할인 + 2차 발행 창구 |
-| `real_rate_10y` | REIT 7종 | −1 | strong | 캡레이트 = 실질금리 + 리스크 프리미엄 |
+| `real_rate_10y` | REIT 10종 (`reit_office`…`reit_specialty`) | −1 | strong | 캡레이트 = 실질금리 + 리스크 프리미엄. `reit_mortgage` 는 캡레이트가 아니라 듀레이션 경로라 별도 엣지(moderate) |
 | `real_rate_10y` | 프로젝트 파이낸싱 9종 (`solar`…`lng`) | −1 | strong | 자본비용이 곧 LCOE — 밸류가 아니라 발주 물량이 준다 |
-| `real_rate_10y` | `insurance_pc`, `insurance_life`, `reinsurance` | **+1** | moderate | 플로트 재투자 수익 — 차입자가 아니라 대여자다 |
+| `real_rate_10y` | 보험 4종 (`insurance_pc`, `insurance_life`, `reinsurance`, `insurance_diversified`) | **+1** | moderate | 플로트 재투자 수익 — 차입자가 아니라 대여자다 |
 | `real_rate_10y` | `banks_regional` | −1 | moderate | AFS 평가손 → 자본. `term_spread` 엣지와 부호 충돌(국면 의존) |
-| `term_spread` | `banks_large`, `banks_regional` | +1 | strong | 만기 변환 마진 |
+| `term_spread` | `banks_large`, `banks_regional`, `reit_mortgage` | +1 | strong | 만기 변환 마진 (모기지 리츠는 레포 조달 → MBS 보유, 가장 순수한 형태) |
 | `hy_spread` | 고레버리지 9종 (`oil_gas_ep`…`biotech_clinical`) | −1 | strong | 리파이낸싱 가능 여부가 생존 조건 |
-| `ig_spread` | 규제·대형 9종 (`utility_regulated`…`defense`) | −1 | moderate | 요금기저 투자의 자본비용은 IG 시장에서 온다 |
+| `ig_spread` | 규제·대형 11종 (`utility_regulated`…`reit_specialty`) | −1 | moderate | 요금기저 투자의 자본비용은 IG 시장에서 온다 |
 | `china_credit_impulse` | 기저금속·벌크 10종 | +1 | strong | 중국 고정자산투자가 한계 수요 |
 | `china_property` | `steel_iron`, `copper_miners`, `shipping_drybulk` 등 | +1 | strong | 착공 면적이 실제 물량 (신용은 자금 조건) |
-| `inventory_sales` | `semi_*`, `industrial_automation`, `railroads` 등 8종 | −1 | strong | 재고 소진 → 재주문 |
-| `hyperscaler_capex` | `grid_equipment`, `datacenter_hw`, `semi_*` 등 8종 | +1 | strong | 발주처 capex 가 직접 매출 |
+| `inventory_sales` | `semi_devices`, `semi_equipment`, `industrial_automation`, `industrial_distribution`, `railroads` 등 7종 | −1 | strong | 재고 소진 → 재주문 |
+| `hyperscaler_capex` | `grid_equipment`, `datacenter_hw`, `semi_devices`, `semi_equipment` 등 7종 | +1 | strong | 발주처 capex 가 직접 매출 |
 | `hyperscaler_capex` | `epc_engineering`, `hvac_building`, `nuclear_smr` 등 8종 | +1 | moderate | 데이터센터 건설의 2차 수혜 |
-| `defense_outlays` | `defense`, `shipbuilding`, `space_satellite`, `aerospace_commercial` | +1 | strong | 예산 → 계약 → 수주잔고 (CR 구간은 발동 안 함) |
-| `capex_orders_core` | `construction_machinery`, `epc_engineering` 등 11종 | +1 | moderate | 기업 투자 사이클 |
+| `defense_outlays` | `defense`, `shipbuilding`, `space_satellite` | +1 | strong | 예산 → 계약 → 수주잔고 (CR 구간은 발동 안 함). 상용항공은 `defense` 에 병합됨 |
+| `capex_orders_core` | `construction_machinery`, `epc_engineering`, `instruments_test`, `rental_leasing` 등 13종 | +1 | moderate | 기업 투자 사이클 |
 | `oil_wti` | `oil_gas_ep`, `oil_services`, `shipbuilding` 등 | +1 | strong | 매출 = 유가, 하류는 발주처 예산 |
 | `oil_wti` | `airlines`, `trucking_logistics`, `cruise_lines` 등 | −1 | moderate | 연료비 20~35% |
 | `oil_wti` | `refiners` | −1 | **weak** | 손익은 크랙 스프레드다 — 유가는 대리 변수일 뿐 |
 | `nat_gas` | `oil_gas_ep`, `midstream`, `utility_ipp`, `coal` | +1 | strong | 판가·처리량·도매전력가·급전 대체 |
 | `nat_gas` | `fertilizer_potash`, `commodity_chem`, `aluminum`, `lng` 등 6종 | **−1** | moderate | 같은 드라이버가 여기서는 원가다 |
-| `housing_starts` | `lumber_paper`, `cement_aggregates` 등 8종 | +1 | strong | 착공이 자재 물량을 정의 |
+| `housing_starts` | `lumber_paper`, `cement_aggregates`, `home_furnishings` 등 9종 | +1 | strong | 착공이 자재 물량을 정의 |
 | `housing_starts` | `reit_residential` | **−1** | moderate | 착공은 임대 시장의 신규 **공급**이다 |
-| `employment` | 재량소비 20종 | +1 | strong | 임금 소득 총액 = 재량 지출 능력 |
+| `employment` | 재량소비 28종 | +1 | strong | 임금 소득 총액 = 재량 지출 능력 |
+| `employment` | `education` | **−1** | moderate | 영리 교육 등록은 실업의 기회비용 함수 — 역경기 |
+| `employment` | `retail_discount`, `food_retail_distribution` | +1 | **weak** | 필수 소비는 방어적 + 침체기 트레이드다운이 상쇄 |
 | `employment` | `hospitals_providers`, `managed_care`, `medtech_devices` | +1 | moderate | 미국 의료보험은 고용주 기반 |
-| `cpi_yoy` | 유통·재량 8종 | −1 | moderate | 필수 지출이 실질 가처분소득을 잠식 |
+| `cpi_yoy` | 유통·재량 12종 | −1 | moderate | 필수 지출이 실질 가처분소득을 잠식 |
+| `cpi_yoy` | `retail_discount`, `food_retail_distribution` | **+1** | weak | 필수품 명목 매출 + 트레이드다운 점유율 — 재량 유통과 부호 반대 |
 | `cpi_yoy` | `waste_services`, `fintech_payments`, `advertising` | **+1** | weak | 매출이 명목 금액에 연동 |
-| `ppi_yoy` | `insurance_pc`, `reinsurance` | −1 | moderate | 수리·재건축비가 곧 손해액 |
+| `ppi_yoy` | `insurance_pc`, `reinsurance`, `insurance_diversified` | −1 | moderate | 수리·재건축비가 곧 손해액 |
+| `ppi_yoy` | `insurance_brokers` | **+1** | moderate | 손해액 인플레 → 요율 인상 → 보험료 정률 수수료. 인수 리스크 없이 손보와 부호 반대 |
 | `policy_events` | 정책 수요 11종 (`solar`…`lithium`) | +1 | strong | 수요 자체가 정책으로 만들어진다 |
 | `policy_events` | 규제 리스크 10종 (`coal`…`casinos_gaming`) | **−1** | moderate | 규제가 물량·판가의 상한을 정한다 |
 | `usd_liquidity` · `fed_policy_path` · `m2_growth` | 전 테마 (공통 인자) | +1 / −1 / +1 | moderate·moderate·weak | 위험 선호·할인율 기준선·명목 성분 |
@@ -240,10 +245,12 @@ final(t) = 0.70 · cycle_score(t)  +  0.30 · normalize(tailwind(t))
 **부호가 갈리는 드라이버가 이 표의 핵심이다.** `nat_gas` 는 생산자에겐 매출이고
 화학·제련엔 원가다. `real_rate_10y` 는 차입자에겐 비용이고 보험사에겐 수익이다.
 `housing_starts` 는 자재엔 수요이고 주거 리츠엔 공급이다. `cpi_yoy` 는 소비자에겐
-구매력 잠식이고 정률 과금 사업엔 매출이다. 이런 분기를 담을 수 없다는 것이
+구매력 잠식이고 정률 과금 사업엔 매출이다. `ppi_yoy` 는 손보사엔 손해액이고 보험 중개사엔
+수수료다. `employment` 는 소비재엔 소득이고 영리 교육엔 기회비용이다. 이런 분기를 담을 수 없다는 것이
 §5 의 4분면을 점수 계산에 쓰지 않는 이유이며, 회귀 한 벌로 부호를 뽑을 수 없는 이유다.
 
-**집중도 경고**: `real_rate_10y` 하나에 테마-엣지 쌍 54개(전체의 14%)가 걸려 있다.
-공통 인자로 돌리지 않은 이유는 보험 3종에서 부호가 갈리기 때문이지만, 실질금리가
+**집중도 경고**: `real_rate_10y` 하나에 테마-엣지 쌍 64개(전체의 14%)가 걸려 있고,
+`employment` 에 50개(11%)가 걸려 있다.
+공통 인자로 돌리지 않은 이유는 보험 4종(실질금리)·영리 교육(고용)에서 부호가 갈리기 때문이지만, 실질금리가
 한 방향으로 움직이면 tailwind 가 광범위하게 같은 방향으로 밀린다는 사실은
 리포트에 표기한다 (`macro-dag-audit.md` §5).
