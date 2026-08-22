@@ -19,21 +19,24 @@ L3 는 다른 계층의 **파일 산출물**만 읽는다. L2·L4·L5 모듈을 
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
-import math
 from dataclasses import asdict, dataclass, field
-from datetime import date
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import yaml
 
+from msa.coerce import opt_bool, opt_float, opt_int, opt_str
+from msa.config import paths
 from msa.errors import RefusedInput
+from msa.status import Axis1Status
+from msa.thesis import read_thesis_yaml, thesis_filename
 
 log = logging.getLogger(__name__)
 
+#: L1 스코어보드의 블록 열 (`msa.l1.scoreboard.BLOCKS` 와 같은 값 — 여기서는 파일 계약으로만 안다).
 SCORE_BLOCKS = ("A", "B", "C", "D", "E", "F")
 
 #: bear 프롬프트에 **나타나면 안 되는** 입력 키. `ThemeScorecard` 중 L1 판단에 해당하는 것들.
@@ -84,18 +87,19 @@ class Axis1Inputs:
 
     @property
     def available(self) -> bool:
-        return self.axis1_status.startswith("ok") and self.verdict_post_ss in (
-            "cycle",
-            "warning",
-            "death",
-        )
+        return self.axis1_status in (
+            Axis1Status.OK_EXTERNAL,
+            Axis1Status.OK_FALLBACK,
+        ) and self.verdict_post_ss in ("cycle", "warning", "death")
 
     @property
     def unit_series_source(self) -> str:
         """thesis 스키마의 `unit_series_source` enum 값."""
         if not self.available:
             return "none"
-        return "physical_series" if self.axis1_status == "ok_external" else "revenue_proxy"
+        if self.axis1_status == Axis1Status.OK_EXTERNAL:
+            return "physical_series"
+        return "revenue_proxy"
 
     @property
     def contested(self) -> bool:
@@ -130,8 +134,8 @@ class ThemeScorecard:
     small_sample: bool
     secular: bool
     short_hist: bool
-    capex_to_da_qtrs_below1: float | None
     capex_to_da: float | None
+    capex_to_da_qtrs_below1: float | None
     ebitda_nonpos_share: float | None
     net_debt_ebitda: float | None
     dd_10y: float | None
@@ -141,29 +145,9 @@ class ThemeScorecard:
     axis1: Axis1Inputs
 
     def summary_for_prompt(self) -> dict[str, Any]:
-        """supply·catalyst·referee 에게 주는 형태(스코어 포함)."""
-        d: dict[str, Any] = {
-            "theme_id": self.theme_id,
-            "scan_date": self.scan_date,
-            "rank": self.rank,
-            "score": self.score,
-            "cycle_class": self.cycle_class,
-            "block_scores": self.block_scores,
-            "n_live": self.n_live,
-            "small_sample": self.small_sample,
-            "secular": self.secular,
-            "short_hist": self.short_hist,
-            "capex_to_da": self.capex_to_da,
-            "capex_to_da_qtrs_below1": self.capex_to_da_qtrs_below1,
-            "ebitda_nonpos_share": self.ebitda_nonpos_share,
-            "net_debt_ebitda": self.net_debt_ebitda,
-            "dd_10y": self.dd_10y,
-            "months_since_peak": self.months_since_peak,
-            "breadth_200": self.breadth_200,
-            "flags": self.flags,
-            "axis1": asdict(self.axis1),
-        }
-        return d
+        """supply·catalyst·referee 에게 주는 형태(스코어 포함) — 필드 선언 순서 그대로 전부.
+        (프롬프트 JSON 의 키 순서가 곧 필드 순서다 — 필드를 옮기면 프롬프트가 바뀐다.)"""
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -247,41 +231,9 @@ class BearInputs:
 # ---------------------------------------------------------------- 로더
 
 
-def _f(v: Any) -> float | None:
-    try:
-        x = float(v)
-    except (TypeError, ValueError):
-        return None
-    return None if math.isnan(x) else x
-
-
-def _i(v: Any) -> int | None:
-    x = _f(v)
-    return None if x is None else int(x)
-
-
-def _b(v: Any) -> bool | None:
-    if v is None or (isinstance(v, float) and math.isnan(v)):
-        return None
-    if isinstance(v, str):
-        s = v.strip().lower()
-        if s in ("true", "1", "1.0", "yes"):
-            return True
-        if s in ("false", "0", "0.0", "no", ""):
-            return False
-        return None
-    return bool(v)
-
-
-def _s(v: Any) -> str | None:
-    if v is None or (isinstance(v, float) and math.isnan(v)):
-        return None
-    s = str(v).strip()
-    return s or None
-
-
 def latest_scan_dir(scans_root: Path, asof: str | None = None) -> Path:
     """`state/scans/` 아래 `asof` 이하의 최신 스냅샷. 없으면 예외."""
+    # TODO(rf-b): `msa.l1.scan.scan_dirs` (L1 이 같은 정렬을 제공하면 그것으로)
     if not scans_root.exists():
         raise InputsError(f"스캔 디렉터리가 없다: {scans_root} — 먼저 `msa scan` 을 돌려라")
     dirs = sorted(p for p in scans_root.iterdir() if p.is_dir() and (p / "scoreboard.csv").exists())
@@ -306,42 +258,42 @@ def load_scorecard(scan_dir: Path, theme_id: str) -> ThemeScorecard:
         return row[k] if k in row.index else None
 
     axis1 = Axis1Inputs(
-        axis1_status=_s(g(x, "axis1_status")) or "not_declared",
-        unit_source=_s(g(x, "unit_source")),
-        verdict_pre_ss=_s(g(x, "verdict_pre_ss")),
-        verdict_post_ss=_s(g(x, "verdict_post_ss")),
-        unit_cagr_10y=_f(g(x, "unit_cagr_10y")),
-        unit_cagr_5y=_f(g(x, "unit_cagr_5y")),
-        unit_cagr_10y_median=_f(g(x, "unit_cagr_10y_median")),
-        sign_split=_b(g(x, "sign_split")),
-        ss_n=_i(g(x, "ss_n")),
-        ss_coverage=_f(g(x, "ss_coverage")),
-        ma_flag=_b(g(x, "ma_flag")),
-        exit_count=_i(g(x, "exit_count")),
+        axis1_status=opt_str(g(x, "axis1_status")) or Axis1Status.NOT_DECLARED.value,
+        unit_source=opt_str(g(x, "unit_source")),
+        verdict_pre_ss=opt_str(g(x, "verdict_pre_ss")),
+        verdict_post_ss=opt_str(g(x, "verdict_post_ss")),
+        unit_cagr_10y=opt_float(g(x, "unit_cagr_10y")),
+        unit_cagr_5y=opt_float(g(x, "unit_cagr_5y")),
+        unit_cagr_10y_median=opt_float(g(x, "unit_cagr_10y_median")),
+        sign_split=opt_bool(g(x, "sign_split")),
+        ss_n=opt_int(g(x, "ss_n")),
+        ss_coverage=opt_float(g(x, "ss_coverage")),
+        ma_flag=opt_bool(g(x, "ma_flag")),
+        exit_count=opt_int(g(x, "exit_count")),
     )
     short_hist = any(
-        bool(_b(g(x, k)))
+        bool(opt_bool(g(x, k)))
         for k in ("short_hist_D", "short_hist_roic", "short_hist_margin", "short_hist_range")
-    ) or bool(_b(g(r, "short_hist")))
+    ) or bool(opt_bool(g(r, "short_hist")))
     return ThemeScorecard(
         theme_id=theme_id,
         scan_date=scan_dir.name,
-        rank=_i(g(r, "rank")),
-        score=_f(g(r, "score")),
-        cycle_class=_s(g(r, "cycle_class")) or "unknown",
-        block_scores={b: _f(g(r, b)) for b in SCORE_BLOCKS},
-        n_live=_i(g(r, "n_live")),
-        small_sample=bool(_b(g(r, "small_sample"))),
-        secular=bool(_b(g(r, "secular"))),
+        rank=opt_int(g(r, "rank")),
+        score=opt_float(g(r, "score")),
+        cycle_class=opt_str(g(r, "cycle_class")) or "unknown",
+        block_scores={b: opt_float(g(r, b)) for b in SCORE_BLOCKS},
+        n_live=opt_int(g(r, "n_live")),
+        small_sample=bool(opt_bool(g(r, "small_sample"))),
+        secular=bool(opt_bool(g(r, "secular"))),
         short_hist=short_hist,
-        capex_to_da_qtrs_below1=_f(g(x, "capex_to_da_qtrs_below1")),
-        capex_to_da=_f(g(x, "capex_to_da")),
-        ebitda_nonpos_share=_f(g(x, "ebitda_nonpos_share")),
-        net_debt_ebitda=_f(g(x, "net_debt_ebitda")),
-        dd_10y=_f(g(x, "dd_10y")),
-        months_since_peak=_f(g(x, "months_since_peak")),
-        breadth_200=_f(g(x, "breadth_200")),
-        flags=_s(g(r, "flags")) or "",
+        capex_to_da=opt_float(g(x, "capex_to_da")),
+        capex_to_da_qtrs_below1=opt_float(g(x, "capex_to_da_qtrs_below1")),
+        ebitda_nonpos_share=opt_float(g(x, "ebitda_nonpos_share")),
+        net_debt_ebitda=opt_float(g(x, "net_debt_ebitda")),
+        dd_10y=opt_float(g(x, "dd_10y")),
+        months_since_peak=opt_float(g(x, "months_since_peak")),
+        breadth_200=opt_float(g(x, "breadth_200")),
+        flags=opt_str(g(r, "flags")) or "",
         axis1=axis1,
     )
 
@@ -353,9 +305,12 @@ def load_macro_state(path: Path | None, theme_id: str) -> MacroState | None:
         return None
     raw = json.loads(path.read_text(encoding="utf-8"))
     tw_raw = raw.get("tailwind")
-    tailwind = _f(tw_raw.get(theme_id)) if isinstance(tw_raw, dict) else _f(tw_raw)
+    tailwind = opt_float(tw_raw.get(theme_id)) if isinstance(tw_raw, dict) else opt_float(tw_raw)
     return MacroState(
-        asof=_s(raw.get("asof")), regime=_s(raw.get("regime")), tailwind=tailwind, raw=raw
+        asof=opt_str(raw.get("asof")),
+        regime=opt_str(raw.get("regime")),
+        tailwind=tailwind,
+        raw=raw,
     )
 
 
@@ -364,16 +319,19 @@ def find_prior_thesis(theses_root: Path, theme_id: str, before: str) -> Path | N
     if not theses_root.exists():
         return None
     cands = sorted(
-        p for p in theses_root.glob(f"*/{theme_id}.thesis.yaml") if p.parent.name < before
+        p for p in theses_root.glob(f"*/{thesis_filename(theme_id)}") if p.parent.name < before
     )
     return cands[-1] if cands else None
 
 
 def load_prior_thesis(path: Path | None) -> dict[str, Any] | None:
+    """이전 thesis — 최상위가 매핑이 아니면 None (diff 없이 진행, 깨진 YAML 은 그대로 던진다)."""
     if path is None:
         return None
-    obj = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return obj if isinstance(obj, dict) else None
+    try:
+        return read_thesis_yaml(path)
+    except ValueError:
+        return None
 
 
 def load_case_studies(cases_dir: Path | None) -> tuple[CaseStudy, ...]:
@@ -403,21 +361,11 @@ def members_from_store(
     tickers = membership.members(theme_id)
     if not tickers:
         raise InputsError(f"테마 `{theme_id}` 의 구성원이 0명이다")
-    store.execute(
-        "create or replace temp table l3_members as select * from (values "
-        + ",".join(f"('{t}')" for t in tickers)
-        + ") t(ticker)"
-    )
+    # 시총: `asof` 이하 최근 non-null (`Store.latest_mcap` = arg_max) — 질의 동안만 뷰로 건다
+    px = store.latest_mcap(tickers, asof).reset_index()
+    members = pd.DataFrame({"ticker": tickers})
     sql = f"""
-    with px as (
-        select ticker, mcap from (
-            select ticker, mcap, row_number() over (partition by ticker order by date desc) rn
-            from prices
-            where date <= '{asof}' and mcap is not null
-              and ticker in (select ticker from l3_members)
-        ) where rn = 1
-    ),
-    {
+    with {
         first_reported_quarterly_sql(
             "f.ticker, f.calendardate, f.datekey, f.revenue, f.capex, f.depamor, f.ebitda, "
             "f.debt, f.debtc, f.cashneq",
@@ -451,21 +399,20 @@ def members_from_store(
     order by p.mcap desc nulls last
     limit {int(top_n)}
     """
-    df = store.query(sql)
-    out: list[MemberSummary] = []
-    for _, r in df.iterrows():
-        out.append(
-            MemberSummary(
-                ticker=str(r["ticker"]),
-                name=_s(r["name"]),
-                mcap=_f(r["mcap"]),
-                revenue_ttm=_f(r["revenue_ttm"]),
-                capex_to_da=_f(r["capex_to_da"]),
-                net_debt_to_ebitda=_f(r["net_debt_to_ebitda"]),
-                ebitda_margin=_f(r["ebitda_margin"]),
-                debt_current_to_mcap=_f(r["debt_current_to_mcap"]),
-            )
+    df = store.query(sql, frames={"l3_members": members, "px": px})
+    out = [
+        MemberSummary(
+            ticker=str(r["ticker"]),
+            name=opt_str(r["name"]),
+            mcap=opt_float(r["mcap"]),
+            revenue_ttm=opt_float(r["revenue_ttm"]),
+            capex_to_da=opt_float(r["capex_to_da"]),
+            net_debt_to_ebitda=opt_float(r["net_debt_to_ebitda"]),
+            ebitda_margin=opt_float(r["ebitda_margin"]),
+            debt_current_to_mcap=opt_float(r["debt_current_to_mcap"]),
         )
+        for _, r in df.iterrows()
+    ]
     if not out:
         log.warning(
             "테마 %s: 재무 요약 0행 (asof=%s) — 구성원 %d명 중 PIT 분기 없음",
@@ -487,10 +434,11 @@ def assemble_inputs(
     top_members: int = 12,
 ) -> ResearchInputs:
     """CLI 경로의 입력 조립. 스토어가 없으면 **경고를 남기고** 구성원 요약을 비운다 — 리포트에 "
-    "표시된다."""
+    "표시된다. `state_dir` 아래 하위 경로 이름은 `config.Paths` 의 것이다."""
     from msa.themes import load_themes
 
-    scan_dir = latest_scan_dir(state_dir / "scans", asof)
+    p = dataclasses.replace(paths(), state=state_dir)
+    scan_dir = latest_scan_dir(p.scans, asof)
     card = load_scorecard(scan_dir, theme_id)
     themes = load_themes()
     theme = themes.get(theme_id)
@@ -498,26 +446,22 @@ def assemble_inputs(
     warnings: list[str] = []
     members: list[MemberSummary] = []
     if with_store:
-        from msa.config import paths
         from msa.data.store import Store
 
-        db = paths().duckdb
-        if db.exists():
-            with Store(db) as store:
+        if p.duckdb.exists():
+            with Store(p.duckdb) as store:
                 members = members_from_store(store, theme_id, themes, asof_s, top_n=top_members)
         else:
-            warnings.append(f"DuckDB 스토어 없음({db}) — 구성원 재무 요약을 비운 채 진행")
+            warnings.append(f"DuckDB 스토어 없음({p.duckdb}) — 구성원 재무 요약을 비운 채 진행")
     else:
         warnings.append("구성원 재무 요약 생략(--no-store)")
     if macro_path is None:
-        cand = state_dir / "macro" / "latest.json"
-        macro_path = cand if cand.exists() else None
+        macro_path = p.macro_latest if p.macro_latest.exists() else None
     macro = load_macro_state(macro_path, theme_id)
     if macro is None:
         warnings.append("거시 상태(L2) 없음 — 확신도의 순풍 항(+0.10) 미적용")
-    theses_root = state_dir / "theses"
-    prior_path = find_prior_thesis(theses_root, theme_id, asof_s)
-    cases = load_case_studies(cases_dir if cases_dir is not None else state_dir / "cases")
+    prior_path = find_prior_thesis(p.theses, theme_id, asof_s)
+    cases = load_case_studies(cases_dir if cases_dir is not None else p.cases_dir)
     if not cases:
         warnings.append("케이스 스터디 few-shot 없음 (state/cases/ 비어 있음 — M6 산출물)")
     return ResearchInputs(
@@ -534,7 +478,3 @@ def assemble_inputs(
         scan_dir=f"state/scans/{scan_dir.name}",  # 라벨 — 절대경로를 thesis 에 남기지 않는다
         warnings=tuple(warnings),
     )
-
-
-def today() -> str:
-    return date.today().isoformat()
