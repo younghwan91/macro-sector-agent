@@ -73,12 +73,82 @@ properties:
     required: [unit_demand, capital_cycle, substitution, cost_curve, terminal_risk]
     additionalProperties:
       properties:
-        verdict:       {enum: [cycle, warning, death, not_applicable]}
+        verdict:       {enum: [cycle, warning, death, contested, not_applicable]}
         evidence_refs: {type: array, items: integer}
         note:          {type: string}
     note: >
-      not_applicable 을 통과로 취급하지 않는다 (04-value-trap.md 축1).
-      해당 축을 쓸 수 없으면 그 사실이 리포트에 표시되고 확신도가 감점된다.
+      not_applicable 과 contested 는 다르다.
+      not_applicable = 축을 **쓸 수 없다** (입력 자체가 없다 — 04-value-trap.md 축1 적용 가능 범위).
+      contested      = 축을 썼는데 **집계 방식에 따라 판정이 뒤집힌다** (입력이 불안정하다 — 04 §3.1).
+      공통점은 **둘 다 통과로 취급하지 않는다**는 것이다. 해당 축의 상태가 리포트에 표시되고,
+      not_applicable 은 확신도가 감점되며, contested 는 게이트가 보류되고 포트 편입이 불가하다.
+
+    properties:
+
+      unit_demand:
+        note: >
+          04-value-trap.md 축 1. 아래 필드는 §3.1 이 요구하는 산출물이며,
+          이름은 04 · 02-cycle-state.md §F 에서 쓰는 이름을 그대로 쓴다.
+        required: [verdict, axis1_available, unit_series_source, evidence_refs]
+        properties:
+          verdict:            {enum: [cycle, warning, death, contested, not_applicable]}
+          evidence_refs:      {type: array, items: integer}
+          note:               {type: string}
+
+          axis1_available:
+            type: boolean
+            note: >
+              실물 수요 시계열도 price_index 도 없으면 false → verdict: not_applicable,
+              가중치를 축 3 으로 이전하고 key_uncertainties 에 axis1_available = false 를 명시한다
+              (04-value-trap.md 축1 적용 가능 범위). 스위치는 themes.yaml 의 physical_ref 다.
+
+          unit_series_source:
+            enum: [physical_series, revenue_proxy]
+            note: >
+              어느 입력으로 unit_series 를 계산했는지. physical_series = 외부 실물 소비량 시계열
+              (1순위, L3 supply_analyst 수집), revenue_proxy = 동일 구성원 매출 / 가격지수 (폴백).
+              **출처가 없으면 축 판정 불가** — CLAUDE.md §3 에 따라 이 필드가 가리키는 시계열은
+              evidence_refs 로 최소 1개 reliability medium 이상의 출처에 연결돼야 하고,
+              연결되지 않으면 verdict 를 낼 수 없다 (not_applicable 로 닫고 그 사실을 적는다).
+
+          verdict_pre_ss:
+            enum: [cycle, warning, death]
+            note: "동일 구성원(SS) 보정 **전** 산출 — 테마 합산 매출 기준. 04 §3.1"
+          verdict_post_ss:
+            enum: [cycle, warning, death]
+            note: "동일 구성원(SS) 보정 **후** 산출. 04 §3.1"
+
+          axis1_contested:
+            type: boolean
+            default: false
+            note: >
+              verdict_pre_ss != verdict_post_ss 이거나 sign_split == true 이면 true.
+              true 면 verdict 는 contested 이고 게이트는 보류된다 (04 §3, §3.1).
+              리포트에 반드시 표시한다.
+
+          ss_n:
+            type: integer
+            note: "동일 구성원 수. 표기 없으면 조용한 절단 (CLAUDE.md §2, 02-cycle-state.md §F)"
+          ss_coverage:
+            type: number
+            minimum: 0
+            maximum: 1
+            note: "ss_n / t0 구성원 수"
+          ma_flag:
+            type: boolean
+            note: >
+              측정 구간에 유의미한 인수가 있었던 기업이 동일 구성원 표본에 포함되는가.
+              true 면 물량에 상향 편향이 남아 있다 (04 축1 규정 5).
+
+          unit_cagr_10y:        {type: number, note: "합산 물량의 10년 CAGR — 산업 규모의 변화"}
+          unit_cagr_10y_median: {type: number, note: "기업당 중앙값 물량의 10년 CAGR — 개별 기업의 물량 추세"}
+          unit_cagr_5y:         {type: number}
+          sign_split:
+            type: boolean
+            note: >
+              unit_cagr_10y 와 unit_cagr_10y_median 의 **부호가 갈리는가.**
+              합산↓ 중앙값→ 은 산업 축소이지 수요 소멸이 아니다 (04 축1 규정 3) →
+              그 자체가 axis1_contested 의 사유다 (04 §3.1).
 
   cycle_confidence:
     type: number
@@ -106,7 +176,67 @@ properties:
 
   gate_result:
     type: object
+    required: [status]
     properties:
-      rejected:  {type: boolean}
-      reason:    {type: string}
-    note: "04-value-trap.md §3 하드 게이트 적용 결과. 기각도 저널에 남는다"
+
+      status:
+        enum: [passed, contested, rejected]
+        note: >
+          3상태다. rejected = 04-value-trap.md §3 하드 게이트 자동 기각.
+          contested = 게이트 **보류** (§3.1) — 기각도 통과도 아니며 referee 검토 대상이다.
+          passed = 게이트를 통과했다. bool 로는 보류를 담을 수 없어 enum 으로 둔다.
+
+      portfolio_eligible:
+        type: boolean
+        note: >
+          status 가 contested 또는 rejected 이면 **반드시 false** 다.
+          contested 는 관찰 목록에만 올라간다 (04 §3.1) — watchlist.yaml (09-operations.md §4).
+
+      rule:
+        type: string
+        note: >
+          **어떤 규칙으로 닫혔는지**를 04 §3 의 조항 단위로 적는다.
+          예: "축1 사망 AND 축3 ∈ {경고, 사망} → 자동 기각",
+          "축1 판정이 SS 보정 전후로 뒤집힘 → axis1_contested",
+          "축1 사망 OR 축3 사망 → cycle_confidence 상한 0.35".
+
+      path:
+        enum: [hard_gate, conf_floor, secular_risk, rank_cutoff, human]
+        note: >
+          기각 대장의 경로 분류. 값은 state/rejections.yaml 의 path 열과 동일해야 한다
+          (09-operations.md §4, 10-validation.md §4). 대장 쪽 형식은 그쪽이 정하며 여기서 바꾸지 않는다.
+
+      axis_verdicts:
+        type: object
+        note: >
+          **기각 시점의 축별 판정 스냅샷.** value_trap_axes 의 5축 verdict 를 그대로 복사한다.
+          thesis 가 나중에 재실행돼 축 판정이 바뀌어도, 그때 무엇을 보고 닫았는지가 남아야
+          기각 대장이 게이트의 위양성률을 집계할 수 있다 (10-validation.md §4 (a)(b)).
+        properties:
+          unit_demand:   {enum: [cycle, warning, death, contested, not_applicable]}
+          capital_cycle: {enum: [cycle, warning, death, contested, not_applicable]}
+          substitution:  {enum: [cycle, warning, death, contested, not_applicable]}
+          cost_curve:    {enum: [cycle, warning, death, contested, not_applicable]}
+          terminal_risk: {enum: [cycle, warning, death, contested, not_applicable]}
+
+      reason:
+        type: string
+        note: "사람이 읽는 서술. 집계는 rule · path · axis_verdicts 로 하고 이 필드로 하지 않는다"
+
+      referee_ruling:
+        type: string
+        note: >
+          status: contested 일 때 필수. referee 가 **물량 감소가 산업 축소인지 수요 소멸인지**를
+          서술한 판정 (04 §3.1, 05-agent-research.md §2). evidence_refs 를 갖추지 못하면
+          서술할 수 없는 것이므로 status 는 rejected 로 닫는다 — 보류는 판단 유보이지 면제가 아니다.
+
+      referee_evidence_refs:
+        type: array
+        items: integer
+        note: "referee_ruling 의 근거. 비면 contested 를 유지할 수 없다 (CLAUDE.md §3)"
+
+    note: >
+      04-value-trap.md §3 하드 게이트 적용 결과. **기각도 저널에 남고 기각 대장에 적재된다**
+      (10-validation.md §4, 09-operations.md §4). 스키마 검증 실패로 저장이 거부되는 것과
+      게이트 기각은 다르다 — 앞은 산출물이 불완전한 것이고, 뒤는 완전한 산출물에 대한 판정이다
+      (05-agent-research.md §4).
