@@ -46,7 +46,7 @@
     금광과 상관 0.8 이상이므로 L5 유효 베팅 수 계산에서 같은 클러스터로 묶인다.
 ```
 
-## 3. 버킷 목록 초안 (85개)
+## 3. 버킷 목록 초안 (109개)
 
 > 이 목록은 **출발점**이지 완성이 아니다. 구현 M2 에서 Sharadar `industry` 실측 분포와
 > 대조해 확정한다. `cycle_class` 는 §4, ETF 는 대표 1개만 표기.
@@ -74,11 +74,13 @@
 `industrial_gas` 산업가스 (secular_growth) · `coatings_adhesives` 도료·접착 ·
 `cement_aggregates` 시멘트·골재 (capex_program, PAVE)
 
-### Energy — 에너지 (8)
+### Energy — 에너지 (7)
 `oil_gas_ep` 셰일 E&P (commodity_supply, XOP) · `oil_services` 유전서비스 (OIH) ·
 `offshore_drilling` 오프쇼어 드릴링 (**secular_risk**) · `refiners` 정유 (CRAK) ·
 `midstream` 미드스트림 (AMLP) · `lng` LNG (자체) ·
-`intl_majors` 국제 메이저 (XLE) · `coal_met` → Materials 로 통합
+`intl_majors` 국제 메이저 (XLE)
+
+> 제철용 석탄(`coal_met`)은 별도 버킷이 아니다 — Materials 의 `coal`(연료탄·제철용) 로 통합됐고, 개수에서도 뺐다.
 
 ### Energy Transition — 전환 (6)
 `solar` 태양광 (policy_program, TAN) · `wind` 풍력 (FAN) ·
@@ -150,7 +152,7 @@
 `utility_regulated` 규제전력 (credit_rate) · `utility_ipp` IPP·발전 (**capex_program** — AI 전력) ·
 `water_utility` 수도 · `gas_utility` 가스유틸
 
-> 합계 ≈ 85. `secular_risk` 표기(6개)는 **기본값이 사양 의심**이라는 뜻이며,
+> 합계 109 (섹션 헤더 숫자의 합). `secular_risk` 표기(6개)는 **기본값이 사양 의심**이라는 뜻이며,
 > `04-value-trap.md` 의 하드 게이트를 통과해야만 후보가 된다. 사양 낙인이 아니라
 > **입증 책임의 전환**이다 — 담배와 케이블은 실제로 훌륭한 현금흐름 자산이었던 시기가 있다.
 
