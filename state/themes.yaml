@@ -1,0 +1,2275 @@
+# 테마 버킷 확정본 — M2
+#
+# 출처: /home/young/data/us_micro.duckdb (Sharadar). tickers 43,919행, industry 152종.
+# 재현: uv run --with duckdb --with pyyaml python scripts/audit_themes.py
+#
+# 구성원 해석 규칙 (감사 스크립트와 동일하다)
+#   0. 유니버스 = category LIKE '%Common Stock%' AND category NOT LIKE '%Preferred%'
+#      (보통주·ADR 보통주·캐나다 보통주. ETF/CEF/우선주/기관보고는 테마 구성원이 아니다.)
+#   1. exclude_tickers 는 해당 버킷에서 티커를 제거한다.
+#   2. include_tickers 는 티커를 그 버킷에 배정하며 industry_match 배정을 덮어쓴다.
+#      (한 티커가 두 버킷의 include 에 동시에 들어가면 중복 오류다.)
+#   3. 나머지는 industry_match 로 배정한다. 152개 industry 라벨은 각각 정확히 한 버킷의
+#      industry_match 에만 등장하므로, 이 경로에서 중복은 구조적으로 발생할 수 없다.
+#   4. 'Shell Companies' 라벨(1,659종목)은 어느 버킷에도 배정하지 않는다 — SPAC/껍데기라
+#      영업 실체가 없고 사이클 자체가 정의되지 않는다. 미분류 시총 계산에서 분모 밖으로 뺀다.
+#      (docs/theme-coverage-audit.md 에 별도 항목으로 보고한다.)
+#
+# physical_ref 규약 (docs/01-theme-universe.md §2)
+#   {source, symbol} 객체 또는 null. source ∈ {etf, fred, manual}. verify: true 는 시리즈
+#   가용성 미확인 표시다. null 은 "축 1(물량 추세)을 쓸 수 없다"는 선언이며 axis1_available=false
+#   로 내려간다 (docs/04-value-trap.md 축 1). 값을 채우는 것은 축 1 을 쓸 수 있다는 주장이다.
+
+schema_version: 1
+
+defaults:
+  min_constituents: 5
+  index_weighting: [equal, cap]
+
+themes:
+
+  # ─────────────────────────────────────────────────────────────
+  # Basic Materials — 광업·소재
+  # ─────────────────────────────────────────────────────────────
+
+  - id: gold_miners
+    name_ko: 금광
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Gold"]
+    include_tickers: []
+    exclude_tickers: [SBSW]
+    etf_proxy: GDX
+    etf_proxy_alt: [GDXJ, RING]
+    physical_ref: {source: etf, symbol: GLD}
+    correlation_cluster: precious_metals
+    min_constituents: 5
+    notes: >
+      실측: 'Gold' 라벨 122종목(생존 51). 초안의 gold_miners 는 그대로 매칭됐다.
+      exclude SBSW — Sibanye Stillwater 는 Sharadar 가 Gold 로 분류했으나 매출의 절반 이상이
+      백금·팔라듐이다. pgm_miners 로 옮긴다.
+
+  - id: silver_miners
+    name_ko: 은광
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Silver"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: SIL
+    etf_proxy_alt: [SILJ, SLVP]
+    physical_ref: {source: etf, symbol: SLV}
+    correlation_cluster: precious_metals
+    min_constituents: 5
+    notes: >
+      실측: 'Silver' 라벨은 6종목(생존 4)뿐이다 — min_constituents 5 미달.
+      Sharadar 가 은 생산자 대부분(EXK·HL·ASM·AG 계열 일부)을 'Other Precious Metals & Mining'
+      으로 보내기 때문이다. 억지로 include 하지 않았다 — 그 라벨은 pgm_miners 가 통째로 받고
+      있으며, 은 단독 분리는 큐레이션 의존도를 감당 못할 만큼 키운다. 커버리지 감사에
+      소표본 버킷으로 보고되며, 통계 신뢰도를 하향해 쓴다.
+
+  - id: pgm_miners
+    name_ko: 백금·팔라듐·기타 귀금속
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Other Precious Metals & Mining"]
+    include_tickers: [SBSW, SWC, PALDF]
+    exclude_tickers: [ATLX]
+    etf_proxy: null
+    etf_proxy_alt: [PPLT, PALL]
+    physical_ref: {source: etf, symbol: PPLT}
+    correlation_cluster: precious_metals
+    min_constituents: 5
+    notes: >
+      초안과 다른 점: Sharadar 에 백금·팔라듐 전용 라벨이 없다. 대신
+      'Other Precious Metals & Mining'(35종목) 이 있고 여기에 PGM·은 주니어·로열티가 섞여 있다.
+      이 버킷이 그 라벨을 통째로 받는다 — 즉 순수 PGM 버킷이 아니라 '기타 귀금속' 잔여 버킷이다.
+      include 근거: SBSW(Gold 로 오분류), SWC/Stillwater(Uranium 으로 오분류 — 실제는 팔라듐,
+      2017 피인수 폐지), PALDF(North American Palladium, 2019 피인수 폐지). 폐지 2종을 넣는 것은
+      생존 편향 방지가 목적이다(docs/01 §5). exclude ATLX — Atlas Lithium 은 리튬이다.
+      etf_proxy 가 null 인 이유: PPLT/PALL 은 실물 신탁이지 광산주 지수가 아니다.
+
+  - id: rare_earth
+    name_ko: 희토류·전략금속
+    parent_sector: Basic Materials
+    cycle_class: policy_program
+    industry_match: []
+    include_tickers: [MP, USAR, CRML, IMC, REA, NB, UAMY, IPX, ALM, TMC, GMTL, MCPIQ, QRM, REEMF, TASIF]
+    exclude_tickers: []
+    etf_proxy: REMX
+    etf_proxy_alt: []
+    physical_ref: null
+    correlation_cluster: strategic_materials
+    min_constituents: 5
+    notes: >
+      Sharadar 에 '희토류' industry 라벨이 없다 — 자동 매칭 불가라 include_tickers 로만 구성한다
+      (docs/01 §1 규약). 구성원은 'Other Industrial Metals & Mining' 라벨 안에서 골랐고,
+      MCPIQ(Molycorp, 2015 파산)·QRM·REEMF·TASIF 등 폐지 4종을 반드시 포함시켰다 —
+      빼면 자기이력 백분위가 낙관 방향으로 왜곡된다. ALM(텅스텐)·UAMY(안티모니)·NB(니오븀)·
+      IPX(티타늄)·TMC(심해 노듈)는 좁은 의미의 희토류가 아니라 '수출통제 대상 전략금속' 이라
+      들어왔다 — cycle_class 가 commodity_supply 가 아니라 policy_program 인 이유와 같다.
+      physical_ref null: NdPr 가격은 중국 고시가라 공개 시계열이 불안정하다 → 축 1 적용 불가.
+
+  - id: lithium
+    name_ko: 리튬
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: []
+    include_tickers: [ALB, SQM, LAC, LAR, SLI, SGML, IONR, ELVR, ATLX, LTHM, PLL, AMLIF]
+    exclude_tickers: []
+    etf_proxy: LIT
+    etf_proxy_alt: [BATT]
+    physical_ref: {source: manual, symbol: LITHIUM_CARBONATE_CHINA_SPOT}
+    correlation_cluster: battery_materials
+    min_constituents: 5
+    notes: >
+      초안과 다른 점: Sharadar 에 'Lithium' 라벨이 없다. 구성원이 두 라벨에 흩어져 있다 —
+      ALB·SQM·LTHM 은 'Specialty Chemicals', 나머지는 'Other Industrial Metals & Mining'.
+      자동 매칭이 불가능해 include 전용으로 구성했다. LTHM(Livent, 2023 Allkem 과 합병)·
+      PLL(Piedmont, 2025 Sayona 와 합병)·AMLIF 등 폐지 3종 포함.
+      LIT 상장 2010 — ETF 이력이 사이클 한 바퀴를 못 담는다.
+
+  - id: uranium
+    name_ko: 우라늄
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Uranium"]
+    include_tickers: []
+    exclude_tickers: [SWC, LEU]
+    etf_proxy: URA
+    etf_proxy_alt: [URNM, NLR]
+    physical_ref: {source: manual, symbol: UXC_SPOT}
+    correlation_cluster: nuclear
+    min_constituents: 5
+    notes: >
+      초안과 다른 점: parent_sector 가 Energy 가 아니라 Basic Materials 다 — Sharadar 실측이
+      그렇다(themes.example.yaml 은 Energy 로 적혀 있었다). 라벨은 18종목(생존 13).
+      exclude SWC(Stillwater, 팔라듐 오분류 → pgm_miners), LEU(Centrus, 농축·연료 서비스라
+      광산 사이클이 아니다 → nuclear_smr).
+      URA 상장 2010 — 자체 구성 지수를 1998년까지 소급하되 소급 구간을 리포트에 표시한다.
+
+  - id: copper_miners
+    name_ko: 구리
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Copper"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: COPX
+    etf_proxy_alt: [CPER]
+    physical_ref: {source: etf, symbol: CPER}
+    correlation_cluster: base_metals
+    min_constituents: 5
+    notes: >
+      실측: 'Copper' 라벨 10종목(생존 6). 초안대로 매칭됐다. 표본이 얇아 FCX 단일 종목이
+      시총가중 지수를 지배한다 — 동일가중 병기가 특히 중요한 버킷이다(docs/01 §6-1).
+
+  - id: aluminum
+    name_ko: 알루미늄
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Aluminum"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XME]
+    physical_ref: {source: fred, symbol: PALUMUSDM, verify: true}
+    correlation_cluster: base_metals
+    min_constituents: 5
+    notes: >
+      실측: 9종목(생존 4) — min_constituents 미달. 전용 ETF 가 없어 초안대로 자체 구성이다.
+      폐지 5종(RLM1/Reynolds, AMX1/Alumax, NORNQ/Noranda, PEHYY/Pechiney, ACHHY)이
+      1998-2016 구간 이력을 지탱한다.
+
+  - id: steel_iron
+    name_ko: 철강·철광석
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Steel"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: SLX
+    etf_proxy_alt: [XME]
+    physical_ref: {source: fred, symbol: PIORECRUSDM, verify: true}
+    correlation_cluster: base_metals
+    min_constituents: 5
+    notes: >
+      실측: 'Steel' 93종목(생존 22). 철광석 전업체 전용 라벨은 없다.
+
+  - id: diversified_miners
+    name_ko: 종합광업
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Other Industrial Metals & Mining", "Industrial Metals & Minerals"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: XME
+    etf_proxy_alt: [PICK]
+    physical_ref: null
+    correlation_cluster: base_metals
+    min_constituents: 5
+    notes: >
+      초안의 diversified_miners 를 유지하되 실제 라벨 두 개를 받는다.
+      'Industrial Metals & Minerals'(4종목, 전원 폐지)는 벤더가 예전에 쓰던 라벨이라
+      함께 넣지 않으면 과거 구간이 통째로 빠진다.
+      이 버킷은 rare_earth·lithium 이 include 로 빼간 뒤의 잔여집합이다 — BHP·RIO·VALE·TECK 등
+      진짜 종합광업체가 중심에 남는다. 초안 nickel_cobalt 는 여기로 흡수해 폐기했다:
+      Sharadar 에 니켈·코발트 라벨이 없고, 미국 상장 순수 니켈주는 큐레이션해도
+      min_constituents 를 못 채운다.
+      physical_ref null: 여러 금속의 바스켓이라 단일 실물 참조가 정의되지 않는다 → 축 1 적용 불가.
+
+  - id: coal
+    name_ko: 석탄
+    parent_sector: Basic Materials
+    cycle_class: secular_risk
+    industry_match: ["Thermal Coal", "Coking Coal"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: []
+    physical_ref: {source: fred, symbol: PCOALAUUSDM, verify: true}
+    correlation_cluster: fossil
+    min_constituents: 5
+    notes: >
+      실측: Thermal Coal 26종목(생존 5) + Coking Coal 11종목(생존 5). 초안대로 매칭됐고
+      parent_sector 는 Energy 가 아니라 Basic Materials 다(실측).
+      KOL 상폐 — 자체 구성만 가능. secular_risk 는 사양 낙인이 아니라 입증 책임의 전환이며,
+      docs/04 축 1 이 판정의 중심이다. physical_ref 를 채운 것은 미국 발전용 석탄 소비량이라는
+      실물 시계열이 실제로 존재하기 때문이다(FRED 대체 시리즈는 verify 대상).
+
+  - id: fertilizer_potash
+    name_ko: 비료·칼륨
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Agricultural Inputs"]
+    include_tickers: []
+    exclude_tickers: [SQM]
+    etf_proxy: MOO
+    etf_proxy_alt: [VEGI]
+    physical_ref: {source: fred, symbol: WPU0652, verify: true}
+    correlation_cluster: agriculture
+    min_constituents: 5
+    notes: >
+      실측 라벨명은 'Agricultural Inputs'(64종목). exclude SQM — 매출 다수가 리튬이라
+      lithium 으로 옮겼다.
+
+  - id: lumber_paper
+    name_ko: 제지·목재
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Lumber & Wood Production", "Paper & Paper Products"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: WOOD
+    etf_proxy_alt: [CUT]
+    physical_ref: {source: fred, symbol: WPU0811, verify: true}
+    correlation_cluster: housing_materials
+    min_constituents: 5
+    notes: >
+      초안 한 버킷에 실제 라벨 두 개가 대응한다. 팀버 REIT(WY·RYN·PCH·CTT)는 Sharadar 가
+      'REIT - Specialty' 로 분류해 reit_specialty 에 남아 있다 — 옮기지 않았다.
+      REIT 는 자본구조·회계가 달라 L4 3축이 제조업체와 같은 뜻을 갖지 않는다.
+
+  - id: specialty_chem
+    name_ko: 특수화학
+    parent_sector: Basic Materials
+    cycle_class: inventory
+    industry_match: ["Specialty Chemicals"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: XLB
+    etf_proxy_alt: [IYM]
+    physical_ref: null
+    correlation_cluster: chemicals
+    min_constituents: 5
+    notes: >
+      실측 186종목(생존 58). industrial_gas·coatings_adhesives·lithium 이 include 로
+      빼간 뒤의 잔여집합이다.
+
+  - id: commodity_chem
+    name_ko: 범용석유화학
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Chemicals"]
+    include_tickers: []
+    exclude_tickers: [ASPI]
+    etf_proxy: XLB
+    etf_proxy_alt: []
+    physical_ref: {source: fred, symbol: WPU061, verify: true}
+    correlation_cluster: chemicals
+    min_constituents: 5
+    notes: >
+      초안의 '범용석유화학' 에 대응하는 실제 라벨은 'Chemicals'(36종목) 이다 —
+      DOW·LYB(LYB 는 Specialty 라벨)·CE·HUN·MEOH 등. exclude ASPI(동위원소 농축 → nuclear_smr).
+
+  - id: industrial_gas
+    name_ko: 산업가스
+    parent_sector: Basic Materials
+    cycle_class: secular_growth
+    industry_match: []
+    include_tickers: [LIN, APD, ARG]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLB]
+    physical_ref: null
+    correlation_cluster: chemicals
+    min_constituents: 5
+    notes: >
+      Sharadar 에 산업가스 라벨이 없다 — LIN·APD 는 'Specialty Chemicals', ARG(Airgas,
+      2016 Air Liquide 피인수 폐지)는 'Industrial Distribution' 이다. include 전용 구성.
+      미국 상장 순수 산업가스는 3종목뿐이라 min_constituents 미달이 구조적이다 —
+      감사에 소표본으로 보고된다. secular_growth 이므로 낙폭이 신호가 아니며(docs/01 §4),
+      L1 이 이 클래스에 낮은 낙폭 가중치를 준다.
+
+  - id: coatings_adhesives
+    name_ko: 도료·접착
+    parent_sector: Basic Materials
+    cycle_class: inventory
+    industry_match: []
+    include_tickers: [SHW, PPG, RPM, AXTA, FUL]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLB]
+    physical_ref: null
+    correlation_cluster: chemicals
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — 전원 'Specialty Chemicals' 안에 있다. include 전용 구성이며
+      큐레이션 목록이 현재 생존 대형주 5종에 한정돼 생존 편향이 남아 있다.
+      과거 폐지 구성원(Valspar 2017 피인수 등)을 M3 에서 보강할 것.
+
+  - id: cement_aggregates
+    name_ko: 시멘트·골재
+    parent_sector: Basic Materials
+    cycle_class: capex_program
+    industry_match: ["Building Materials"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: PAVE
+    etf_proxy_alt: [XLB]
+    physical_ref: {source: fred, symbol: IPN32731S, verify: true}
+    correlation_cluster: infrastructure
+    min_constituents: 5
+    notes: >
+      실측 라벨명은 'Building Materials'(48종목, Basic Materials 섹터). MLM·VMC·CX·EXP 등.
+      physical_ref 는 시멘트 산업생산 지수 — 금액이 아니라 물량이라 축 1 에 바로 쓰인다.
+
+  - id: hvac_building
+    name_ko: HVAC·빌딩제품
+    parent_sector: Basic Materials
+    cycle_class: capex_program
+    industry_match: ["Building Products & Equipment"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLI, ITB]
+    physical_ref: null
+    correlation_cluster: building
+    min_constituents: 5
+    notes: >
+      초안은 이 버킷을 Industrials 로 뒀으나 Sharadar 는 'Building Products & Equipment'
+      (115종목)를 Basic Materials 로 분류한다 — 실측을 따랐다. CARR·TT·JCI·LII·MAS·OC 등.
+
+  # ─────────────────────────────────────────────────────────────
+  # Energy — 에너지
+  # ─────────────────────────────────────────────────────────────
+
+  - id: oil_gas_ep
+    name_ko: 셰일 E&P
+    parent_sector: Energy
+    cycle_class: commodity_supply
+    industry_match: ["Oil & Gas E&P"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: XOP
+    etf_proxy_alt: [IEO, FCG]
+    physical_ref: {source: etf, symbol: USO}
+    correlation_cluster: fossil
+    min_constituents: 5
+    notes: >
+      실측 420종목(생존 74). 초안대로 매칭됐다. 폐지 346종이 2015-2020 파산 물결을 담고 있어
+      자기이력 백분위의 생존 편향을 막는 핵심 표본이다.
+
+  - id: oil_services
+    name_ko: 유전서비스
+    parent_sector: Energy
+    cycle_class: commodity_supply
+    industry_match: ["Oil & Gas Equipment & Services"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: OIH
+    etf_proxy_alt: [XES]
+    physical_ref: {source: manual, symbol: BAKER_HUGHES_US_RIG_COUNT}
+    correlation_cluster: fossil
+    min_constituents: 5
+    notes: >
+      실측 135종목(생존 52). physical_ref 는 리그 카운트 — 유전서비스의 실물 수요 단위다.
+
+  - id: offshore_drilling
+    name_ko: 시추 (오프쇼어·육상)
+    parent_sector: Energy
+    cycle_class: secular_risk
+    industry_match: ["Oil & Gas Drilling"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [OIH]
+    physical_ref: {source: manual, symbol: BAKER_HUGHES_OFFSHORE_RIG_COUNT}
+    correlation_cluster: fossil
+    min_constituents: 5
+    notes: >
+      초안은 오프쇼어만 뒀으나 Sharadar 라벨 'Oil & Gas Drilling'(52종목, 생존 9)은
+      육상 시추(HP·PTEN·NBR·PDS)와 오프쇼어(RIG·NE·SDRL·BORR)를 함께 담는다.
+      둘을 나누려면 큐레이션이 필요한데, 폐지 43종 대부분이 2015-2020 챕터11 이라
+      큐레이션이 곧 생존 편향이 된다 — 라벨 그대로 한 버킷으로 두고 이름을 넓혔다.
+      docs/04 §1 의 '육상 시추 2019 −85%' 사례도 같은 버킷 안에 있다.
+      secular_risk 유지: 이 버킷은 2015-2020 에 전원 챕터11 을 겪었다.
+
+  - id: refiners
+    name_ko: 정유
+    parent_sector: Energy
+    cycle_class: commodity_supply
+    industry_match: ["Oil & Gas Refining & Marketing"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: CRAK
+    etf_proxy_alt: [VDE]
+    physical_ref: {source: fred, symbol: WGFUPUS2, verify: true}
+    correlation_cluster: fossil
+    min_constituents: 5
+    notes: >
+      실측 73종목(생존 21). physical_ref 는 미국 완성 휘발유 공급량(주간, 배럴) —
+      가격이 아니라 물량이라 축 1 의 1순위 입력 자격을 만족한다.
+
+  - id: midstream
+    name_ko: 미드스트림
+    parent_sector: Energy
+    cycle_class: capex_program
+    industry_match: ["Oil & Gas Midstream"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: AMLP
+    etf_proxy_alt: [MLPX, EMLP]
+    physical_ref: null
+    correlation_cluster: fossil
+    min_constituents: 5
+    notes: >
+      실측 173종목(생존 50). 중요한 실측 발견 — 이 라벨에 탱커 선사가 대거 섞여 있다
+      (FRO·DHT·INSW·STNG·TNK·TEN·TRMD·TK·CMBT). 전부 shipping_tanker 가 include 로 가져간다.
+      LNG 사슬(LNG·CQP·VG·GLNG·FLNG·EE)도 lng 가 가져간다.
+      physical_ref null: 파이프라인 처리량은 종목별 공시라 테마 수준 공개 시계열이 없다
+      → 축 1 적용 불가.
+
+  - id: lng
+    name_ko: LNG
+    parent_sector: Energy
+    cycle_class: capex_program
+    industry_match: []
+    include_tickers: [LNG, CQP, VG, GLNG, FLNG, EE, NFE, DLNG, NVGS, LPG, BWLP, GASS, CCEC, KNOP, GLOP, CLCO]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [AMLP]
+    physical_ref: {source: manual, symbol: EIA_US_LNG_EXPORTS_BCF}
+    correlation_cluster: gas
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없고 구성원이 세 라벨에 흩어져 있다 — 'Oil & Gas Midstream'(LNG·CQP·VG·
+      GLNG·FLNG·EE·DLNG·NVGS·LPG), 'Marine Shipping'(BWLP·GASS·CCEC·KNOP·CLCO),
+      'Utilities - Regulated Gas'(NFE). include 전용 구성이며 폐지 2종(GLOP·CLCO) 포함.
+      LPG 캐리어(LPG·BWLP·GASS·NVGS)를 함께 넣은 이유: 미국 가스 수출 사슬이라는 동일한
+      상류 드라이버를 공유하고, 따로 떼면 어느 쪽도 min_constituents 를 못 채운다.
+      physical_ref 는 EIA 미국 LNG 수출량(Bcf) — 물량 시계열이다.
+
+  - id: intl_majors
+    name_ko: 국제 메이저
+    parent_sector: Energy
+    cycle_class: commodity_supply
+    industry_match: ["Oil & Gas Integrated"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: XLE
+    etf_proxy_alt: [VDE, IXC]
+    physical_ref: {source: etf, symbol: USO}
+    correlation_cluster: fossil
+    min_constituents: 5
+    notes: 실측 라벨명은 'Oil & Gas Integrated'(29종목, 생존 19).
+
+  # ─────────────────────────────────────────────────────────────
+  # Energy Transition — 전환
+  # ─────────────────────────────────────────────────────────────
+
+  - id: solar
+    name_ko: 태양광
+    parent_sector: Technology
+    cycle_class: policy_program
+    industry_match: ["Solar"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: TAN
+    etf_proxy_alt: [ICLN, RAYS]
+    physical_ref: {source: manual, symbol: EIA_US_SOLAR_CAPACITY_ADDITIONS_MW}
+    correlation_cluster: clean_energy
+    min_constituents: 5
+    notes: >
+      실측: 'Solar' 라벨은 Technology 섹터에 있다(초안은 별도 Energy Transition 그룹으로 뒀다).
+      43종목 중 21종이 폐지 — 2011-2013 중국 태양광 파산 물결과 2024-2025 SPWR/MAXN/NOVA
+      파산이 모두 들어 있다. 이 버킷이 docs/04 의 '정책 사이클이 뒤집힐 때' 표본이다.
+      physical_ref 는 설치 용량(MW) — 물량 시계열이다.
+
+  - id: wind
+    name_ko: 풍력
+    parent_sector: Industrials
+    cycle_class: policy_program
+    industry_match: []
+    include_tickers: [TPIC, AMSC, GEV, CDLR]
+    exclude_tickers: []
+    etf_proxy: FAN
+    etf_proxy_alt: [ICLN]
+    physical_ref: {source: manual, symbol: EIA_US_WIND_CAPACITY_ADDITIONS_MW}
+    correlation_cluster: clean_energy
+    min_constituents: 5
+    notes: >
+      Sharadar 에 풍력 라벨이 없고 미국 상장 풍력 순수주가 4종뿐이다 — min_constituents 미달을
+      감수하고 유지한다. 세계 풍력 밸류체인의 중심(Vestas·Siemens Gamesa·Ørsted)은 미국 미상장이라
+      docs/01 §6-3 의 '순수 해외 상장은 범위 밖' 규약에 걸린다. 즉 이 버킷은 구조적으로
+      미국 시장을 통해 볼 수 없는 테마이며, 감사 리포트에 그렇게 적힌다.
+      TPIC 는 2025 폐지, CDLR 은 해상풍력 설치선(Marine Shipping 라벨).
+
+  - id: hydrogen_fuelcell
+    name_ko: 수소·연료전지
+    parent_sector: Industrials
+    cycle_class: policy_program
+    industry_match: []
+    include_tickers: [PLUG, BE, FCEL, BLDP, HTOO, GEVO, VGAS, ADNH]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [HDRO, ICLN]
+    physical_ref: null
+    correlation_cluster: clean_energy
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — 'Electrical Equipment & Parts'(PLUG·BE·FCEL), 'Specialty Industrial
+      Machinery'(BLDP), 'Utilities - Renewable'(HTOO·VGAS·ADNH), 'Specialty Chemicals'(GEVO)
+      에 흩어져 있다. include 전용 구성.
+      physical_ref null: 그린수소 생산량 공개 시계열이 없다 → 축 1 적용 불가.
+      policy_program 이므로 판별의 중심이 축 3(LLM 판정)으로 넘어간다 — 리포트에 명시된다.
+
+  - id: energy_storage
+    name_ko: ESS·배터리
+    parent_sector: Industrials
+    cycle_class: policy_program
+    industry_match: []
+    include_tickers: [FLNC, STEM, EOSE, ENVX, SLDP, AMPX, GWH, NRGV, MVST, ENS, CBAT, DFLI, FLUX, XPON, NEOV, ULBI, ELIQQ]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [BATT, LIT]
+    physical_ref: {source: manual, symbol: EIA_US_BATTERY_STORAGE_ADDITIONS_MW}
+    correlation_cluster: clean_energy
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — 'Electrical Equipment & Parts' 와 'Utilities - Renewable' 에 흩어져 있다.
+      include 전용 구성. physical_ref 는 계통 배터리 신규 설치 용량(MW).
+
+  - id: ev_charging
+    name_ko: EV·충전
+    parent_sector: Consumer Cyclical
+    cycle_class: policy_program
+    industry_match: []
+    include_tickers: [CHPT, BLNK, EVGO, WBX, ADSE, XCH]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [DRIV, IDRV]
+    physical_ref: null
+    correlation_cluster: clean_energy
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없고 Sharadar 분류가 특히 어지럽다 — CHPT·EVGO 는 'Specialty Retail',
+      BLNK 는 'Engineering & Construction', WBX 는 'Electronic Components' 다.
+      include 전용 구성. 초안은 cycle_class 를 discretionary_demand 로 뒀으나 policy_program
+      으로 고쳤다: 충전 인프라 수요는 소비자 심리가 아니라 NEVI 보조금·주정부 의무화가 만든다.
+      physical_ref null: 공공 충전기 설치 대수(DOE AFDC)는 존재하나 시계열 안정성이 낮아
+      채우지 않았다 → 축 1 적용 불가.
+
+  - id: nuclear_smr
+    name_ko: 원자력·SMR
+    parent_sector: Industrials
+    cycle_class: policy_program
+    industry_match: []
+    include_tickers: [SMR, OKLO, NNE, LEU, BWXT, LTBR, ASPI]
+    exclude_tickers: []
+    etf_proxy: NLR
+    etf_proxy_alt: [URNM]
+    physical_ref: null
+    correlation_cluster: nuclear
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — 'Specialty Industrial Machinery'(SMR·NNE), 'Utilities - Regulated
+      Electric'(OKLO), 'Uranium'(LEU), 'Aerospace & Defense'(BWXT), 'Electrical Equipment &
+      Parts'(LTBR), 'Chemicals'(ASPI). include 전용 구성.
+      physical_ref null: 가동 SMR 이 아직 없어 물량 시계열 자체가 존재하지 않는다 →
+      축 1 적용 불가이며, 이 버킷은 판별기의 신뢰도가 구조적으로 가장 낮은 축에 속한다.
+      구성원 7종 중 5종이 2021년 이후 상장이라 자기이력 백분위도 짧다 — 리포트에 표시할 것.
+
+  # ─────────────────────────────────────────────────────────────
+  # Industrials — 산업재
+  # ─────────────────────────────────────────────────────────────
+
+  - id: defense
+    name_ko: 방산·항공우주
+    parent_sector: Industrials
+    cycle_class: capex_program
+    industry_match: ["Aerospace & Defense"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: ITA
+    etf_proxy_alt: [XAR, PPA]
+    physical_ref: null
+    correlation_cluster: defense
+    min_constituents: 5
+    notes: >
+      초안의 defense 와 aerospace_commercial 을 합쳤다 — Sharadar 는 둘을 하나의
+      'Aerospace & Defense' 라벨(212종목)로 묶으며, 212종을 손으로 방산/상용으로 가르는 것은
+      큐레이션 범위를 넘는다(폐지 119종이 포함돼 생존 편향 없이 나누기 어렵다).
+      폐기된 초안 id: aerospace_commercial.
+      space_satellite 가 include 로 RKLB·PL·LUNR·RDW·SPCE·MNTS 를 빼간 뒤의 잔여집합이다.
+
+  - id: space_satellite
+    name_ko: 우주·위성
+    parent_sector: Industrials
+    cycle_class: policy_program
+    industry_match: []
+    include_tickers: [RKLB, ASTS, PL, LUNR, RDW, SPCE, MNTS, IRDM, VSAT, GSAT]
+    exclude_tickers: []
+    etf_proxy: ARKX
+    etf_proxy_alt: [UFO]
+    physical_ref: null
+    correlation_cluster: defense
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — 'Aerospace & Defense'(RKLB·PL·LUNR·RDW·SPCE·MNTS),
+      'Communication Equipment'(ASTS·VSAT), 'Telecom Services'(IRDM·GSAT) 에 흩어져 있다.
+      include 전용 구성. 구성원 절반이 2021 SPAC 상장이라 자기이력이 짧다.
+      physical_ref null: 발사 횟수는 물량 시계열이지만 공개 정형 소스가 없다 → 축 1 적용 불가.
+
+  - id: shipping_tanker
+    name_ko: 탱커
+    parent_sector: Industrials
+    cycle_class: commodity_supply
+    industry_match: []
+    include_tickers: [FRO, DHT, INSW, STNG, TNK, TEN, TRMD, TK, CMBT, ASC, ECO, HAFN, NAT, PXS, TORO, PSHG, TOPS, IMPP, GMRRQ, OSGIQ, ATB, CRU1, SJH1, ONAVQ, MTLX, SBLK1, HOFSQ, ULTRF, SNSAY]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [BOAT, SEA]
+    physical_ref: {source: manual, symbol: BALTIC_DIRTY_TANKER_INDEX}
+    correlation_cluster: shipping
+    min_constituents: 5
+    notes: >
+      초안이 탱커·벌크·컨테이너를 셋으로 나눈 것은 옳다 — 세 사이클은 서로 다른 톤마일 수요로
+      움직인다. 그러나 Sharadar 는 셋을 구분하지 않는다. 더 나쁜 것은 탱커 선사가 두 라벨에
+      쪼개져 있다는 점이다: 'Oil & Gas Midstream'(FRO·DHT·INSW·STNG·TNK·TEN·TRMD·TK·CMBT)과
+      'Marine Shipping'(ASC·ECO·HAFN·NAT·PXS 등). 자동 매칭으로는 어느 쪽도 탱커 버킷이 안 된다.
+      → include 전용 구성. 폐지 11종(GMRRQ/General Maritime, OSGIQ/OSG, ONAVQ, HOFSQ 등)을
+      명시적으로 넣었다 — docs/04 §1 이 탱커 2021-2022 +400% 를 사이클 사례로 쓰는데,
+      그 직전 파산자들을 빼면 자기이력 저점이 낙관 왜곡된다.
+      physical_ref 는 Baltic Dirty Tanker Index — 운임이 곧 물량×거리의 시장가다.
+
+  - id: shipping_drybulk
+    name_ko: 벌크·기타 해운
+    parent_sector: Industrials
+    cycle_class: commodity_supply
+    industry_match: ["Marine Shipping", "Shipping & Ports"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [BDRY, BOAT]
+    physical_ref: {source: manual, symbol: BALTIC_DRY_INDEX}
+    correlation_cluster: shipping
+    min_constituents: 5
+    notes: >
+      'Marine Shipping' 라벨(81종목)에서 탱커·컨테이너·LNG 가 include 로 빠져나간 잔여집합이
+      이 버킷이다. 잔여의 다수가 실제로 벌크선사(SBLK·GNK·DSX·SB·SHIP·EDRY·GLBS·HSHP·PANL)라
+      벌크 버킷으로 두되, KEX(내륙 바지)·SFL(선박 리스)·SMHI(해양 지원선) 같은 비벌크가 섞여
+      있다는 점을 여기 적어 둔다 — 이름을 '벌크·기타 해운' 으로 넓힌 이유다.
+      잔여를 벌크로 두는 편이, 세 번째 큐레이션 목록을 손으로 유지하는 것보다 생존 편향이 작다.
+      'Shipping & Ports'(3종목, 전원 폐지)는 벤더 구 라벨이라 함께 받는다.
+
+  - id: shipping_container
+    name_ko: 컨테이너
+    parent_sector: Industrials
+    cycle_class: commodity_supply
+    industry_match: []
+    include_tickers: [ZIM, DAC, GSL, ESEA, CMRE, MATX, NMCI, TEUFF, BBLKF]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [BOAT]
+    physical_ref: {source: manual, symbol: SCFI_SHANGHAI_CONTAINERIZED_FREIGHT}
+    correlation_cluster: shipping
+    min_constituents: 5
+    notes: >
+      'Marine Shipping' 라벨 안의 컨테이너 선사·용선주를 include 로 분리했다.
+      CMRE 는 컨테이너 용선이 주력이나 벌크도 보유한다 — 1차 매출 기준 단일 소속 규약
+      (docs/01 §6-2)에 따라 여기에 둔다.
+
+  - id: shipbuilding
+    name_ko: 조선
+    parent_sector: Industrials
+    cycle_class: capex_program
+    industry_match: []
+    include_tickers: [HII]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [ITA]
+    physical_ref: null
+    correlation_cluster: shipping
+    min_constituents: 5
+    notes: >
+      초안 버킷을 유지하되 실측상 사실상 빈 버킷이다. 세계 조선의 중심(HD현대중공업·한화오션·
+      삼성중공업·중국 CSSC)은 미국 미상장이고, 미국 상장 조선은 HII(군함, Aerospace & Defense
+      라벨) 하나뿐이다. docs/01 §6-3 의 '순수 해외 상장은 범위 밖' 규약에 걸리는 두 번째 사례다.
+      감사에 min_constituents 미달로 보고되며, 이 상태로는 스코어를 산출하지 않는다.
+
+  - id: railroads
+    name_ko: 철도
+    parent_sector: Industrials
+    cycle_class: inventory
+    industry_match: ["Railroads"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [IYT, XTN]
+    physical_ref: {source: fred, symbol: RAILFRTCARLOADSD11, verify: true}
+    correlation_cluster: freight
+    min_constituents: 5
+    notes: >
+      실측 31종목(생존 11). physical_ref 는 화물 차량 적재 건수 — 금액이 아니라 물량이라
+      축 1 의 1순위 입력이다.
+
+  - id: trucking_logistics
+    name_ko: 트럭·물류
+    parent_sector: Industrials
+    cycle_class: inventory
+    industry_match: ["Trucking", "Integrated Freight & Logistics"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: IYT
+    etf_proxy_alt: [XTN]
+    physical_ref: {source: fred, symbol: TRUCKD11, verify: true}
+    correlation_cluster: freight
+    min_constituents: 5
+    notes: >
+      초안 한 버킷에 실제 라벨 두 개가 대응한다(Trucking 64 + Integrated Freight & Logistics 74).
+      physical_ref 는 트럭 톤수 지수 — 물량 시계열이다.
+
+  - id: airlines
+    name_ko: 항공사·공항서비스
+    parent_sector: Industrials
+    cycle_class: discretionary_demand
+    industry_match: ["Airlines", "Airports & Air Services"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: JETS
+    etf_proxy_alt: []
+    physical_ref: {source: fred, symbol: AIRRPMTSID11, verify: true}
+    correlation_cluster: travel
+    min_constituents: 5
+    notes: >
+      'Airports & Air Services'(29종목, 35B) 를 함께 받는다 — 별도 버킷을 세울 만한 규모가
+      아니고 수요 드라이버(여객 수)가 항공사와 같다. physical_ref 는 유상여객마일(RPM) —
+      물량 시계열이다.
+
+  - id: construction_machinery
+    name_ko: 건설·농기계
+    parent_sector: Industrials
+    cycle_class: capex_program
+    industry_match: ["Farm & Heavy Construction Machinery"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLI, PAVE]
+    physical_ref: null
+    correlation_cluster: machinery
+    min_constituents: 5
+    notes: >
+      초안의 construction_machinery 와 ag_machinery 를 합쳤다 — Sharadar 라벨이
+      'Farm & Heavy Construction Machinery' 하나이기 때문이다(63종목).
+      폐기된 초안 id: ag_machinery. 두 사이클 드라이버(건설 착공 vs 곡물가)가 다르다는 초안의
+      지적은 맞지만, 라벨이 CAT·DE·CNH·AGCO 를 한 통에 담고 있어 분리하면 큐레이션 목록이
+      곧 이 버킷의 정의가 된다. M3 이후 매출 노출 비중(docs/01 §6-2)이 도입되면 재검토한다.
+
+  - id: industrial_automation
+    name_ko: 산업자동화·특수기계
+    parent_sector: Industrials
+    cycle_class: inventory
+    industry_match: ["Specialty Industrial Machinery"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLI]
+    physical_ref: null
+    correlation_cluster: machinery
+    min_constituents: 5
+    notes: >
+      실측 243종목(생존 80). 초안 grid_equipment 가 이 라벨과
+      'Electrical Equipment & Parts' 를 함께 쓰려 했으나, 둘을 겹치면 중복 소속이 생긴다 —
+      라벨을 갈라 grid_equipment 는 'Electrical Equipment & Parts' 만 갖는다.
+      이 버킷은 그 나머지(ETN 계열 기계·펌프·밸브)를 받는 잔여집합이며 오탐이 많다.
+
+  - id: grid_equipment
+    name_ko: 변압기·전력기기
+    parent_sector: Industrials
+    cycle_class: capex_program
+    industry_match: ["Electrical Equipment & Parts"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLI, GRID]
+    physical_ref: null
+    correlation_cluster: ai_power
+    min_constituents: 5
+    notes: >
+      초안은 industry_match 에 'Specialty Industrial Machinery' 도 넣었으나 그러면
+      industrial_automation 과 중복 소속이 발생한다 → 이 라벨(158종목) 하나만 갖는다.
+      hydrogen_fuelcell·energy_storage·ev_charging·nuclear_smr 이 include 로 빼간 잔여집합이며,
+      HUBB·NVT·ATKR·POWL·VRT·AYI 등 전력기기 본류가 남는다.
+      상류 드라이버가 hyperscaler_capex — Sharadar SF1 에서 직접 계산한다.
+      cycle_class 가 capex_program 이므로 L1 낙폭 가중치는 낮다 — 낙폭이 신호가 아니다.
+
+  - id: epc_engineering
+    name_ko: EPC·엔지니어링
+    parent_sector: Industrials
+    cycle_class: capex_program
+    industry_match: ["Engineering & Construction"]
+    include_tickers: []
+    exclude_tickers: [BLNK]
+    etf_proxy: null
+    etf_proxy_alt: [PAVE, XLI]
+    physical_ref: null
+    correlation_cluster: infrastructure
+    min_constituents: 5
+    notes: 실측 152종목(생존 55). exclude BLNK — Blink Charging 은 EV 충전이다(벤더 오분류).
+
+  - id: infra_construction
+    name_ko: 인프라 운영·건설
+    parent_sector: Industrials
+    cycle_class: policy_program
+    industry_match: ["Infrastructure Operations"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: PAVE
+    etf_proxy_alt: [IFRA]
+    physical_ref: null
+    correlation_cluster: infrastructure
+    min_constituents: 5
+    notes: >
+      실측 'Infrastructure Operations' 는 3종목(FER·VRRM·BEEP)뿐이다 — min_constituents 미달.
+      초안이 상상한 '인프라 건설' 종목 대부분은 실제로 'Engineering & Construction'(epc_engineering)
+      과 'Building Materials'(cement_aggregates) 에 들어 있다. 버킷을 억지로 키우지 않고
+      미달 상태로 보고한다.
+
+  - id: waste_services
+    name_ko: 폐기물·환경
+    parent_sector: Industrials
+    cycle_class: secular_growth
+    industry_match: ["Waste Management", "Pollution & Treatment Controls"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: EVX
+    etf_proxy_alt: [XLI]
+    physical_ref: null
+    correlation_cluster: services
+    min_constituents: 5
+    notes: >
+      'Pollution & Treatment Controls'(42종목)를 함께 받는다 — 별도 버킷을 세울 규모가 아니고
+      규제 드라이버가 같다. secular_growth 이므로 낙폭 상위에 뜨면 오히려 위험 신호다(docs/01 §4).
+
+  - id: conglomerates
+    name_ko: 복합기업
+    parent_sector: Industrials
+    cycle_class: inventory
+    industry_match: ["Conglomerates", "Diversified Industrials"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLI]
+    physical_ref: null
+    correlation_cluster: services
+    min_constituents: 5
+    notes: >
+      신설(초안에 대응 버킷 없음). 실측 43종목·203B — MMM·HON 계열. 미분류로 두면 커버리지
+      감사가 깨지고, 다른 산업재 버킷에 넣으면 중복 소속이 생긴다.
+      'Diversified Industrials'(11종목, 전원 폐지)는 벤더 구 라벨이라 함께 받는다.
+
+  - id: industrial_distribution
+    name_ko: 산업재 유통
+    parent_sector: Industrials
+    cycle_class: inventory
+    industry_match: ["Industrial Distribution"]
+    include_tickers: []
+    exclude_tickers: [ARG]
+    etf_proxy: null
+    etf_proxy_alt: [XLI]
+    physical_ref: null
+    correlation_cluster: services
+    min_constituents: 5
+    notes: >
+      신설. 실측 77종목·262B(GWW·FAST·WCC 등). 재고 사이클의 전형이라 cycle_class 는 inventory.
+      exclude ARG — Airgas 는 산업가스다.
+
+  - id: rental_leasing
+    name_ko: 렌탈·리스
+    parent_sector: Industrials
+    cycle_class: capex_program
+    industry_match: ["Rental & Leasing Services"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLI]
+    physical_ref: null
+    correlation_cluster: services
+    min_constituents: 5
+    notes: 신설. 실측 86종목·221B(URI·AL·RYDER 계열). 장비 렌탈은 발주처 capex 를 따라간다.
+
+  - id: staffing_consulting
+    name_ko: 인력·컨설팅
+    parent_sector: Industrials
+    cycle_class: discretionary_demand
+    industry_match: ["Staffing & Employment Services", "Consulting Services"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLI]
+    physical_ref: null
+    correlation_cluster: services
+    min_constituents: 5
+    notes: >
+      신설. 두 라벨(72+76종목, 합계 261B)을 묶었다 — 둘 다 기업 고용 사이클이 드라이버다.
+
+  - id: business_services
+    name_ko: 기업서비스
+    parent_sector: Industrials
+    cycle_class: secular_growth
+    industry_match: ["Specialty Business Services", "Security & Protection Services", "Business Equipment & Supplies"]
+    include_tickers: []
+    exclude_tickers: [GPN]
+    etf_proxy: null
+    etf_proxy_alt: [XLI]
+    physical_ref: null
+    correlation_cluster: services
+    min_constituents: 5
+    notes: >
+      신설. 세 라벨(128+47+43종목, 합계 398B)을 묶은 잔여성 버킷이다. 커버리지 확보가 목적이며
+      사이클 논지의 대상이 아니다 — secular_growth 로 두어 L1 낙폭 가중치를 낮게 받는다.
+      exclude GPN — Global Payments 는 결제다.
+
+  - id: metal_fabrication
+    name_ko: 금속가공·공구
+    parent_sector: Industrials
+    cycle_class: inventory
+    industry_match: ["Metal Fabrication", "Tools & Accessories"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLI, XME]
+    physical_ref: null
+    correlation_cluster: machinery
+    min_constituents: 5
+    notes: >
+      신설. 두 라벨(29+35종목, 합계 184B) — 철강 하공정과 공구(SWK·SNA). 전방이 같은
+      건설·산업 수요다.
+
+  # ─────────────────────────────────────────────────────────────
+  # Technology — 기술
+  # ─────────────────────────────────────────────────────────────
+
+  - id: semi_equipment
+    name_ko: 반도체 장비
+    parent_sector: Technology
+    cycle_class: inventory
+    industry_match: ["Semiconductor Equipment & Materials"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: SOXX
+    etf_proxy_alt: [SMH, XSD]
+    physical_ref: null
+    correlation_cluster: semiconductor
+    min_constituents: 5
+    notes: >
+      실측 123종목(생존 30). physical_ref null: SEMI 북미 장비 출하는 금액 기준이라
+      축 1 이 요구하는 물량 시계열이 아니다 → 축 1 적용 불가.
+
+  - id: semi_devices
+    name_ko: 반도체 (소자·로직·아날로그·메모리)
+    parent_sector: Technology
+    cycle_class: inventory
+    industry_match: ["Semiconductors"]
+    include_tickers: []
+    exclude_tickers: [ARM, CEVA, RMBS]
+    etf_proxy: SOXX
+    etf_proxy_alt: [SMH, XSD]
+    physical_ref: {source: manual, symbol: WSTS_SEMICONDUCTOR_UNIT_SHIPMENTS}
+    correlation_cluster: semiconductor
+    min_constituents: 5
+    notes: >
+      초안이 반도체를 memory·analog_power·foundry_logic 셋으로 나눈 것을 실측 결과 하나로 합쳤다.
+      폐기된 초안 id: semi_memory, semi_analog_power, semi_foundry_logic (신설 id: semi_devices).
+      이유 — Sharadar 는 'Semiconductors' 단일 라벨(285종목, 폐지 217종)을 쓴다. 1998년까지
+      거슬러 올라가는 285종을 손으로 메모리/아날로그/로직으로 가르는 것은 큐레이션 범위를
+      명백히 넘고, 폐지 217종을 빠뜨리는 순간 이 버킷은 생존 편향 덩어리가 된다.
+      대가는 크다: 메모리 사이클(재고)과 아날로그 사이클(자동차·산업)이 한 지수 안에서 상쇄된다.
+      docs/01 §6-2 의 매출 노출 비중이 도입되면 가장 먼저 재분할할 버킷이다.
+      physical_ref 는 WSTS 반도체 출하 개수 — 금액이 아니라 개수라 축 1 자격을 만족한다.
+
+  - id: semi_eda_ip
+    name_ko: EDA·반도체 IP
+    parent_sector: Technology
+    cycle_class: secular_growth
+    industry_match: []
+    include_tickers: [SNPS, CDNS, ARM, CEVA, RMBS, MENT]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [SOXX, IGV]
+    physical_ref: null
+    correlation_cluster: semiconductor
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — SNPS 는 'Software - Infrastructure', CDNS·MENT 는 'Software -
+      Application', ARM·CEVA·RMBS 는 'Semiconductors' 다. include 전용 구성.
+      MENT(Mentor Graphics, 2017 Siemens 피인수) 포함.
+
+  - id: networking_optical
+    name_ko: 네트워킹·광통신
+    parent_sector: Technology
+    cycle_class: capex_program
+    industry_match: ["Communication Equipment"]
+    include_tickers: []
+    exclude_tickers: [ASTS, VSAT]
+    etf_proxy: null
+    etf_proxy_alt: [IGN, XLK]
+    physical_ref: null
+    correlation_cluster: ai_power
+    min_constituents: 5
+    notes: >
+      실측 418종목(생존 52) — 2000-2002 광통신 버블 붕괴 표본을 통째로 담고 있어
+      자기이력 백분위가 가장 길게 잡히는 기술 버킷 중 하나다.
+
+  - id: datacenter_hw
+    name_ko: 데이터센터 하드웨어
+    parent_sector: Technology
+    cycle_class: capex_program
+    industry_match: ["Computer Hardware", "Computer Systems"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLK, SKYY]
+    physical_ref: null
+    correlation_cluster: ai_power
+    min_constituents: 5
+    notes: >
+      'Computer Systems'(4종목, 전원 폐지)는 벤더 구 라벨이라 함께 넣지 않으면 과거 구간이 빠진다.
+
+  - id: consumer_electronics
+    name_ko: 소비자 전자
+    parent_sector: Technology
+    cycle_class: discretionary_demand
+    industry_match: ["Consumer Electronics"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLK]
+    physical_ref: null
+    correlation_cluster: consumer_tech
+    min_constituents: 5
+    notes: >
+      신설(초안에 대응 버킷 없음). 실측 42종목이지만 시총 4.6조 달러로 단일 라벨 중 4위다 —
+      AAPL·SONY 가 지배한다. 미분류로 두면 커버리지 감사가 즉시 깨진다.
+      단일 종목 지배가 극심하므로 동일가중 병기가 필수인 버킷이다.
+
+  - id: ems_pcb
+    name_ko: EMS·전자부품·유통
+    parent_sector: Technology
+    cycle_class: inventory
+    industry_match: ["Electronic Components", "Electronics & Computer Distribution"]
+    include_tickers: []
+    exclude_tickers: [WBX]
+    etf_proxy: null
+    etf_proxy_alt: [XLK]
+    physical_ref: null
+    correlation_cluster: semiconductor
+    min_constituents: 5
+    notes: >
+      'Electronics & Computer Distribution'(52종목, ARW·AVT·SNX)을 함께 받는다 — 유통은 EMS 가
+      아니지만 재고 사이클 지표(재고/매출, 리드타임)를 공유하고 단독 버킷을 세울 규모가 아니다.
+      exclude WBX(EV 충전).
+
+  - id: instruments_test
+    name_ko: 계측·시험장비
+    parent_sector: Technology
+    cycle_class: capex_program
+    industry_match: ["Scientific & Technical Instruments"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLK, XLI]
+    physical_ref: null
+    correlation_cluster: machinery
+    min_constituents: 5
+    notes: 신설. 실측 115종목·317B(KEYS·FTV·TRMB 계열).
+
+  - id: it_services
+    name_ko: IT 서비스
+    parent_sector: Technology
+    cycle_class: secular_growth
+    industry_match: ["Information Technology Services"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [IGV, XLK]
+    physical_ref: null
+    correlation_cluster: software
+    min_constituents: 5
+    notes: >
+      신설. 실측 128종목·677B(ACN·IBM 계열, FIS·FISV 등 결제 처리도 포함).
+      secular_growth 로 두어 낙폭 가중치를 낮게 받는다.
+
+  - id: cybersecurity
+    name_ko: 사이버보안
+    parent_sector: Technology
+    cycle_class: secular_growth
+    industry_match: []
+    include_tickers: [CRWD, PANW, ZS, S, OKTA, FTNT, CYBR, RPD, TENB, QLYS, VRNS, SAIL, NET, OSPN, MNDT, PFPT, MIME, SPLK, IMPV, SCWX, ZIXI]
+    exclude_tickers: []
+    etf_proxy: HACK
+    etf_proxy_alt: [CIBR, BUG]
+    physical_ref: null
+    correlation_cluster: software
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — 거의 전원 'Software - Infrastructure' 안에 있다. include 전용 구성.
+      폐지 7종(MNDT/FireEye·PFPT·MIME·SPLK·IMPV·SCWX·ZIXI·CYBR)을 넣어 2020-2024 피인수 물결을
+      담았다. 그럼에도 2000년대 보안주(Symantec·McAfee 등)는 벤더 라벨이 달라 빠져 있고,
+      이 버킷의 자기이력은 사실상 2015년 이후만 유효하다 — 리포트에 표시할 것.
+
+  - id: software_infra
+    name_ko: 인프라 SaaS
+    parent_sector: Technology
+    cycle_class: secular_growth
+    industry_match: ["Software - Infrastructure"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: IGV
+    etf_proxy_alt: [WCLD, SKYY]
+    physical_ref: null
+    correlation_cluster: software
+    min_constituents: 5
+    notes: >
+      실측 294종목. cybersecurity·semi_eda_ip·fintech_payments 가 include 로 빼간 잔여집합.
+
+  - id: software_vertical
+    name_ko: 응용·수직 SaaS
+    parent_sector: Technology
+    cycle_class: secular_growth
+    industry_match: ["Software - Application"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: IGV
+    etf_proxy_alt: [WCLD]
+    physical_ref: null
+    correlation_cluster: software
+    min_constituents: 5
+    notes: >
+      실측 라벨명은 'Software - Application'(1,684종목, 폐지 1,451). 초안의 '수직 SaaS' 보다
+      훨씬 넓다 — 1998-2002 닷컴 소프트웨어 잔해가 전부 여기 있다.
+      secular_growth 이므로 낙폭 상위 진입은 위험 신호로 읽는다(docs/01 §4).
+
+  # ─────────────────────────────────────────────────────────────
+  # Healthcare — 헬스케어
+  # ─────────────────────────────────────────────────────────────
+
+  - id: biotech_clinical
+    name_ko: 임상단계 바이오텍
+    parent_sector: Healthcare
+    cycle_class: credit_rate
+    industry_match: ["Biotechnology"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: XBI
+    etf_proxy_alt: [IBB, ARKG]
+    physical_ref: null
+    correlation_cluster: healthcare
+    min_constituents: 5
+    notes: >
+      실측 1,493종목(생존 614). credit_rate 유지 — 무수익 임상단계 기업의 할인율 민감도가
+      사이클의 엔진이다(docs/01 §4).
+
+  - id: pharma_large
+    name_ko: 대형 제약
+    parent_sector: Healthcare
+    cycle_class: secular_growth
+    industry_match: ["Drug Manufacturers - General", "Drug Manufacturers - Major"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLV, PPH]
+    physical_ref: null
+    correlation_cluster: healthcare
+    min_constituents: 5
+    notes: >
+      'Drug Manufacturers - Major'(4종목, 전원 폐지)는 벤더 구 라벨이라 함께 받는다.
+
+  - id: pharma_generic
+    name_ko: 제네릭·스페셜티 제약
+    parent_sector: Healthcare
+    cycle_class: policy_program
+    industry_match: ["Drug Manufacturers - Specialty & Generic"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLV]
+    physical_ref: null
+    correlation_cluster: healthcare
+    min_constituents: 5
+    notes: >
+      신설. 실측 163종목·296B. 대형 제약과 사이클이 다르다 — 약가 규제와 특허 절벽이
+      수요를 만든다(policy_program).
+
+  - id: medtech_devices
+    name_ko: 의료기기
+    parent_sector: Healthcare
+    cycle_class: secular_growth
+    industry_match: ["Medical Devices", "Medical Instruments & Supplies"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: IHI
+    etf_proxy_alt: [XLV]
+    physical_ref: null
+    correlation_cluster: healthcare
+    min_constituents: 5
+    notes: 초안 한 버킷에 실제 라벨 두 개(560+93종목)가 대응한다.
+
+  - id: life_science_tools
+    name_ko: 생명과학 도구·CRO
+    parent_sector: Healthcare
+    cycle_class: inventory
+    industry_match: ["Diagnostics & Research"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLV, IHI]
+    physical_ref: null
+    correlation_cluster: healthcare
+    min_constituents: 5
+    notes: >
+      실측 라벨명은 'Diagnostics & Research'(227종목). TMO·DHR·A·ICLR 등.
+      inventory 유지 — 팬데믹 후 재고 조정이 이 버킷의 지배 사이클이었다.
+
+  - id: health_it
+    name_ko: 헬스케어 IT
+    parent_sector: Healthcare
+    cycle_class: secular_growth
+    industry_match: ["Health Information Services"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLV, IGV]
+    physical_ref: null
+    correlation_cluster: healthcare
+    min_constituents: 5
+    notes: 신설. 실측 148종목·175B(VEEV·DOCS·HIMS 계열).
+
+  - id: hospitals_providers
+    name_ko: 병원·의료서비스
+    parent_sector: Healthcare
+    cycle_class: policy_program
+    industry_match: ["Medical Care Facilities"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLV, IHF]
+    physical_ref: null
+    correlation_cluster: healthcare
+    min_constituents: 5
+    notes: 실측 라벨명은 'Medical Care Facilities'(241종목).
+
+  - id: medical_distribution
+    name_ko: 의약품 유통
+    parent_sector: Healthcare
+    cycle_class: secular_growth
+    industry_match: ["Medical Distribution"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLV]
+    physical_ref: null
+    correlation_cluster: healthcare
+    min_constituents: 5
+    notes: 신설. 실측 48종목·227B(MCK·COR/Cencora·CAH).
+
+  - id: managed_care
+    name_ko: 관리의료
+    parent_sector: Healthcare
+    cycle_class: policy_program
+    industry_match: ["Healthcare Plans"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: IHF
+    etf_proxy_alt: [XLV]
+    physical_ref: null
+    correlation_cluster: healthcare
+    min_constituents: 5
+    notes: 실측 라벨명은 'Healthcare Plans'(45종목).
+
+  # ─────────────────────────────────────────────────────────────
+  # Financials — 금융
+  # ─────────────────────────────────────────────────────────────
+
+  - id: banks_large
+    name_ko: 대형은행
+    parent_sector: Financial Services
+    cycle_class: credit_rate
+    industry_match: ["Banks - Diversified"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLF, KBE]
+    physical_ref: null
+    correlation_cluster: banks
+    min_constituents: 5
+    notes: 실측 라벨명은 'Banks - Diversified'(41종목·4.3조).
+
+  - id: banks_regional
+    name_ko: 지역은행
+    parent_sector: Financial Services
+    cycle_class: credit_rate
+    industry_match: ["Banks - Regional", "Savings & Cooperative Banks"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: KRE
+    etf_proxy_alt: [KBE, IAT]
+    physical_ref: null
+    correlation_cluster: banks
+    min_constituents: 5
+    notes: >
+      실측 1,436종목(생존 320) — 단일 라벨 중 종목 수 3위다. 'Savings & Cooperative Banks'
+      (9종목, 전원 폐지)는 벤더 구 라벨이라 함께 받는다.
+
+  - id: insurance_pc
+    name_ko: 손해보험
+    parent_sector: Financial Services
+    cycle_class: credit_rate
+    industry_match: ["Insurance - Property & Casualty", "Insurance - Specialty"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: KIE
+    etf_proxy_alt: [IAK]
+    physical_ref: null
+    correlation_cluster: insurance
+    min_constituents: 5
+    notes: >
+      'Insurance - Specialty'(51종목)를 함께 받는다 — 인수 사이클이 같다.
+
+  - id: insurance_life
+    name_ko: 생명보험
+    parent_sector: Financial Services
+    cycle_class: credit_rate
+    industry_match: ["Insurance - Life"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [KIE, IAK]
+    physical_ref: null
+    correlation_cluster: insurance
+    min_constituents: 5
+    notes: 실측 90종목.
+
+  - id: insurance_diversified
+    name_ko: 종합보험·지주
+    parent_sector: Financial Services
+    cycle_class: credit_rate
+    industry_match: ["Insurance - Diversified"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [KIE]
+    physical_ref: null
+    correlation_cluster: insurance
+    min_constituents: 5
+    notes: >
+      신설. 실측 19종목이지만 1.28조 — BRK 가 지배한다. 손보/생보 어디에 넣어도 그 버킷의
+      통계를 BRK 하나가 삼키므로 분리했다.
+
+  - id: reinsurance
+    name_ko: 재보험
+    parent_sector: Financial Services
+    cycle_class: credit_rate
+    industry_match: ["Insurance - Reinsurance"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [KIE]
+    physical_ref: null
+    correlation_cluster: insurance
+    min_constituents: 5
+    notes: 실측 15종목(생존 8). 초안대로 매칭됐다.
+
+  - id: insurance_brokers
+    name_ko: 보험중개
+    parent_sector: Financial Services
+    cycle_class: secular_growth
+    industry_match: ["Insurance Brokers"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [KIE]
+    physical_ref: null
+    correlation_cluster: insurance
+    min_constituents: 5
+    notes: >
+      신설. 실측 50종목·314B(MMC·AON·AJG). 인수 사이클이 아니라 수수료 사업이라
+      보험 버킷과 사이클 유형이 다르다.
+
+  - id: asset_managers_exchanges
+    name_ko: 자산운용·거래소
+    parent_sector: Financial Services
+    cycle_class: credit_rate
+    industry_match: ["Asset Management", "Capital Markets", "Financial Data & Stock Exchanges", "Financial Conglomerates"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLF, IAI]
+    physical_ref: null
+    correlation_cluster: capital_markets
+    min_constituents: 5
+    notes: >
+      초안 한 버킷에 실제 라벨 네 개(269+207+19+5종목)가 대응한다.
+      'Financial Conglomerates' 는 5종목뿐이라 단독 버킷이 성립하지 않아 여기로 넣었다.
+
+  - id: consumer_finance
+    name_ko: 소비자금융
+    parent_sector: Financial Services
+    cycle_class: credit_rate
+    industry_match: ["Credit Services"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLF]
+    physical_ref: null
+    correlation_cluster: consumer_credit
+    min_constituents: 5
+    notes: >
+      실측 라벨명은 'Credit Services'(113종목) 이며, 카드망(V·MA)·핀테크·소비자대출이
+      한 통에 들어 있다. fintech_payments 가 include 로 빼간 잔여집합이 이 버킷이며
+      COF·SYF·ALLY·OMF·SLM 등 대차대조표 대출업이 남는다 — 그래야 credit_rate 가 뜻을 갖는다.
+
+  - id: fintech_payments
+    name_ko: 핀테크·결제
+    parent_sector: Financial Services
+    cycle_class: discretionary_demand
+    industry_match: []
+    include_tickers: [V, MA, PYPL, AFRM, SOFI, UPST, GDOT, WU, SEZL, OPFI, XYZ, TOST, GPN, PMTS]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [IPAY, FINX]
+    physical_ref: null
+    correlation_cluster: consumer_credit
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — 'Credit Services'(V·MA·PYPL·AFRM 등), 'Software - Infrastructure'
+      (XYZ/Block·TOST), 'Specialty Business Services'(GPN) 에 흩어져 있다. include 전용 구성.
+      결제망은 대출 손실이 아니라 소비 거래량이 드라이버라 cycle_class 가 consumer_finance 와
+      다르다. 큐레이션 목록이 생존 대형주 위주라 생존 편향이 남아 있다 — M3 보강 대상.
+
+  - id: mortgage_finance
+    name_ko: 모기지 금융
+    parent_sector: Financial Services
+    cycle_class: credit_rate
+    industry_match: ["Mortgage Finance"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLF]
+    physical_ref: null
+    correlation_cluster: housing_credit
+    min_constituents: 5
+    notes: 신설. 실측 70종목·65B(RKT·UWMC·PFSI 및 2007-2009 폐지 다수).
+
+  # ─────────────────────────────────────────────────────────────
+  # Consumer Cyclical — 소비재
+  # ─────────────────────────────────────────────────────────────
+
+  - id: auto_oem
+    name_ko: 자동차 OEM
+    parent_sector: Consumer Cyclical
+    cycle_class: discretionary_demand
+    industry_match: ["Auto Manufacturers"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [CARZ, DRIV]
+    physical_ref: {source: fred, symbol: ALTSALES}
+    correlation_cluster: auto
+    min_constituents: 5
+    notes: >
+      실측 88종목. physical_ref 는 미국 경상용차 판매(연율, 백만 대) — 대수 기준이라
+      축 1 의 1순위 입력이다.
+
+  - id: auto_parts
+    name_ko: 자동차 부품
+    parent_sector: Consumer Cyclical
+    cycle_class: inventory
+    industry_match: ["Auto Parts"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [CARZ]
+    physical_ref: {source: fred, symbol: ALTSALES}
+    correlation_cluster: auto
+    min_constituents: 5
+    notes: 실측 174종목. OEM 생산 대수가 물량 드라이버라 physical_ref 를 공유한다.
+
+  - id: auto_dealers
+    name_ko: 자동차 딜러
+    parent_sector: Consumer Cyclical
+    cycle_class: discretionary_demand
+    industry_match: ["Auto & Truck Dealerships"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XRT]
+    physical_ref: {source: fred, symbol: ALTSALES}
+    correlation_cluster: auto
+    min_constituents: 5
+    notes: 신설. 실측 54종목·153B(AN·PAG·LAD·CVNA·KMX).
+
+  - id: homebuilders
+    name_ko: 주택건설
+    parent_sector: Consumer Cyclical
+    cycle_class: credit_rate
+    industry_match: ["Residential Construction"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: XHB
+    etf_proxy_alt: [ITB]
+    physical_ref: {source: fred, symbol: HOUST}
+    correlation_cluster: housing
+    min_constituents: 5
+    notes: >
+      실측 라벨명은 'Residential Construction'(74종목). physical_ref 는 주택 착공 호수 —
+      대수 기준 물량 시계열이다.
+
+  - id: home_improvement
+    name_ko: 주택개량
+    parent_sector: Consumer Cyclical
+    cycle_class: credit_rate
+    industry_match: ["Home Improvement Retail"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XHB, XRT]
+    physical_ref: {source: fred, symbol: EXHOSLUSM495S, verify: true}
+    correlation_cluster: housing
+    min_constituents: 5
+    notes: >
+      실측 25종목(생존 7)·468B — HD·LOW 가 지배한다. physical_ref 는 기존주택 거래 호수
+      (리모델링 수요의 선행 물량 지표).
+
+  - id: retail_specialty
+    name_ko: 전문·의류 소매
+    parent_sector: Consumer Cyclical
+    cycle_class: discretionary_demand
+    industry_match: ["Specialty Retail", "Apparel Retail"]
+    include_tickers: []
+    exclude_tickers: [CHPT, EVGO]
+    etf_proxy: XRT
+    etf_proxy_alt: [RTH]
+    physical_ref: null
+    correlation_cluster: retail
+    min_constituents: 5
+    notes: >
+      'Apparel Retail'(126종목)을 함께 받는다 — 드라이버가 같은 실질소득·고용이고
+      XRT 프록시가 둘을 함께 담는다. exclude CHPT·EVGO — 벤더가 EV 충전 사업자를
+      'Specialty Retail' 로 분류했다(명백한 오분류).
+
+  - id: retail_department
+    name_ko: 백화점
+    parent_sector: Consumer Cyclical
+    cycle_class: secular_risk
+    industry_match: ["Department Stores"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XRT]
+    physical_ref: {source: fred, symbol: MRTSSM4521USS, verify: true}
+    correlation_cluster: retail
+    min_constituents: 5
+    notes: >
+      실측 29종목 중 생존 4 — 소멸이 실측으로 확인되는 버킷이다. secular_risk 유지.
+      physical_ref 는 백화점 소매판매액(명목)이라 축 1 의 1순위(실물 소비량)가 아니라
+      폴백에 해당한다 → CPI 로 디플레이트해 써야 하며, 그 사실을 리포트에 표시한다.
+
+  - id: retail_discount
+    name_ko: 할인점·대형마트
+    parent_sector: Consumer Defensive
+    cycle_class: discretionary_demand
+    industry_match: ["Discount Stores"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XRT, RTH]
+    physical_ref: null
+    correlation_cluster: retail
+    min_constituents: 5
+    notes: >
+      신설. 실측 30종목·1.49조 — WMT·COST 가 지배한다. 미분류로 두면 커버리지가 깨진다.
+      parent_sector 는 실측을 따라 Consumer Defensive 다 — 초안 체계에는 소매가 전부
+      Consumer Cyclical 에 있었으나 Sharadar 는 할인점을 필수소비로 분류한다.
+
+  - id: ecommerce
+    name_ko: 이커머스
+    parent_sector: Consumer Cyclical
+    cycle_class: discretionary_demand
+    industry_match: ["Internet Retail"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [IBUY, ONLN]
+    physical_ref: null
+    correlation_cluster: internet
+    min_constituents: 5
+    notes: 실측 라벨명은 'Internet Retail'(114종목·3.59조, AMZN 지배).
+
+  - id: restaurants
+    name_ko: 레스토랑
+    parent_sector: Consumer Cyclical
+    cycle_class: discretionary_demand
+    industry_match: ["Restaurants"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [PBJ, XLY]
+    physical_ref: null
+    correlation_cluster: consumer_services
+    min_constituents: 5
+    notes: 실측 210종목.
+
+  - id: hotels_resorts
+    name_ko: 호텔·리조트
+    parent_sector: Consumer Cyclical
+    cycle_class: discretionary_demand
+    industry_match: ["Lodging"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLY]
+    physical_ref: {source: manual, symbol: STR_US_HOTEL_OCCUPANCY}
+    correlation_cluster: travel
+    min_constituents: 5
+    notes: >
+      실측 라벨명은 'Lodging'(23종목). physical_ref 는 객실 점유율 — 물량 시계열이나
+      STR 데이터는 유료라 manual 로 표시한다.
+
+  - id: cruise_lines
+    name_ko: 크루즈
+    parent_sector: Consumer Cyclical
+    cycle_class: discretionary_demand
+    industry_match: []
+    include_tickers: [CCL, RCL, NCLH, VIK, LIND, PRSU]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [CRUZ, XLY]
+    physical_ref: null
+    correlation_cluster: travel
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — 전원 'Travel Services'(Industrials 섹터) 안에 있다. include 전용 구성.
+      선복량(berth capacity)이 이 산업의 물량 단위지만 공개 시계열이 없다 → physical_ref null.
+
+  - id: travel_booking
+    name_ko: 여행 예약·플랫폼
+    parent_sector: Industrials
+    cycle_class: discretionary_demand
+    industry_match: ["Travel Services"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [AWAY, JETS]
+    physical_ref: null
+    correlation_cluster: travel
+    min_constituents: 5
+    notes: >
+      신설. 'Travel Services' 라벨(45종목·527B)에서 크루즈가 include 로 빠진 잔여집합이며
+      BKNG·EXPE·ABNB·TRIP·SABR·TCOM 이 남는다. 실측 sector 는 Industrials 다.
+
+  - id: casinos_gaming
+    name_ko: 카지노·갬블링
+    parent_sector: Consumer Cyclical
+    cycle_class: discretionary_demand
+    industry_match: ["Resorts & Casinos", "Gambling"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: BJK
+    etf_proxy_alt: [BETZ]
+    physical_ref: null
+    correlation_cluster: consumer_services
+    min_constituents: 5
+    notes: 초안 한 버킷에 실제 라벨 두 개(82+74종목)가 대응한다.
+
+  - id: apparel_footwear
+    name_ko: 의류·신발·명품
+    parent_sector: Consumer Cyclical
+    cycle_class: discretionary_demand
+    industry_match: ["Apparel Manufacturing", "Footwear & Accessories", "Luxury Goods", "Textile Manufacturing"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XRT, XLY]
+    physical_ref: null
+    correlation_cluster: consumer_goods
+    min_constituents: 5
+    notes: >
+      초안 한 버킷에 실제 라벨 네 개(65+44+39+35종목)가 대응한다. 넷 다 단독 버킷을 세울
+      규모가 아니고 소비 사이클을 공유한다.
+
+  - id: leisure_products
+    name_ko: 레저용품·RV
+    parent_sector: Consumer Cyclical
+    cycle_class: discretionary_demand
+    industry_match: ["Leisure", "Recreational Vehicles"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLY]
+    physical_ref: null
+    correlation_cluster: consumer_goods
+    min_constituents: 5
+    notes: 신설. 두 라벨(103+39종목, 합계 107B) — BC·HAS·MAT·THO·WGO 계열.
+
+  - id: home_furnishings
+    name_ko: 가구·가전
+    parent_sector: Consumer Cyclical
+    cycle_class: credit_rate
+    industry_match: ["Furnishings Fixtures & Appliances", "Furnishings"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XHB]
+    physical_ref: null
+    correlation_cluster: housing
+    min_constituents: 5
+    notes: >
+      신설. 'Furnishings'(41종목, 전원 폐지)는 벤더 구 라벨이라 함께 받는다.
+      주택 거래에 후행하므로 cycle_class 는 credit_rate.
+
+  - id: packaging
+    name_ko: 포장·용기
+    parent_sector: Consumer Cyclical
+    cycle_class: inventory
+    industry_match: ["Packaging & Containers"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLB]
+    physical_ref: null
+    correlation_cluster: packaging
+    min_constituents: 5
+    notes: 신설. 실측 100종목·166B(IP·PKG·BALL·CCK).
+
+  - id: consumer_services
+    name_ko: 소비자 서비스
+    parent_sector: Consumer Cyclical
+    cycle_class: discretionary_demand
+    industry_match: ["Personal Services"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLY]
+    physical_ref: null
+    correlation_cluster: consumer_services
+    min_constituents: 5
+    notes: 신설. 실측 70종목·51B(SCI·HRB·WW 계열).
+
+  # ─────────────────────────────────────────────────────────────
+  # Consumer Defensive — 필수소비
+  # ─────────────────────────────────────────────────────────────
+
+  - id: food_beverage
+    name_ko: 식음료
+    parent_sector: Consumer Defensive
+    cycle_class: secular_growth
+    industry_match: ["Packaged Foods", "Confectioners", "Beverages - Non-Alcoholic"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: PBJ
+    etf_proxy_alt: [XLP]
+    physical_ref: null
+    correlation_cluster: staples
+    min_constituents: 5
+    notes: 초안 한 버킷에 실제 라벨 세 개(226+10+35종목)가 대응한다.
+
+  - id: alcohol
+    name_ko: 주류
+    parent_sector: Consumer Defensive
+    cycle_class: secular_risk
+    industry_match: ["Beverages - Brewers", "Beverages - Wineries & Distilleries"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLP]
+    physical_ref: {source: manual, symbol: TTB_US_ALCOHOL_VOLUME}
+    correlation_cluster: staples
+    min_constituents: 5
+    notes: >
+      초안은 cycle_class 를 지정하지 않았다. secular_risk 로 선언한다 — 미국 1인당 알코올
+      소비량이 GLP-1 확산과 세대 교체로 감소 중이라는 것이 이 버킷의 기본 가정이며,
+      docs/04 하드 게이트를 통과해야 후보가 된다. 입증 책임의 전환이지 사양 낙인이 아니다.
+      physical_ref 는 TTB 주류 과세 물량(갤런) — 실물 소비량 시계열이다.
+
+  - id: tobacco
+    name_ko: 담배
+    parent_sector: Consumer Defensive
+    cycle_class: secular_risk
+    industry_match: ["Tobacco"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLP]
+    physical_ref: {source: manual, symbol: US_CIGARETTE_SHIPMENT_VOLUME}
+    correlation_cluster: staples
+    min_constituents: 5
+    notes: >
+      실측 28종목(생존 10). 축 1 의 교과서 사례다 — 출하 개비 수는 수십 년째 연 −4~−6%,
+      가격 인상으로 매출은 유지된다. 매출로 보면 사이클, 물량으로 보면 사망이다.
+
+  - id: household_products
+    name_ko: 가정용품
+    parent_sector: Consumer Defensive
+    cycle_class: secular_growth
+    industry_match: ["Household & Personal Products"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLP]
+    physical_ref: null
+    correlation_cluster: staples
+    min_constituents: 5
+    notes: 실측 라벨명은 'Household & Personal Products'(77종목).
+
+  - id: agribusiness
+    name_ko: 애그리비즈니스
+    parent_sector: Consumer Defensive
+    cycle_class: commodity_supply
+    industry_match: ["Farm Products"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: MOO
+    etf_proxy_alt: [VEGI, DBA]
+    physical_ref: {source: etf, symbol: DBA}
+    correlation_cluster: agriculture
+    min_constituents: 5
+    notes: 실측 라벨명은 'Farm Products'(64종목). ADM·BG·TSN·CALM 계열.
+
+  - id: food_retail_distribution
+    name_ko: 식품 유통·소매
+    parent_sector: Consumer Defensive
+    cycle_class: secular_growth
+    industry_match: ["Food Distribution", "Grocery Stores", "Pharmaceutical Retailers"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLP]
+    physical_ref: null
+    correlation_cluster: staples
+    min_constituents: 5
+    notes: >
+      신설. 세 라벨(35+57+38종목, 합계 148B). 'Pharmaceutical Retailers' 는 생존 8종·0.3B 로
+      사실상 소멸(WBA·RAD 폐지)했고, 단독으로는 통계가 성립하지 않아 함께 묶었다.
+
+  - id: education
+    name_ko: 교육
+    parent_sector: Consumer Defensive
+    cycle_class: policy_program
+    industry_match: ["Education & Training Services"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [EDUT]
+    physical_ref: null
+    correlation_cluster: consumer_services
+    min_constituents: 5
+    notes: >
+      신설. 실측 117종목·53B. policy_program 인 이유는 docs/04 §1 의 '중국 사교육 2021
+      −95% 단일 규제로 소멸' 사례가 정확히 이 버킷 소속이기 때문이다 — 규제가 수요를 만들고
+      규제가 수요를 없앤다.
+
+  # ─────────────────────────────────────────────────────────────
+  # Communication & Media
+  # ─────────────────────────────────────────────────────────────
+
+  - id: telecom_carriers
+    name_ko: 통신사
+    parent_sector: Communication Services
+    cycle_class: credit_rate
+    industry_match: ["Telecom Services"]
+    include_tickers: []
+    exclude_tickers: [IRDM, GSAT]
+    etf_proxy: null
+    etf_proxy_alt: [XLC, VOX]
+    physical_ref: null
+    correlation_cluster: telecom
+    min_constituents: 5
+    notes: >
+      실측 522종목(생존 60). cable_broadband 가 include 로 케이블 사업자를 빼간 잔여집합.
+      exclude IRDM·GSAT — 위성 사업자라 space_satellite 로 옮겼다.
+
+  - id: cable_broadband
+    name_ko: 케이블·유료방송
+    parent_sector: Communication Services
+    cycle_class: secular_risk
+    industry_match: []
+    include_tickers: [CMCSA, CHTR, CABO, LBRDA, LBRDK, LBTYA, LBTYB, LBTYK, LILA, LILAK, GLIBA, GLIBK, ECHO, WOW, TWC, CVC, DISH]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLC]
+    physical_ref: {source: manual, symbol: US_PAY_TV_SUBSCRIBERS}
+    correlation_cluster: telecom
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — 전원 'Telecom Services' 안에 있다. include 전용 구성이며 폐지 4종
+      (TWC·CVC·DISH·WOW) 포함. secular_risk 이므로 docs/04 하드 게이트가 자동 적용된다.
+      physical_ref 는 유료방송 가입자 수 — 코드커팅을 직접 재는 물량 시계열이며,
+      이 버킷에서 축 1 이 실제로 작동하는 이유다.
+
+  - id: media_streaming
+    name_ko: 미디어·스트리밍
+    parent_sector: Communication Services
+    cycle_class: secular_growth
+    industry_match: ["Entertainment"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLC, PBS]
+    physical_ref: null
+    correlation_cluster: media
+    min_constituents: 5
+    notes: 실측 라벨명은 'Entertainment'(214종목). NFLX·DIS·WBD·PARA 계열.
+
+  - id: legacy_media
+    name_ko: 방송·출판
+    parent_sector: Communication Services
+    cycle_class: secular_risk
+    industry_match: ["Broadcasting", "Publishing"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLC]
+    physical_ref: null
+    correlation_cluster: media
+    min_constituents: 5
+    notes: >
+      신설. 두 라벨(51+49종목, 합계 30B). 초안은 secular_risk 자리를 cable_broadband 하나로
+      대표시켰으나, 실측상 지상파 방송(NXST·SBGI·GTN)과 출판(NYT·SCHL)이 별도 라벨로 존재하고
+      둘 다 사양 가정이 기본이다. physical_ref null: 시청 시간·발행 부수 모두 공개 정형
+      시계열이 없다 → 축 1 적용 불가, 판별의 중심이 축 3 으로 넘어간다.
+
+  - id: advertising
+    name_ko: 광고
+    parent_sector: Communication Services
+    cycle_class: discretionary_demand
+    industry_match: ["Advertising Agencies"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLC]
+    physical_ref: null
+    correlation_cluster: media
+    min_constituents: 5
+    notes: 실측 라벨명은 'Advertising Agencies'(125종목).
+
+  - id: gaming_interactive
+    name_ko: 게임
+    parent_sector: Communication Services
+    cycle_class: discretionary_demand
+    industry_match: ["Electronic Gaming & Multimedia"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [ESPO, HERO]
+    physical_ref: null
+    correlation_cluster: media
+    min_constituents: 5
+    notes: 실측 라벨명은 'Electronic Gaming & Multimedia'(39종목).
+
+  - id: internet_platform
+    name_ko: 소비자 인터넷
+    parent_sector: Communication Services
+    cycle_class: discretionary_demand
+    industry_match: ["Internet Content & Information"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLC, FDN]
+    physical_ref: null
+    correlation_cluster: internet
+    min_constituents: 5
+    notes: >
+      실측 라벨명은 'Internet Content & Information'(200종목·6.21조) — 단일 라벨 중 시총 2위.
+      GOOGL·META 가 지배한다.
+
+  # ─────────────────────────────────────────────────────────────
+  # Real Estate — REIT
+  # ─────────────────────────────────────────────────────────────
+
+  - id: reit_office
+    name_ko: 오피스 REIT
+    parent_sector: Real Estate
+    cycle_class: secular_risk
+    industry_match: ["REIT - Office"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLRE, VNQ]
+    physical_ref: {source: manual, symbol: US_OFFICE_NET_ABSORPTION_SF}
+    correlation_cluster: reit
+    min_constituents: 5
+    notes: >
+      실측 35종목. secular_risk + credit_rate 를 초안이 병기했으나 cycle_class 는 단일값이라
+      secular_risk 를 택했다 — 하드 게이트를 먼저 통과시켜야 하기 때문이다.
+      physical_ref 는 순흡수 면적(sf) — 재택근무의 구조적 수요 감소를 직접 재는 물량이다.
+
+  - id: reit_retail
+    name_ko: 리테일 REIT
+    parent_sector: Real Estate
+    cycle_class: secular_risk
+    industry_match: ["REIT - Retail"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLRE, VNQ]
+    physical_ref: null
+    correlation_cluster: reit
+    min_constituents: 5
+    notes: >
+      실측 45종목. 초안은 cycle_class 를 지정하지 않았다. secular_risk 로 선언한다 —
+      docs/04 §1 의 '몰·백화점 REIT 2016-2020 −80%, 회복 없음' 사례가 이 버킷이다.
+      다만 스트립몰과 몰은 운명이 갈렸으므로 하드 게이트 통과 여지를 남긴다.
+
+  - id: reit_industrial
+    name_ko: 산업·물류 REIT
+    parent_sector: Real Estate
+    cycle_class: inventory
+    industry_match: ["REIT - Industrial"]
+    include_tickers: []
+    exclude_tickers: [QTS]
+    etf_proxy: null
+    etf_proxy_alt: [INDS, XLRE]
+    physical_ref: null
+    correlation_cluster: reit
+    min_constituents: 5
+    notes: 실측 25종목. exclude QTS — 데이터센터 REIT 다(2021 Blackstone 피인수).
+
+  - id: reit_residential
+    name_ko: 주거 REIT
+    parent_sector: Real Estate
+    cycle_class: credit_rate
+    industry_match: ["REIT - Residential"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [REZ, XLRE]
+    physical_ref: null
+    correlation_cluster: reit
+    min_constituents: 5
+    notes: 실측 29종목.
+
+  - id: reit_datacenter
+    name_ko: 데이터센터 REIT
+    parent_sector: Real Estate
+    cycle_class: capex_program
+    industry_match: []
+    include_tickers: [DLR, EQIX, CONE, QTS, DFT, SWCH]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [SRVR, XLRE]
+    physical_ref: null
+    correlation_cluster: ai_power
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — 'REIT - Specialty'(DLR·EQIX·CONE), 'REIT - Industrial'(QTS),
+      'Real Estate Services'(DFT), 'Information Technology Services'(SWCH) 에 흩어져 있다.
+      include 전용 구성이며 폐지 4종(CONE·QTS·DFT·SWCH, 전부 2017-2022 사모 피인수) 포함 —
+      이 산업의 상장 표본은 인수로 줄었지 사양이 아니다. 빼면 정반대 결론이 나온다.
+
+  - id: reit_towers
+    name_ko: 통신타워 REIT
+    parent_sector: Real Estate
+    cycle_class: credit_rate
+    industry_match: []
+    include_tickers: [AMT, CCI, SBAC, UNIT]
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLRE, VNQ]
+    physical_ref: null
+    correlation_cluster: reit
+    min_constituents: 5
+    notes: >
+      전용 라벨이 없다 — 전원 'REIT - Specialty' 안에 있다. include 전용 구성.
+      미국 상장 타워 REIT 는 4종뿐이라 min_constituents 미달이 구조적이다.
+
+  - id: reit_healthcare
+    name_ko: 헬스케어 REIT
+    parent_sector: Real Estate
+    cycle_class: credit_rate
+    industry_match: ["REIT - Healthcare Facilities"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLRE, VNQ]
+    physical_ref: null
+    correlation_cluster: reit
+    min_constituents: 5
+    notes: 실측 라벨명은 'REIT - Healthcare Facilities'(22종목).
+
+  - id: reit_hotel
+    name_ko: 호텔 REIT
+    parent_sector: Real Estate
+    cycle_class: discretionary_demand
+    industry_match: ["REIT - Hotel & Motel"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLRE, VNQ]
+    physical_ref: {source: manual, symbol: STR_US_HOTEL_OCCUPANCY}
+    correlation_cluster: reit
+    min_constituents: 5
+    notes: 신설. 실측 21종목·43B.
+
+  - id: reit_diversified
+    name_ko: 종합 REIT
+    parent_sector: Real Estate
+    cycle_class: credit_rate
+    industry_match: ["REIT - Diversified"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [VNQ]
+    physical_ref: null
+    correlation_cluster: reit
+    min_constituents: 5
+    notes: 신설. 실측 36종목·65B.
+
+  - id: reit_mortgage
+    name_ko: 모기지 REIT
+    parent_sector: Real Estate
+    cycle_class: credit_rate
+    industry_match: ["REIT - Mortgage"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: REM
+    etf_proxy_alt: [MORT]
+    physical_ref: null
+    correlation_cluster: housing_credit
+    min_constituents: 5
+    notes: >
+      신설. 실측 247종목·67B. 부동산이 아니라 레버리지 채권 포트폴리오라 다른 REIT 와
+      사이클이 전혀 다르다 — 별도 버킷이 필수다.
+
+  - id: reit_specialty
+    name_ko: 특수 REIT (팀버·카지노·옥외광고)
+    parent_sector: Real Estate
+    cycle_class: credit_rate
+    industry_match: ["REIT - Specialty"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [VNQ]
+    physical_ref: null
+    correlation_cluster: reit
+    min_constituents: 5
+    notes: >
+      신설. 'REIT - Specialty'(23종목·425B)에서 reit_datacenter·reit_towers 가 include 로
+      빠져나간 잔여집합이다 — WY·RYN·PCH(팀버), GLPI·EPR(카지노·엔터), LAMR·OUT(옥외광고),
+      IRM(문서보관), FPI·LAND(농지)가 남는다. 서로 다른 것들의 집합이라는 점을 명시해 둔다.
+
+  - id: real_estate_services
+    name_ko: 부동산 서비스·개발
+    parent_sector: Real Estate
+    cycle_class: credit_rate
+    industry_match: ["Real Estate Services", "Real Estate - Development", "Real Estate - Diversified"]
+    include_tickers: []
+    exclude_tickers: [DFT]
+    etf_proxy: null
+    etf_proxy_alt: [XLRE]
+    physical_ref: {source: fred, symbol: EXHOSLUSM495S, verify: true}
+    correlation_cluster: housing
+    min_constituents: 5
+    notes: >
+      신설. 세 라벨(129+23+26종목, 합계 151B) — CBRE·JLL·CoStar·Zillow·Compass 계열.
+      REIT 가 아니라 중개·개발 사업이라 거래 건수가 물량 드라이버다.
+
+  # ─────────────────────────────────────────────────────────────
+  # Utilities — 유틸리티
+  # ─────────────────────────────────────────────────────────────
+
+  - id: utility_regulated
+    name_ko: 규제전력
+    parent_sector: Utilities
+    cycle_class: credit_rate
+    industry_match: ["Utilities - Regulated Electric", "Utilities - Diversified"]
+    include_tickers: []
+    exclude_tickers: [OKLO]
+    etf_proxy: XLU
+    etf_proxy_alt: [VPU, IDU]
+    physical_ref: {source: fred, symbol: IPG2211S, verify: true}
+    correlation_cluster: utilities
+    min_constituents: 5
+    notes: >
+      'Utilities - Diversified'(27종목)를 함께 받는다 — 규제 자산 기반 사업이라 요금기저
+      성장이라는 같은 엔진을 쓴다. exclude OKLO(SMR 개발사, 벤더 오분류).
+      physical_ref 는 전력 생산 산업생산 지수 — 물량 기반이다.
+
+  - id: utility_ipp
+    name_ko: IPP·발전 (재생 포함)
+    parent_sector: Utilities
+    cycle_class: capex_program
+    industry_match: ["Utilities - Independent Power Producers", "Utilities - Renewable"]
+    include_tickers: []
+    exclude_tickers: [HTOO, VGAS, ADNH, FLNC, STEM, NRGV, GEV]
+    etf_proxy: null
+    etf_proxy_alt: [XLU, ICLN]
+    physical_ref: {source: fred, symbol: IPG2211S, verify: true}
+    correlation_cluster: ai_power
+    min_constituents: 5
+    notes: >
+      초안의 utility_ipp 에 'Utilities - Renewable'(45종목·443B)을 합쳤다 — 둘 다 규제
+      요금기저가 아니라 도매 전력가격·PPA 로 수익이 결정되는 비규제 발전이며, 재생 IPP 만
+      따로 두면 초안에 없던 버킷을 하나 더 만드는 셈이 된다.
+      대가: VST·TLN·NRG(가스·원자력 IPP)와 BEP·CWEN(재생 IPP)의 사이클 드라이버가 섞인다.
+      exclude 7종은 수소·ESS·풍력 장비로 각 전환 버킷이 가져갔다.
+      capex_program 유지 — AI 데이터센터 전력 수요가 이 버킷의 상류 드라이버다.
+
+  - id: gas_utility
+    name_ko: 가스유틸
+    parent_sector: Utilities
+    cycle_class: credit_rate
+    industry_match: ["Utilities - Regulated Gas"]
+    include_tickers: []
+    exclude_tickers: [NFE]
+    etf_proxy: null
+    etf_proxy_alt: [XLU, VPU]
+    physical_ref: null
+    correlation_cluster: utilities
+    min_constituents: 5
+    notes: 실측 64종목. exclude NFE — New Fortress 는 LNG 사슬이다.
+
+  - id: water_utility
+    name_ko: 수도
+    parent_sector: Utilities
+    cycle_class: credit_rate
+    industry_match: ["Utilities - Regulated Water"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: PHO
+    etf_proxy_alt: [FIW, CGW]
+    physical_ref: null
+    correlation_cluster: utilities
+    min_constituents: 5
+    notes: 실측 라벨명은 'Utilities - Regulated Water'(30종목).
