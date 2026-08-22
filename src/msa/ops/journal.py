@@ -20,13 +20,15 @@ import subprocess
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 import yaml
 
-from msa.config import REPO_ROOT
+from msa.config import JOURNAL_DIRNAME, REPO_ROOT
+from msa.dates import parse_date
 from msa.errors import Immutable, RefusedInput
-from msa.io import to_plain
+from msa.io import to_plain, yaml_text
+from msa.ops.state_files import ROLES, TP_LEVELS
 from msa.ops.thesis import (
     AXES,
     AXIS_VERDICTS,
@@ -38,10 +40,23 @@ from msa.ops.thesis import (
     validate_thesis,
 )
 
-JOURNAL_DIRNAME = "journal"
 BLOCKS = ("A", "B", "C", "D", "E", "F")
 ENTRY_TYPES = ("entry", "check", "add", "tp", "exit", "reject")
+# 열거형은 `Literal` 에 한 번 적고 런타임 검사는 `get_args` 로 같은 값을 본다 (역할·TP 단계는
+# `state_files` 의 것을 쓴다). TODO(rf-d): `msa.thesis` 가 생기면 그쪽 enum 으로 바꾼다.
 ExitVia = Literal["tier1", "tier2", "time_stop", "tp_complete", "human"]
+CheckCadence = Literal["weekly", "monthly", "daily"]
+LadderStepNo = Literal[2, 3]
+EXIT_VIAS: tuple[str, ...] = get_args(ExitVia)
+CHECK_CADENCES: tuple[str, ...] = get_args(CheckCadence)
+LADDER_STEPS: tuple[int, ...] = get_args(LadderStepNo)
+
+#: libyaml 이 있으면 C 로더 — 평문 로더와 결과가 같다 (템플릿·스냅샷·front matter 로 대조했다).
+_Loader = getattr(yaml, "CSafeLoader", yaml.SafeLoader)
+
+
+def _yaml_load(text: str) -> Any:
+    return yaml.load(text, Loader=_Loader)  # SafeLoader 계열만 고른다
 
 
 class IncompleteEntry(RefusedInput, ValueError):
@@ -65,6 +80,72 @@ def _blank(s: str | None) -> bool:
     return s is None or not str(s).strip()
 
 
+def _reject(label: str, missing: list[str]) -> None:
+    """누락이 하나라도 있으면 전부 나열해 거부한다 — 한 번에 고치게."""
+    if missing:
+        raise IncompleteEntry(f"{label} 항목 작성 거부 — 누락:\n  - " + "\n  - ".join(missing))
+
+
+def _axis_problems(verdicts: dict[str, str]) -> list[str]:
+    """5축 전부 있고 각 판정이 enum 안인가 (진입·기각 공통)."""
+    if sorted(verdicts) != sorted(AXES) or any(v not in AXIS_VERDICTS for v in verdicts.values()):
+        return [f"axis_verdicts 5축 {AXES} 각각 ∈ {AXIS_VERDICTS}"]
+    return []
+
+
+def _thesis_problems(thesis: dict[str, Any] | None) -> list[str]:
+    """thesis 가 있으면 운영 최소 검증 — 위반 문구를 누락 목록에 그대로 싣는다."""
+    if thesis is None:
+        return []
+    try:
+        validate_thesis(thesis)
+    except ThesisInvalid as e:
+        return [str(e)]
+    return []
+
+
+def _theme_tag(theme: str) -> str:
+    """파일명용 테마 토큰 — 소문자·영숫자·`_`·`-` 외는 `_`."""
+    return re.sub(r"[^a-z0-9_\-]", "_", theme.lower())
+
+
+class _Record:
+    """여섯 항목의 공통 면 — 파일명 태그 · front matter · 렌더/검증 인터페이스.
+
+    각 dataclass 가 `type` 을 `init=False` 필드로 고정한다. 렌더는 항목마다 다르므로 여기서는 모양만
+    정한다: `render(thesis_file=, diff_text=)` 는 쓰지 않는 인자를 무시한다.
+    """
+
+    type: str
+    date: date
+    theme: str
+    links: list[str]
+
+    @property
+    def tag(self) -> str:
+        """파일명의 종류 토큰 — 기본은 `type` (사다리는 `add2`, TP 는 `tp1` 처럼 덮어쓴다)."""
+        return self.type
+
+    def validate(self) -> None:
+        raise NotImplementedError
+
+    def render(self, *, thesis_file: str | None = None, diff_text: str | None = None) -> str:
+        raise NotImplementedError
+
+    def _front_matter(self, extra: dict[str, Any]) -> str:
+        d = to_plain(self)
+        d.pop("thesis", None)  # 스냅샷은 .thesis.yaml 로 — 본문에는 전문을 싣는다
+        d.update(extra)
+        return "---\n" + yaml_text(d) + "---\n"
+
+    def _links(self) -> list[str]:
+        return ["", "## 관련 항목", *[f"- {x}" for x in self.links]] if self.links else []
+
+
+def _notes(notes: str) -> list[str]:
+    return ["", "## 비고", "", notes.strip()] if notes.strip() else []
+
+
 @dataclass
 class StockPlan:
     """매매계획서 한 줄 (docs/07 §6) — 진입 항목이 종목별로 담는 것."""
@@ -84,7 +165,7 @@ class StockPlan:
         p: list[str] = []
         if _blank(self.ticker):
             p.append("stocks[*].ticker")
-        if self.role not in ("anchor", "torque"):
+        if self.role not in ROLES:
             p.append(f"stocks[{self.ticker}].role ∈ {{anchor, torque}}")
         if len(self.ladder_prices) != 3 or len(self.ladder_weights) != 3:
             p.append(f"stocks[{self.ticker}].ladder_prices/ladder_weights 는 3단이어야 한다")
@@ -98,7 +179,7 @@ class StockPlan:
 
 
 @dataclass
-class EntryRecord:
+class EntryRecord(_Record):
     """진입 항목 — docs/09 §2 "진입 항목이 담는 것" 을 하나라도 빼면 거부."""
 
     date: date
@@ -118,19 +199,12 @@ class EntryRecord:
     type: str = field(default="entry", init=False)
 
     def validate(self) -> None:
-        missing: list[str] = []
-        try:
-            validate_thesis(self.thesis)
-        except ThesisInvalid as e:
-            missing.append(str(e))
+        missing = _thesis_problems(self.thesis)
         if self.confidence_provenance not in CONFIDENCE_PROVENANCE:
             missing.append(f"confidence_provenance ∈ {CONFIDENCE_PROVENANCE} (누가 c 를 산출했나)")
         if sorted(self.l1_blocks) != list(BLOCKS):
             missing.append(f"l1_blocks 는 {BLOCKS} 6개 값 (있는 것: {sorted(self.l1_blocks)})")
-        if sorted(self.axis_verdicts) != sorted(AXES) or any(
-            v not in AXIS_VERDICTS for v in self.axis_verdicts.values()
-        ):
-            missing.append(f"axis_verdicts 5축 {AXES} 각각 ∈ {AXIS_VERDICTS}")
+        missing += _axis_problems(self.axis_verdicts)
         if not self.stocks:
             missing.append("stocks (종목·비중·사다리·스탑·TP) 최소 1개")
         for s in self.stocks:
@@ -141,8 +215,67 @@ class EntryRecord:
             missing.append("bear_case 원문")
         if _blank(self.scan):
             missing.append("scan — 이 결정이 본 스코어보드 스냅샷 경로")
-        if missing:
-            raise IncompleteEntry("진입 항목 작성 거부 — 누락:\n  - " + "\n  - ".join(missing))
+        _reject("진입", missing)
+
+    def render(self, *, thesis_file: str | None = None, diff_text: str | None = None) -> str:
+        t = self.thesis
+        bear = self.bear_case or t.get("bear_case", "")
+        snap = thesis_file or ""
+        fm = self._front_matter(
+            {
+                "cycle_confidence": t.get("cycle_confidence"),
+                "horizon_months": t.get("horizon_months"),
+                "thesis_snapshot": snap,
+            }
+        )
+        body = [
+            f"# {self.theme} · 진입 · {self.date}",
+            "",
+            f"- thesis 스냅샷: `{snap}`",
+            f"- 스코어보드 스냅샷: `{self.scan}`",
+            f"- cycle_confidence: **{t.get('cycle_confidence')}** "
+            f"(산출: {self.confidence_provenance})",
+            f"- horizon_months: {t.get('horizon_months')}",
+            "",
+            "## 논지 (thesis 전문)",
+            "",
+            "```yaml",
+            yaml_text(t).rstrip(),
+            "```",
+            "",
+            "## bear_case 원문",
+            "",
+            bear.strip(),
+            "",
+            "## L1 블록 6개 · L2 tailwind · 가치함정 5축",
+            "",
+            "| " + " | ".join(BLOCKS) + " | tailwind |",
+            "|" + "---|" * 7,
+            "| "
+            + " | ".join(f"{self.l1_blocks[b]:.2f}" for b in BLOCKS)
+            + f" | {self.l2_tailwind:+.2f} |",
+            "",
+            "| " + " | ".join(AXES) + " |",
+            "|" + "---|" * 5,
+            "| " + " | ".join(self.axis_verdicts[a] for a in AXES) + " |",
+            "",
+            "## 매매계획 (종목 · 비중 · 사다리 · 스탑 · TP)",
+            "",
+            *_stock_table(self.stocks),
+            "",
+            "## 기계 권고와 다르게 결정했다면 그 이유",
+            "",
+            (
+                self.deviation_reason.strip()
+                if self.deviated_from_machine
+                else "이탈 없음 — 기계 권고대로"
+            ),
+            *_notes(self.notes),
+            *self._links(),
+            "",
+            "> 측정값과 명시된 가정이다. 투자 조언이 아니며 집행은 사람이 한다.",
+        ]
+        return fm + "\n".join(body) + "\n"
 
 
 @dataclass
@@ -151,9 +284,19 @@ class StatusChange:
     before: str
     after: str
 
+    def row(self) -> str:
+        mark = " ◀ 변화" if self.before != self.after else ""
+        return f"| {self.observable} | {self.before} | {self.after}{mark} |"
+
+
+def _status_table(title: str, rows: list[StatusChange]) -> list[str]:
+    return ["", f"## {title}", "", "| observable | 이전 | 현재 |", "|---|---|---|"] + [
+        r.row() for r in rows
+    ]
+
 
 @dataclass
-class CheckRecord:
+class CheckRecord(_Record):
     """점검 항목 — 트리거/무효화 상태 변화 + (재실행 시) thesis diff."""
 
     date: date
@@ -169,19 +312,27 @@ class CheckRecord:
 
     def validate(self) -> None:
         missing: list[str] = []
-        if self.cadence not in ("weekly", "monthly", "daily"):
+        if self.cadence not in CHECK_CADENCES:
             missing.append("cadence ∈ {weekly, monthly, daily}")
         if not self.trigger_status:
             missing.append("trigger_status — 각 trigger 의 상태 (변화 없어도 적는다)")
         if not self.invalidation_status:
             missing.append("invalidation_status — 각 invalidation 의 상태")
-        if self.thesis is not None:
-            try:
-                validate_thesis(self.thesis)
-            except ThesisInvalid as e:
-                missing.append(str(e))
-        if missing:
-            raise IncompleteEntry("점검 항목 작성 거부 — 누락:\n  - " + "\n  - ".join(missing))
+        missing += _thesis_problems(self.thesis)
+        _reject("점검", missing)
+
+    def render(self, *, thesis_file: str | None = None, diff_text: str | None = None) -> str:
+        fm = self._front_matter({"thesis_snapshot": thesis_file} if thesis_file else {})
+        body = [f"# {self.theme} · 점검 ({self.cadence}) · {self.date}", ""]
+        if self.check_report:
+            body.append(f"- 점검 리포트: `{self.check_report}`")
+        body += _status_table("트리거 상태", self.trigger_status)
+        body += _status_table("무효화 상태", self.invalidation_status)
+        if diff_text is not None:
+            body += ["", "## thesis 재실행 diff (논지 표류 추적)", "", "```", diff_text, "```"]
+        body += _notes(self.notes)
+        body += self._links()
+        return fm + "\n".join(body) + "\n"
 
 
 @dataclass
@@ -192,7 +343,7 @@ class Fill:
 
 
 @dataclass
-class AddRecord:
+class AddRecord(_Record):
     """사다리 n단 실행 — 가격 조건 + 논지 조건 동시 충족이 전제다 (docs/07 §3)."""
 
     date: date
@@ -208,9 +359,13 @@ class AddRecord:
     links: list[str] = field(default_factory=list)
     type: str = field(default="add", init=False)
 
+    @property
+    def tag(self) -> str:
+        return f"add{self.step}"
+
     def validate(self) -> None:
         missing: list[str] = []
-        if self.step not in (2, 3):
+        if self.step not in LADDER_STEPS:
             missing.append("step ∈ {2, 3}")
         if not self.fills:
             missing.append("fills (체결 종목·가격)")
@@ -227,12 +382,35 @@ class AddRecord:
             or self.triggers_met > self.triggers_total
         ):
             missing.append("triggers_met/triggers_total")
-        if missing:
-            raise IncompleteEntry("사다리 항목 작성 거부 — 누락:\n  - " + "\n  - ".join(missing))
+        _reject("사다리", missing)
+
+    def render(self, *, thesis_file: str | None = None, diff_text: str | None = None) -> str:
+        body = [
+            f"# {self.theme} · 사다리 {self.step}단 · {self.date}",
+            "",
+            f"- 가격 조건: 초기가 대비 {self.price_move_from_entry:+.1%}",
+            f"- 논지 조건: 무효화 {self.invalidations_fired}건 · "
+            f"트리거 {self.triggers_met}/{self.triggers_total}",
+            "",
+            *_fills(self.fills),
+            "",
+            "## 그때의 판단",
+            "",
+            self.judgment.strip(),
+        ]
+        if self.override_reason.strip():
+            body += [
+                "",
+                "## 규칙 이탈 사유 (무효화 발동 중 추가 매수)",
+                "",
+                self.override_reason.strip(),
+            ]
+        body += self._links()
+        return self._front_matter({}) + "\n".join(body) + "\n"
 
 
 @dataclass
-class TpRecord:
+class TpRecord(_Record):
     date: date
     theme: str
     level: str  # tp1 | tp2 | runner
@@ -243,9 +421,13 @@ class TpRecord:
     links: list[str] = field(default_factory=list)
     type: str = field(default="tp", init=False)
 
+    @property
+    def tag(self) -> str:
+        return self.level
+
     def validate(self) -> None:
         missing: list[str] = []
-        if self.level not in ("tp1", "tp2", "runner"):
+        if self.level not in TP_LEVELS:
             missing.append("level ∈ {tp1, tp2, runner}")
         if not self.fills:
             missing.append("fills")
@@ -255,12 +437,23 @@ class TpRecord:
             missing.append("judgment")
         if self.level == "tp1" and self.new_tier2_stop_price is None:
             missing.append("new_tier2_stop_price — TP1 체결 후 Tier-2 스탑을 본전으로 상향 (07 §5)")
-        if missing:
-            raise IncompleteEntry("TP 항목 작성 거부 — 누락:\n  - " + "\n  - ".join(missing))
+        _reject("TP", missing)
+
+    def render(self, *, thesis_file: str | None = None, diff_text: str | None = None) -> str:
+        body = [
+            f"# {self.theme} · {self.level.upper()} · {self.date}",
+            "",
+            f"- 충족 조건: {self.condition_met}",
+        ]
+        if self.new_tier2_stop_price is not None:
+            body.append(f"- Tier-2 스탑 → {self.new_tier2_stop_price:.2f} (본전 상향, 07 §5)")
+        body += ["", *_fills(self.fills), "", "## 판단", "", self.judgment.strip()]
+        body += self._links()
+        return self._front_matter({}) + "\n".join(body) + "\n"
 
 
 @dataclass
-class ExitRecord:
+class ExitRecord(_Record):
     """청산 + 사후 대조 — 캘리브레이션(`docs/10` §4)·전향적 기록(§6)의 입력."""
 
     date: date
@@ -284,7 +477,7 @@ class ExitRecord:
 
     def validate(self) -> None:
         missing: list[str] = []
-        if self.exit_via not in ("tier1", "tier2", "time_stop", "tp_complete", "human"):
+        if self.exit_via not in EXIT_VIAS:
             missing.append("exit_via ∈ {tier1, tier2, time_stop, tp_complete, human}")
         if self.triggers_total <= 0 or not (0 <= self.triggers_met <= self.triggers_total):
             missing.append("triggers_met/triggers_total (트리거 충족률)")
@@ -304,12 +497,35 @@ class ExitRecord:
             missing.append("thesis_snapshot 경로")
         if self.holding_days < 0:
             missing.append("holding_days")
-        if missing:
-            raise IncompleteEntry("청산 항목 작성 거부 — 누락:\n  - " + "\n  - ".join(missing))
+        _reject("청산", missing)
+
+    def render(self, *, thesis_file: str | None = None, diff_text: str | None = None) -> str:
+        rate = self.triggers_met / self.triggers_total if self.triggers_total else float("nan")
+        body = [
+            f"# {self.theme} · 청산 · {self.date}",
+            "",
+            f"- 청산 경로: **{self.exit_via}**",
+            f"- 실현 수익률: {self.realized_return:+.1%} · 보유 {self.holding_days}일",
+            f"- 트리거 충족률: {self.triggers_met}/{self.triggers_total} ({rate:.0%}) · "
+            f"무효화 발동 {self.invalidations_fired}건 · horizon 경과 {self.horizon_elapsed}",
+            f"- cycle_confidence: {self.cycle_confidence} ({self.confidence_provenance})",
+            f"- 진입 항목: `{self.entry_journal}` · thesis: `{self.thesis_snapshot}`",
+            "",
+            "## 메커니즘 실측 대조 (맞았어도 다른 이유로 맞았을 수 있다)",
+            "",
+            self.mechanism_assessment.strip(),
+            "",
+            "## cycle_confidence 사후 평가 (→ docs/10 §4 캘리브레이션 입력)",
+            "",
+            self.confidence_assessment.strip(),
+            *_notes(self.notes),
+            *self._links(),
+        ]
+        return self._front_matter({}) + "\n".join(body) + "\n"
 
 
 @dataclass
-class RejectRecord:
+class RejectRecord(_Record):
     """기각 항목 — 기각 대장(`state/rejections.yaml`) 의 원본."""
 
     date: date
@@ -330,10 +546,7 @@ class RejectRecord:
         missing: list[str] = []
         if self.path not in REJECTION_PATHS:
             missing.append(f"path ∈ {REJECTION_PATHS}")
-        if sorted(self.axis_verdicts) != sorted(AXES) or any(
-            v not in AXIS_VERDICTS for v in self.axis_verdicts.values()
-        ):
-            missing.append(f"axis_verdicts 5축 {AXES} 각각 ∈ {AXIS_VERDICTS}")
+        missing += _axis_problems(self.axis_verdicts)
         if self.cycle_confidence is not None and not (0.0 <= self.cycle_confidence <= 1.0):
             missing.append("cycle_confidence ∈ [0,1] 또는 None")
         if self.scoreboard_rank <= 0:
@@ -344,37 +557,52 @@ class RejectRecord:
             missing.append("reason")
         if self.path == "human" and _blank(self.override_reason):
             missing.append("override_reason — 기계가 통과시킨 것을 사람이 편입하지 않은 이유")
-        if self.thesis is not None:
-            try:
-                validate_thesis(self.thesis)
-            except ThesisInvalid as e:
-                missing.append(str(e))
-        if missing:
-            raise IncompleteEntry("기각 항목 작성 거부 — 누락:\n  - " + "\n  - ".join(missing))
+        missing += _thesis_problems(self.thesis)
+        _reject("기각", missing)
+
+    def render(self, *, thesis_file: str | None = None, diff_text: str | None = None) -> str:
+        fm = self._front_matter({"thesis_snapshot": thesis_file} if thesis_file else {})
+        c = "산출되지 않음" if self.cycle_confidence is None else self.cycle_confidence
+        body = [
+            f"# {self.theme} · 기각 · {self.date}",
+            "",
+            f"- 기각 경로: **{self.path}** "
+            "(정본: docs/10 §5 표 · enum: thesis.schema gate_result.path)",
+            f"- 스코어보드 순위: {self.scoreboard_rank} · 스냅샷 `{self.scan}`",
+            f"- cycle_confidence: {c}",
+            "",
+            "## 가치함정 5축 판정",
+            "",
+            "| 축 | 판정 | evidence_refs |",
+            "|---|---|---|",
+            *[f"| {a} | {self.axis_verdicts[a]} | {self.evidence_refs.get(a, [])} |" for a in AXES],
+            "",
+            "## 기각 사유",
+            "",
+            self.reason.strip(),
+        ]
+        if self.override_reason.strip():
+            body += [
+                "",
+                "## 기계가 통과시킨 것을 사람이 편입하지 않은 이유",
+                "",
+                self.override_reason.strip(),
+            ]
+        body += [
+            "",
+            "> 이후 12·24개월 수익률은 여기에 쓰지 않는다 — `state/rejections.yaml` 이 "
+            "기계적으로 채운다.",
+        ]
+        body += self._links()
+        return fm + "\n".join(body) + "\n"
 
 
 JournalRecord = EntryRecord | CheckRecord | AddRecord | TpRecord | ExitRecord | RejectRecord
 
 
 # ---------------------------------------------------------------------------
-# 렌더링
+# 렌더링 보조 (표)
 # ---------------------------------------------------------------------------
-
-
-_plain = to_plain
-
-
-def _yaml(obj: Any) -> str:
-    return yaml.safe_dump(
-        _plain(obj), allow_unicode=True, sort_keys=False, default_flow_style=False
-    )
-
-
-def _front_matter(rec: JournalRecord, extra: dict[str, Any]) -> str:
-    d = _plain(rec)
-    d.pop("thesis", None)  # 스냅샷은 .thesis.yaml 로 — 본문에는 전문을 싣는다
-    d.update(extra)
-    return "---\n" + _yaml(d) + "---\n"
 
 
 def _stock_table(stocks: list[StockPlan]) -> list[str]:
@@ -395,197 +623,10 @@ def _stock_table(stocks: list[StockPlan]) -> list[str]:
     return lines
 
 
-def _links(links: list[str]) -> list[str]:
-    return ["", "## 관련 항목", *[f"- {x}" for x in links]] if links else []
-
-
-def render_entry(rec: EntryRecord, thesis_file: str) -> str:
-    t = rec.thesis
-    bear = rec.bear_case or t.get("bear_case", "")
-    fm = _front_matter(
-        rec,
-        {
-            "cycle_confidence": t.get("cycle_confidence"),
-            "horizon_months": t.get("horizon_months"),
-            "thesis_snapshot": thesis_file,
-        },
-    )
-    body = [
-        f"# {rec.theme} · 진입 · {rec.date}",
-        "",
-        f"- thesis 스냅샷: `{thesis_file}`",
-        f"- 스코어보드 스냅샷: `{rec.scan}`",
-        f"- cycle_confidence: **{t.get('cycle_confidence')}** (산출: {rec.confidence_provenance})",
-        f"- horizon_months: {t.get('horizon_months')}",
-        "",
-        "## 논지 (thesis 전문)",
-        "",
-        "```yaml",
-        _yaml(t).rstrip(),
-        "```",
-        "",
-        "## bear_case 원문",
-        "",
-        bear.strip(),
-        "",
-        "## L1 블록 6개 · L2 tailwind · 가치함정 5축",
-        "",
-        "| " + " | ".join(BLOCKS) + " | tailwind |",
-        "|" + "---|" * 7,
-        "| "
-        + " | ".join(f"{rec.l1_blocks[b]:.2f}" for b in BLOCKS)
-        + f" | {rec.l2_tailwind:+.2f} |",
-        "",
-        "| " + " | ".join(AXES) + " |",
-        "|" + "---|" * 5,
-        "| " + " | ".join(rec.axis_verdicts[a] for a in AXES) + " |",
-        "",
-        "## 매매계획 (종목 · 비중 · 사다리 · 스탑 · TP)",
-        "",
-        *_stock_table(rec.stocks),
-        "",
-        "## 기계 권고와 다르게 결정했다면 그 이유",
-        "",
-        (
-            rec.deviation_reason.strip()
-            if rec.deviated_from_machine
-            else "이탈 없음 — 기계 권고대로"
-        ),
-    ]
-    if rec.notes.strip():
-        body += ["", "## 비고", "", rec.notes.strip()]
-    body += _links(rec.links)
-    body += ["", "> 측정값과 명시된 가정이다. 투자 조언이 아니며 집행은 사람이 한다."]
-    return fm + "\n".join(body) + "\n"
-
-
-def render_check(rec: CheckRecord, thesis_file: str | None, diff_text: str | None) -> str:
-    fm = _front_matter(rec, {"thesis_snapshot": thesis_file} if thesis_file else {})
-    body = [f"# {rec.theme} · 점검 ({rec.cadence}) · {rec.date}", ""]
-    if rec.check_report:
-        body.append(f"- 점검 리포트: `{rec.check_report}`")
-    body += ["", "## 트리거 상태", "", "| observable | 이전 | 현재 |", "|---|---|---|"]
-    body += [
-        f"| {s.observable} | {s.before} | {s.after}{' ◀ 변화' if s.before != s.after else ''} |"
-        for s in rec.trigger_status
-    ]
-    body += ["", "## 무효화 상태", "", "| observable | 이전 | 현재 |", "|---|---|---|"]
-    body += [
-        f"| {s.observable} | {s.before} | {s.after}{' ◀ 변화' if s.before != s.after else ''} |"
-        for s in rec.invalidation_status
-    ]
-    if diff_text is not None:
-        body += ["", "## thesis 재실행 diff (논지 표류 추적)", "", "```", diff_text, "```"]
-    if rec.notes.strip():
-        body += ["", "## 비고", "", rec.notes.strip()]
-    body += _links(rec.links)
-    return fm + "\n".join(body) + "\n"
-
-
 def _fills(fills: list[Fill]) -> list[str]:
     return ["| 종목 | 가격 | 수량 |", "|---|---|---|"] + [
         f"| {f.ticker} | {f.price:.2f} | {'' if f.shares is None else f.shares} |" for f in fills
     ]
-
-
-def render_add(rec: AddRecord) -> str:
-    body = [
-        f"# {rec.theme} · 사다리 {rec.step}단 · {rec.date}",
-        "",
-        f"- 가격 조건: 초기가 대비 {rec.price_move_from_entry:+.1%}",
-        f"- 논지 조건: 무효화 {rec.invalidations_fired}건 · "
-        f"트리거 {rec.triggers_met}/{rec.triggers_total}",
-        "",
-        *_fills(rec.fills),
-        "",
-        "## 그때의 판단",
-        "",
-        rec.judgment.strip(),
-    ]
-    if rec.override_reason.strip():
-        body += [
-            "",
-            "## 규칙 이탈 사유 (무효화 발동 중 추가 매수)",
-            "",
-            rec.override_reason.strip(),
-        ]
-    body += _links(rec.links)
-    return _front_matter(rec, {}) + "\n".join(body) + "\n"
-
-
-def render_tp(rec: TpRecord) -> str:
-    body = [
-        f"# {rec.theme} · {rec.level.upper()} · {rec.date}",
-        "",
-        f"- 충족 조건: {rec.condition_met}",
-    ]
-    if rec.new_tier2_stop_price is not None:
-        body.append(f"- Tier-2 스탑 → {rec.new_tier2_stop_price:.2f} (본전 상향, 07 §5)")
-    body += ["", *_fills(rec.fills), "", "## 판단", "", rec.judgment.strip()]
-    body += _links(rec.links)
-    return _front_matter(rec, {}) + "\n".join(body) + "\n"
-
-
-def render_exit(rec: ExitRecord) -> str:
-    rate = rec.triggers_met / rec.triggers_total if rec.triggers_total else float("nan")
-    body = [
-        f"# {rec.theme} · 청산 · {rec.date}",
-        "",
-        f"- 청산 경로: **{rec.exit_via}**",
-        f"- 실현 수익률: {rec.realized_return:+.1%} · 보유 {rec.holding_days}일",
-        f"- 트리거 충족률: {rec.triggers_met}/{rec.triggers_total} ({rate:.0%}) · "
-        f"무효화 발동 {rec.invalidations_fired}건 · horizon 경과 {rec.horizon_elapsed}",
-        f"- cycle_confidence: {rec.cycle_confidence} ({rec.confidence_provenance})",
-        f"- 진입 항목: `{rec.entry_journal}` · thesis: `{rec.thesis_snapshot}`",
-        "",
-        "## 메커니즘 실측 대조 (맞았어도 다른 이유로 맞았을 수 있다)",
-        "",
-        rec.mechanism_assessment.strip(),
-        "",
-        "## cycle_confidence 사후 평가 (→ docs/10 §4 캘리브레이션 입력)",
-        "",
-        rec.confidence_assessment.strip(),
-    ]
-    if rec.notes.strip():
-        body += ["", "## 비고", "", rec.notes.strip()]
-    body += _links(rec.links)
-    return _front_matter(rec, {}) + "\n".join(body) + "\n"
-
-
-def render_reject(rec: RejectRecord, thesis_file: str | None) -> str:
-    fm = _front_matter(rec, {"thesis_snapshot": thesis_file} if thesis_file else {})
-    body = [
-        f"# {rec.theme} · 기각 · {rec.date}",
-        "",
-        f"- 기각 경로: **{rec.path}** (정본: docs/10 §5 표 · enum: thesis.schema gate_result.path)",
-        f"- 스코어보드 순위: {rec.scoreboard_rank} · 스냅샷 `{rec.scan}`",
-        "- cycle_confidence: "
-        f"{'산출되지 않음' if rec.cycle_confidence is None else rec.cycle_confidence}",
-        "",
-        "## 가치함정 5축 판정",
-        "",
-        "| 축 | 판정 | evidence_refs |",
-        "|---|---|---|",
-        *[f"| {a} | {rec.axis_verdicts[a]} | {rec.evidence_refs.get(a, [])} |" for a in AXES],
-        "",
-        "## 기각 사유",
-        "",
-        rec.reason.strip(),
-    ]
-    if rec.override_reason.strip():
-        body += [
-            "",
-            "## 기계가 통과시킨 것을 사람이 편입하지 않은 이유",
-            "",
-            rec.override_reason.strip(),
-        ]
-    body += [
-        "",
-        "> 이후 12·24개월 수익률은 여기에 쓰지 않는다 — `state/rejections.yaml` 이 "
-        "기계적으로 채운다.",
-    ]
-    body += _links(rec.links)
-    return fm + "\n".join(body) + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -593,17 +634,9 @@ def render_reject(rec: RejectRecord, thesis_file: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 
-def _type_tag(rec: JournalRecord) -> str:
-    if isinstance(rec, AddRecord):
-        return f"add{rec.step}"
-    if isinstance(rec, TpRecord):
-        return rec.level
-    return rec.type
-
-
 def entry_filename(rec: JournalRecord, suffix: str = "") -> str:
-    theme = re.sub(r"[^a-z0-9_\-]", "_", rec.theme.lower())
-    return f"{rec.date.isoformat()}-{theme}-{_type_tag(rec)}{('-' + suffix) if suffix else ''}.md"
+    tail = f"-{suffix}" if suffix else ""
+    return f"{rec.date.isoformat()}-{_theme_tag(rec.theme)}-{rec.tag}{tail}.md"
 
 
 @dataclass(frozen=True)
@@ -615,12 +648,11 @@ class Written:
 
 def list_snapshots(jdir: Path, theme: str) -> list[Path]:
     """테마의 thesis 스냅샷을 날짜 순으로 (파일명 앞의 날짜로 정렬)."""
-    theme_tag = re.sub(r"[^a-z0-9_\-]", "_", theme.lower())
-    return sorted(jdir.glob(f"*-{theme_tag}-*.thesis.yaml"))
+    return sorted(jdir.glob(f"*-{_theme_tag(theme)}-*.thesis.yaml"))
 
 
 def load_snapshot(path: Path) -> dict[str, Any]:
-    d = yaml.safe_load(path.read_text(encoding="utf-8"))
+    d = _yaml_load(path.read_text(encoding="utf-8"))
     if not isinstance(d, dict):
         raise ThesisInvalid(f"{path}: thesis 스냅샷이 dict 가 아니다")
     return d
@@ -650,21 +682,9 @@ def write_record(rec: JournalRecord, jdir: Path, *, suffix: str = "") -> Written
             diff_text = render_diff(
                 diff_thesis(old, thesis_obj), old_label=prev[-1].name, new_label=snap_path.name
             )
-    snap_name = snap_path.name if snap_path else None
-    if isinstance(rec, EntryRecord):
-        text = render_entry(rec, snap_name or "")
-    elif isinstance(rec, CheckRecord):
-        text = render_check(rec, snap_name, diff_text)
-    elif isinstance(rec, AddRecord):
-        text = render_add(rec)
-    elif isinstance(rec, TpRecord):
-        text = render_tp(rec)
-    elif isinstance(rec, ExitRecord):
-        text = render_exit(rec)
-    else:
-        text = render_reject(rec, snap_name)
+    text = rec.render(thesis_file=snap_path.name if snap_path else None, diff_text=diff_text)
     if snap_path is not None and thesis_obj is not None:
-        snap_path.write_text(_yaml(thesis_obj), encoding="utf-8")
+        snap_path.write_text(yaml_text(thesis_obj), encoding="utf-8")
     md_path.write_text(text, encoding="utf-8")
     return Written(markdown=md_path, thesis_snapshot=snap_path, diff_text=diff_text)
 
@@ -673,14 +693,22 @@ def write_record(rec: JournalRecord, jdir: Path, *, suffix: str = "") -> Written
 # 읽기 — front matter
 # ---------------------------------------------------------------------------
 
-_FM = re.compile(r"\A---\n(.*?)\n---\n", re.S)
+_FENCE = "---\n"
 
 
 def read_front_matter(path: Path) -> dict[str, Any]:
-    m = _FM.match(path.read_text(encoding="utf-8"))
-    if not m:
-        raise ValueError(f"{path}: front matter 없음")
-    d = yaml.safe_load(m.group(1))
+    """첫 줄 `---` 부터 다음 `---` 줄까지만 읽는다 (본문은 읽지 않는다)."""
+    lines: list[str] = []
+    with path.open(encoding="utf-8") as fh:
+        if fh.readline() != _FENCE:
+            raise ValueError(f"{path}: front matter 없음")
+        for line in fh:
+            if line == _FENCE:
+                break
+            lines.append(line)
+        else:
+            raise ValueError(f"{path}: front matter 없음")
+    d = _yaml_load("".join(lines))
     if not isinstance(d, dict):
         raise ValueError(f"{path}: front matter 가 dict 가 아니다")
     d["_path"] = str(path)
@@ -734,11 +762,12 @@ class Violation:
         return f"{label} [{self.status}] {self.path}"
 
 
-def _git(repo: Path, *args: str) -> str:
+def _git(repo: Path, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    """`git -C repo …`. `check` 면 0 아닌 종료는 `RuntimeError` — 조용히 빈 출력을 내지 않는다."""
     r = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True, check=False)
-    if r.returncode != 0:
+    if check and r.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} 실패: {r.stderr.strip()}")
-    return r.stdout
+    return r
 
 
 def verify_append_only(
@@ -751,22 +780,12 @@ def verify_append_only(
     """
     if not (repo / ".git").exists():
         raise RuntimeError(f"{repo} 는 git 저장소가 아니다")
-    has_head = (
-        subprocess.run(
-            ["git", "-C", str(repo), "rev-parse", "--verify", "-q", "HEAD"],
-            capture_output=True,
-            text=True,
-            check=False,
-        ).returncode
-        == 0
-    )
-    if not has_head:
+    if _git(repo, "rev-parse", "--verify", "-q", "HEAD", check=False).returncode != 0:
         return []
     args = ["diff", "--name-status", "--no-renames", "-M0"]
     args += ["--cached", "HEAD", "--", rel] if staged_only else ["HEAD", "--", rel]
-    out = _git(repo, *args)
     violations: list[Violation] = []
-    for line in out.splitlines():
+    for line in _git(repo, *args).stdout.splitlines():
         if not line.strip():
             continue
         status, _, path = line.partition("\t")
@@ -776,26 +795,12 @@ def verify_append_only(
     return violations
 
 
-PRECOMMIT_SCRIPT = """#!/usr/bin/env sh
-# journal/ append-only 검사 (CLAUDE.md §6).
-# 기존 저널 파일의 수정·삭제가 스테이징돼 있으면 커밋을 막는다.
-# 설치: `msa journal install-hook` (또는 이 파일을 .git/hooks/pre-commit 에서 호출)
-set -e
-cd "$(git rev-parse --show-toplevel)"
-if command -v uv >/dev/null 2>&1; then
-  uv run msa journal verify --staged
-else
-  python -m msa.cli journal verify --staged
-fi
-"""
-
-
 def install_hook(repo: Path, *, force: bool = False) -> Path:
     """`.git/hooks/pre-commit` 에 저널 검사를 건다. 이미 있으면 `force` 없이는 건드리지 않는다."""
     hooks = repo / ".git" / "hooks"
     if not hooks.is_dir():
         # worktree 인 경우 .git 은 파일이다 — 공용 훅 디렉터리를 찾는다
-        git_dir = _git(repo, "rev-parse", "--git-common-dir").strip()
+        git_dir = _git(repo, "rev-parse", "--git-common-dir").stdout.strip()
         hooks = (repo / git_dir).resolve() / "hooks"
     hooks.mkdir(parents=True, exist_ok=True)
     target = hooks / "pre-commit"
@@ -818,7 +823,7 @@ def install_hook(repo: Path, *, force: bool = False) -> Path:
 
 
 def _date(v: Any) -> date:
-    return v if isinstance(v, date) else date.fromisoformat(str(v))
+    return v if isinstance(v, date) else parse_date(str(v))
 
 
 def record_from_dict(d: dict[str, Any]) -> JournalRecord:

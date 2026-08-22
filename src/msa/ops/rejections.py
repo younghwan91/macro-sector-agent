@@ -16,22 +16,31 @@
 
 from __future__ import annotations
 
-import logging
-from dataclasses import dataclass, replace
+from collections import Counter
+from collections.abc import Mapping
+from dataclasses import asdict, dataclass, replace
 from datetime import date
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+import pyarrow.parquet as pq
 
 from msa.ops.journal import load_entries
 from msa.ops.state_files import Rejection
 
-log = logging.getLogger(__name__)
-
 TOP_K = 8
 BELOW_K_RANGE = (9, 15)
+#: (개월, 대장 열) — 갱신·집계가 같은 순서로 돈다.
+HORIZONS: tuple[tuple[int, str], ...] = ((12, "r_12m"), (24, "r_24m"))
+#: (b) 가 읽는 지표 캐시의 축 1 열 — 이것만 읽는다.
+AXIS1_COLUMNS: tuple[str, ...] = (
+    "verdict_post_ss",
+    "unit_cagr_10y",
+    "unit_cagr_10y_median",
+    "axis1_status",
+)
 
 
 # ---------------------------------------------------------------------------
@@ -49,14 +58,15 @@ def load_theme_index(cache_dir: Path) -> pd.DataFrame:
 
     스코어보드와 같은 지수다 (`ThemePanel.index_level("ew")` 와 동일 계산).
     """
+    # TODO(rf-b): `msa.l1.panel.load_cached_panel` 이 생기면 그것으로 바꾼다 (같은 캐시·같은 열).
     f = _newest(cache_dir, "l1_panel_*.parquet")
     if f is None:
         raise FileNotFoundError(
             f"{cache_dir} 에 l1_panel_*.parquet 이 없다 — `msa scan` 을 먼저 돌려라"
         )
-    frame = pd.read_parquet(f)
+    frame = pd.read_parquet(f, columns=["ret_ew"])
     r = frame["ret_ew"].unstack("theme").sort_index()
-    return (1.0 + r.fillna(0.0)).cumprod().where(r.notna().cummax())
+    return theme_index_from_returns(r)
 
 
 def load_axis1_monthly(cache_dir: Path) -> pd.DataFrame | None:
@@ -64,20 +74,37 @@ def load_axis1_monthly(cache_dir: Path) -> pd.DataFrame | None:
     f = _newest(cache_dir, "l1_indicators_*.parquet")
     if f is None:
         return None
-    ind = pd.read_parquet(f)
-    cols = [
-        c
-        for c in ("verdict_post_ss", "unit_cagr_10y", "unit_cagr_10y_median", "axis1_status")
-        if c in ind.columns
-    ]
-    return ind[cols] if cols else None
+    have = set(pq.read_schema(f).names)
+    cols = [c for c in AXIS1_COLUMNS if c in have]
+    return pd.read_parquet(f, columns=cols) if cols else None
 
 
-def forward_return(index: pd.DataFrame, theme: str, t0: date, months: int) -> float | None:
-    """t0 이후 첫 거래일 → t0+months 이후 첫 거래일 수익률. 끝점이 아직 없으면 None."""
-    if theme not in index.columns:
-        return None
-    s = index[theme].dropna()
+ThemeSeries = Mapping[str, pd.Series]
+
+
+def theme_series(index: pd.DataFrame) -> dict[str, pd.Series]:
+    """테마별 `dropna()` 된 지수 시리즈 — `forward_return` 을 많이 부를 때 한 번만 만든다."""
+    return {str(t): index[t].dropna() for t in index.columns}
+
+
+def _elapsed(t0: date, months: int, asof: date) -> bool:
+    """`t0 + months` 가 `asof` 이하인가 — horizon 이 지났을 때만 수익률을 채운다."""
+    return bool(pd.Timestamp(t0) + pd.DateOffset(months=months) <= pd.Timestamp(asof))
+
+
+def forward_return(
+    index: pd.DataFrame | ThemeSeries, theme: str, t0: date, months: int
+) -> float | None:
+    """t0 이후 첫 거래일 → t0+months 이후 첫 거래일 수익률. 끝점이 아직 없으면 None.
+
+    `index` 는 date × theme 프레임이거나 `theme_series()` 가 만든 매핑이다 (결과는 같다).
+    """
+    if isinstance(index, pd.DataFrame):
+        if theme not in index.columns:
+            return None
+        s = index[theme].dropna()
+    else:
+        s = index.get(theme, pd.Series(dtype=float))
     if s.empty:
         return None
     start = s.loc[pd.Timestamp(t0) :]
@@ -93,18 +120,18 @@ def forward_return(index: pd.DataFrame, theme: str, t0: date, months: int) -> fl
 
 def update_returns(rows: list[Rejection], index: pd.DataFrame, asof: date) -> list[Rejection]:
     """채워지지 않은 r_12m/r_24m 만 채운다. 이미 있는 값은 건드리지 않는다 (불변 규칙)."""
+    series = theme_series(index)
     out: list[Rejection] = []
     for r in rows:
-        r12, r24 = r.r_12m, r.r_24m
-        if r12 is None and pd.Timestamp(r.rejected_at) + pd.DateOffset(months=12) <= pd.Timestamp(
-            asof
-        ):
-            r12 = forward_return(index, r.theme, r.rejected_at, 12)
-        if r24 is None and pd.Timestamp(r.rejected_at) + pd.DateOffset(months=24) <= pd.Timestamp(
-            asof
-        ):
-            r24 = forward_return(index, r.theme, r.rejected_at, 24)
-        out.append(replace(r, r_12m=r12, r_24m=r24))
+        filled = {
+            attr: (
+                forward_return(series, r.theme, r.rejected_at, months)
+                if getattr(r, attr) is None and _elapsed(r.rejected_at, months, asof)
+                else getattr(r, attr)
+            )
+            for months, attr in HORIZONS
+        }
+        out.append(replace(r, r_12m=filled["r_12m"], r_24m=filled["r_24m"]))
     return out
 
 
@@ -135,17 +162,19 @@ def passed_themes(jdir: Path) -> list[tuple[str, date]]:
 
 
 def question_a(
-    rows: list[Rejection], passed: list[tuple[str, date]], index: pd.DataFrame, asof: date
+    rows: list[Rejection],
+    passed: list[tuple[str, date]],
+    index: pd.DataFrame | ThemeSeries,
+    asof: date,
 ) -> list[str]:
     L = ["### (a) 하드 게이트가 실제로 구분했는가", ""]
     rej = [r for r in rows if r.path == "hard_gate"]
-    for months, attr in ((12, "r_12m"), (24, "r_24m")):
+    for months, attr in HORIZONS:
         rx = [getattr(r, attr) for r in rej if getattr(r, attr) is not None]
         px = [
             v
             for t, d in passed
-            if (v := forward_return(index, t, d, months)) is not None
-            and pd.Timestamp(d) + pd.DateOffset(months=months) <= pd.Timestamp(asof)
+            if (v := forward_return(index, t, d, months)) is not None and _elapsed(d, months, asof)
         ]
         L.append(f"- {months}M  기각(hard_gate): {_dist(rx)}")
         L.append(f"- {months}M  통과(편입):      {_dist(px)}")
@@ -193,7 +222,8 @@ def question_b(rows: list[Rejection], axis1: pd.DataFrame | None) -> list[str]:
     return L
 
 
-def question_c(scans_dir: Path, index: pd.DataFrame, asof: date) -> list[str]:
+def question_c(scans_dir: Path, index: pd.DataFrame | ThemeSeries, asof: date) -> list[str]:
+    # TODO(rf-b): 스캔 디렉터리 탐색은 `msa.l1.scan.scan_dirs` 가 생기면 그것으로 바꾼다.
     L = [
         f"### (c) 상위 K={TOP_K} 컷오프에 근거가 있는가 — "
         f"{BELOW_K_RANGE[0]}~{BELOW_K_RANGE[1]}위 vs 상위 {TOP_K}",
@@ -221,8 +251,8 @@ def question_c(scans_dir: Path, index: pd.DataFrame, asof: date) -> list[str]:
         top = ranked[ranked <= TOP_K].index.tolist()
         below = ranked[(ranked >= BELOW_K_RANGE[0]) & (ranked <= BELOW_K_RANGE[1])].index.tolist()
         parts = [f"- {t0}: 상위 {len(top)} · 9~15위 {len(below)}"]
-        for m in (12, 24):
-            if pd.Timestamp(t0) + pd.DateOffset(months=m) > pd.Timestamp(asof):
+        for m, _ in HORIZONS:
+            if not _elapsed(t0, m, asof):
                 parts.append(f"{m}M 미도래")
                 continue
             tr = [v for t in top if (v := forward_return(index, str(t), t0, m)) is not None]
@@ -235,7 +265,7 @@ def question_c(scans_dir: Path, index: pd.DataFrame, asof: date) -> list[str]:
         return [*L, "- 스캔 스냅샷 없음"]
     L += rows_out
     L.append("")
-    for m in (12, 24):
+    for m, _ in HORIZONS:
         L.append(f"- 합산 {m}M: 상위 {_dist(agg[m]['top'])} | 9~15위 {_dist(agg[m]['below'])}")
     L.append(
         "- 9~15위가 더 나았다면 문제는 K 가 아니라 스코어의 순서다 — 컷오프를 옮기지 않는다 "
@@ -262,15 +292,16 @@ def summarize(
     asof: date,
 ) -> RejectionSummary:
     updated = update_returns(rows, index, asof)
-    f12 = sum(
-        1 for a, b in zip(rows, updated, strict=True) if a.r_12m is None and b.r_12m is not None
+    f12, f24 = (
+        sum(
+            1
+            for a, b in zip(rows, updated, strict=True)
+            if getattr(a, attr) is None and getattr(b, attr) is not None
+        )
+        for _, attr in HORIZONS
     )
-    f24 = sum(
-        1 for a, b in zip(rows, updated, strict=True) if a.r_24m is None and b.r_24m is not None
-    )
-    by_path: dict[str, int] = {}
-    for r in updated:
-        by_path[r.path] = by_path.get(r.path, 0) + 1
+    by_path = dict(Counter(r.path for r in updated))  # 첫 등장 순 — 출력 문구가 이 순서다
+    series = theme_series(index)  # (a)·(c) 의 forward_return 호출이 많다 — 한 번만 만든다
     L = [
         f"# 기각 대장 집계 · {asof}",
         "",
@@ -296,11 +327,11 @@ def summarize(
             f"{'null' if r.r_24m is None else f'{r.r_24m:+.1%}'} |"
         )
     L += ["", "## 사전 고정 세 질문", ""]
-    L += question_a(updated, passed_themes(jdir), index, asof)
+    L += question_a(updated, passed_themes(jdir), series, asof)
     L.append("")
     L += question_b(updated, axis1)
     L.append("")
-    L += question_c(scans_dir, index, asof)
+    L += question_c(scans_dir, series, asof)
     L.append("")
     return RejectionSummary("\n".join(L) + "\n", updated, f12, f24)
 
@@ -311,6 +342,4 @@ def theme_index_from_returns(ret: pd.DataFrame) -> pd.DataFrame:
 
 
 def as_dict(rows: list[Rejection]) -> list[dict[str, Any]]:
-    from dataclasses import asdict
-
     return [asdict(r) for r in rows]

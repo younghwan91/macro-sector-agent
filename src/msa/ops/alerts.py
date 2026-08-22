@@ -15,13 +15,16 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import date
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from msa.errors import RefusedInput
+from msa.fmt import pct
+from msa.status import DeliveryStatus
 from msa.vendor.telegram import TelegramConfig, TelegramNotifier, telegram_config
 
 
@@ -97,10 +100,6 @@ class Alert:
         return d
 
 
-def _pct(x: float | None) -> str:
-    return "n/a" if x is None else f"{x:+.1%}"
-
-
 def _esc(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -119,8 +118,8 @@ def format_alert(a: Alert) -> str:
     elif a.kind is AlertKind.LADDER_STEP_MET:
         head = f"[사다리 {f.get('step')}단 조건 충족] {who}"
         body = (
-            f"가격: 초기가 대비 {_pct(f.get('move_from_entry'))} "
-            f"(기준 {_pct(f.get('trigger_pct_neg'))})"
+            f"가격: 초기가 대비 {pct(f.get('move_from_entry'))} "
+            f"(기준 {pct(f.get('trigger_pct_neg'))})"
             f" · 종가 {f.get('close')}\n"
             f"논지: 무효화 {f.get('invalidations_fired')}건 · "
             f"트리거 {f.get('triggers_met')}/{f.get('triggers_total')} 충족"
@@ -139,8 +138,8 @@ def format_alert(a: Alert) -> str:
         head = f"[Tier-2 자본 스탑 도달] {who}"
         body = (
             f"종가 {f.get('close')} ≤ 스탑 {f.get('stop_price')} ({f.get('basis')})\n"
-            f"평단 대비 {_pct(f.get('move_from_avg'))} · "
-            f"초기가 대비 {_pct(f.get('move_from_entry'))}\n"
+            f"평단 대비 {pct(f.get('move_from_avg'))} · "
+            f"초기가 대비 {pct(f.get('move_from_entry'))}\n"
             "규정: 전량 청산 (07 §4)"
         )
     elif a.kind is AlertKind.MONTHLY_REPORT:
@@ -164,10 +163,16 @@ def format_alert(a: Alert) -> str:
     return text
 
 
+class SyncNotifier(Protocol):
+    """`deliver` 가 요구하는 배달 채널의 모양 — 한 묶음을 차례로 보내고 건별 성공 여부."""
+
+    def send_many_sync(self, chat_id: str, texts: Sequence[str]) -> list[bool]: ...
+
+
 @dataclass(frozen=True)
 class DeliveryResult:
     json_path: Path
-    status: str  # sent | not_configured | partial | failed | nothing_to_send
+    status: DeliveryStatus  # `msa.status.DeliveryStatus` — 문자열 비교(`== "sent"`)가 그대로 된다
     sent: int
     failed: int
 
@@ -178,9 +183,9 @@ def deliver(
     *,
     cfg: TelegramConfig | None = None,
     use_env: bool = True,
-    notifier: TelegramNotifier | None = None,
+    notifier: SyncNotifier | None = None,
 ) -> DeliveryResult:
-    """항상 `alerts.json` 을 쓴다. 텔레그램은 설정이 둘 다 있을 때만."""
+    """항상 `alerts.json` 을 쓴다. 텔레그램은 설정이 둘 다 있을 때만 — 한 루프로 전부 보낸다."""
     out_dir.mkdir(parents=True, exist_ok=True)
     for a in alerts:
         if not a.text:
@@ -191,16 +196,17 @@ def deliver(
         json.dumps([a.to_json() for a in alerts], ensure_ascii=False, indent=1), encoding="utf-8"
     )
     if not alerts:
-        return DeliveryResult(path, "nothing_to_send", 0, 0)
+        return DeliveryResult(path, DeliveryStatus.NOTHING_TO_SEND, 0, 0)
     if cfg is None and use_env:
         cfg = telegram_config()
     if cfg is None:
-        return DeliveryResult(path, "not_configured", 0, 0)
-    n = notifier or TelegramNotifier(cfg.token)
-    sent = failed = 0
-    for a in alerts:
-        ok = n.send_sync(cfg.chat_id, _esc(a.text))
-        sent += int(ok)
-        failed += int(not ok)
-    status = "sent" if failed == 0 else ("partial" if sent else "failed")
+        return DeliveryResult(path, DeliveryStatus.NOT_CONFIGURED, 0, 0)
+    n: SyncNotifier = notifier or TelegramNotifier(cfg.token)
+    oks = n.send_many_sync(cfg.chat_id, [_esc(a.text) for a in alerts])
+    sent = sum(1 for ok in oks if ok)
+    failed = len(oks) - sent
+    if failed == 0:
+        status = DeliveryStatus.SENT
+    else:
+        status = DeliveryStatus.PARTIAL if sent else DeliveryStatus.FAILED
     return DeliveryResult(path, status, sent, failed)

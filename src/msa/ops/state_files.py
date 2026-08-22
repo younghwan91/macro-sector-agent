@@ -20,16 +20,26 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 import yaml
 
+from msa.coerce import opt_date, require
 from msa.errors import Immutable, RefusedInput
-from msa.io import to_plain
+from msa.io import dump_yaml, to_plain
 from msa.ops.thesis import REJECTION_PATHS
 
+# 열거형은 `Literal` 타입 한 곳에만 적고, 런타임 검사는 `get_args` 로 같은 값을 본다.
 Role = Literal["anchor", "torque"]
 PositionStatus = Literal["open", "closed"]
+TpLevelName = Literal["tp1", "tp2", "runner"]
+Tier2Basis = Literal["avg_minus_35", "breakeven"]
+WatchReason = Literal["contested", "axis1_unavailable", "awaiting_condition", "human"]
+ROLES: tuple[str, ...] = get_args(Role)
+POSITION_STATUSES: tuple[str, ...] = get_args(PositionStatus)
+TP_LEVELS: tuple[str, ...] = get_args(TpLevelName)
+TIER2_BASES: tuple[str, ...] = get_args(Tier2Basis)
+WATCH_REASONS: tuple[str, ...] = get_args(WatchReason)
 
 
 class StateFileError(RefusedInput, ValueError):
@@ -40,18 +50,23 @@ class ImmutableRowChanged(Immutable, StateFileError):
     """`rejections.yaml` 의 기각 시점 필드를 바꾸려 했다."""
 
 
-def _d(v: Any) -> date | None:
+def _d(v: Any, ctx: str = "state") -> date | None:
+    """None/"" → None, ISO 날짜 → `date`. **틀린 문자열은 거부한다** — `opt_date` 의 "모르면 None"
+    을 그대로 쓰면 `opened_at: 2026/09/01` 이 조용히 `date.min` 이 된다 (`CLAUDE.md` §2)."""
     if v is None or v == "":
         return None
-    if isinstance(v, date):
-        return v
-    return date.fromisoformat(str(v))
+    d = opt_date(v)
+    if d is None:
+        raise StateFileError(f"{ctx}: 날짜 형식이 아니다 {v!r} (YYYY-MM-DD)")
+    return d
 
 
 def _req(d: dict[str, Any], key: str, ctx: str) -> Any:
-    if key not in d or d[key] is None:
-        raise StateFileError(f"{ctx}: 필수 필드 없음 `{key}`")
-    return d[key]
+    return require(d, key, ctx, StateFileError)
+
+
+def _opt_float(v: Any) -> float | None:
+    return None if v is None else float(v)
 
 
 # ---------------------------------------------------------------------------
@@ -84,7 +99,7 @@ class TpLevel:
     아니므로 `manual` 로 분류된다 — 가격 조건(+2R · 직전 고점 50%)만 `price` 로 환산해 둔다.
     """
 
-    level: Literal["tp1", "tp2", "runner"]
+    level: TpLevelName
     fraction: float  # 물량 (1/3)
     condition: str
     price: float | None = None
@@ -118,7 +133,7 @@ class Position:
     horizon_months: tuple[int, int]
     thesis_snapshot: str  # journal/....thesis.yaml (상대 경로)
     journal_entry: str  # journal/....md
-    tier2_basis: Literal["avg_minus_35", "breakeven"] = "avg_minus_35"
+    tier2_basis: Tier2Basis = "avg_minus_35"
     tp: list[TpLevel] = field(default_factory=list)
     runner_trail_pct: float = 0.25
     runner_ma_weeks: int = 10
@@ -145,31 +160,31 @@ def _ladder_from(d: dict[str, Any], ctx: str) -> LadderStep:
         step=int(_req(d, "step", ctx)),
         weight=float(_req(d, "weight", ctx)),
         trigger_pct=float(_req(d, "trigger_pct", ctx)),
-        trigger_price=None if d.get("trigger_price") is None else float(d["trigger_price"]),
-        filled_date=_d(d.get("filled_date")),
-        filled_price=None if d.get("filled_price") is None else float(d["filled_price"]),
-        filled_shares=None if d.get("filled_shares") is None else float(d["filled_shares"]),
+        trigger_price=_opt_float(d.get("trigger_price")),
+        filled_date=_d(d.get("filled_date"), ctx),
+        filled_price=_opt_float(d.get("filled_price")),
+        filled_shares=_opt_float(d.get("filled_shares")),
     )
 
 
 def _tp_from(d: dict[str, Any], ctx: str) -> TpLevel:
     lvl = _req(d, "level", ctx)
-    if lvl not in ("tp1", "tp2", "runner"):
+    if lvl not in TP_LEVELS:
         raise StateFileError(f"{ctx}: tp.level 값 불가 {lvl!r}")
     return TpLevel(
         level=lvl,
         fraction=float(d.get("fraction", 1 / 3)),
         condition=str(_req(d, "condition", ctx)),
-        price=None if d.get("price") is None else float(d["price"]),
-        filled_date=_d(d.get("filled_date")),
-        filled_price=None if d.get("filled_price") is None else float(d["filled_price"]),
+        price=_opt_float(d.get("price")),
+        filled_date=_d(d.get("filled_date"), ctx),
+        filled_price=_opt_float(d.get("filled_price")),
     )
 
 
 def position_from_dict(d: dict[str, Any]) -> Position:
     ctx = f"positions[{d.get('ticker', '?')}]"
     role = _req(d, "role", ctx)
-    if role not in ("anchor", "torque"):
+    if role not in ROLES:
         raise StateFileError(f"{ctx}: role 값 불가 {role!r}")
     hz = _req(d, "horizon_months", ctx)
     if not (isinstance(hz, list | tuple) and len(hz) == 2):
@@ -178,22 +193,22 @@ def position_from_dict(d: dict[str, Any]) -> Position:
     if not ladder:
         raise StateFileError(f"{ctx}: ladder 가 비어 있다")
     basis = d.get("tier2_basis", "avg_minus_35")
-    if basis not in ("avg_minus_35", "breakeven"):
+    if basis not in TIER2_BASES:
         raise StateFileError(f"{ctx}: tier2_basis 값 불가 {basis!r}")
     status = d.get("status", "open")
-    if status not in ("open", "closed"):
+    if status not in POSITION_STATUSES:
         raise StateFileError(f"{ctx}: status 값 불가 {status!r}")
     return Position(
         ticker=str(_req(d, "ticker", ctx)).upper(),
         theme=str(_req(d, "theme", ctx)),
         role=role,
         target_weight=float(_req(d, "target_weight", ctx)),
-        opened_at=_d(_req(d, "opened_at", ctx)) or date.min,
+        opened_at=_d(_req(d, "opened_at", ctx), ctx) or date.min,
         entry_price=float(_req(d, "entry_price", ctx)),
         ladder=ladder,
         tier2_stop_price=float(_req(d, "tier2_stop_price", ctx)),
         tier2_basis=basis,
-        time_stop_date=_d(_req(d, "time_stop_date", ctx)) or date.min,
+        time_stop_date=_d(_req(d, "time_stop_date", ctx), ctx) or date.min,
         horizon_months=(int(hz[0]), int(hz[1])),
         tp=[_tp_from(x, ctx) for x in d.get("tp", []) or []],
         runner_trail_pct=float(d.get("runner_trail_pct", 0.25)),
@@ -201,7 +216,7 @@ def position_from_dict(d: dict[str, Any]) -> Position:
         thesis_snapshot=str(_req(d, "thesis_snapshot", ctx)),
         journal_entry=str(_req(d, "journal_entry", ctx)),
         status=status,
-        closed_at=_d(d.get("closed_at")),
+        closed_at=_d(d.get("closed_at"), ctx),
         note=str(d.get("note", "")),
     )
 
@@ -213,17 +228,6 @@ class PositionsFile:
 
     def open_positions(self) -> list[Position]:
         return [p for p in self.positions if p.status == "open"]
-
-
-_plain = to_plain  # dataclass → yaml 친화 dict (date 는 ISO 문자열, tuple 은 list)
-
-
-def _dump(obj: Any, path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        yaml.safe_dump(_plain(obj), allow_unicode=True, sort_keys=False, default_flow_style=False),
-        encoding="utf-8",
-    )
 
 
 def _load_yaml(path: Path) -> Any:
@@ -240,20 +244,18 @@ def load_positions(path: Path) -> PositionsFile:
     if not isinstance(raw, dict) or "positions" not in raw:
         raise StateFileError(f"{path}: 최상위에 `asof` 와 `positions` 가 있어야 한다")
     return PositionsFile(
-        asof=_d(raw.get("asof")) or date.today(),
+        asof=_d(raw.get("asof"), str(path)) or date.today(),
         positions=[position_from_dict(x) for x in raw["positions"] or []],
     )
 
 
 def save_positions(path: Path, pf: PositionsFile) -> None:
-    _dump({"asof": pf.asof, "positions": pf.positions}, path)
+    dump_yaml(path, {"asof": pf.asof, "positions": pf.positions})
 
 
 # ---------------------------------------------------------------------------
 # watchlist.yaml
 # ---------------------------------------------------------------------------
-
-WatchReason = Literal["contested", "axis1_unavailable", "awaiting_condition", "human"]
 
 
 @dataclass
@@ -274,14 +276,14 @@ class WatchItem:
 def watch_from_dict(d: dict[str, Any]) -> WatchItem:
     ctx = f"watchlist[{d.get('theme', '?')}]"
     reason = _req(d, "reason", ctx)
-    if reason not in ("contested", "axis1_unavailable", "awaiting_condition", "human"):
+    if reason not in WATCH_REASONS:
         raise StateFileError(f"{ctx}: reason 값 불가 {reason!r}")
     cond = str(_req(d, "waiting_condition", ctx)).strip()
     if not cond:
         raise StateFileError(f"{ctx}: waiting_condition 이 비어 있다")
     return WatchItem(
         theme=str(_req(d, "theme", ctx)),
-        added_at=_d(_req(d, "added_at", ctx)) or date.min,
+        added_at=_d(_req(d, "added_at", ctx), ctx) or date.min,
         reason=reason,
         waiting_condition=cond,
         scan=str(_req(d, "scan", ctx)),
@@ -301,7 +303,8 @@ def load_watchlist(path: Path) -> list[WatchItem]:
 
 
 def save_watchlist(path: Path, items: list[WatchItem]) -> None:
-    _dump({"watchlist": items}, path)
+    """CLI 가 아직 쓰지 않는다 — docs/09 §4 의 "로드/저장" 계약으로 남긴다 (L3/L4 연결 시 호출)."""
+    dump_yaml(path, {"watchlist": items})
 
 
 # ---------------------------------------------------------------------------
@@ -324,6 +327,9 @@ FILLABLE_FIELDS: tuple[str, ...] = ("r_12m", "r_24m")
 
 @dataclass
 class Rejection:
+    """기각 대장 한 행. **필드 순서가 `rejections.yaml` 행 모양이다** —
+    `l3.gates.rejection_row` 가 이 순서로 키를 낸다. 바꾸지 않는다."""
+
     theme: str
     rejected_at: date
     path: str  # REJECTION_PATHS
@@ -352,15 +358,15 @@ def rejection_from_dict(d: dict[str, Any]) -> Rejection:
     c = d["cycle_confidence"]
     return Rejection(
         theme=str(_req(d, "theme", ctx)),
-        rejected_at=_d(_req(d, "rejected_at", ctx)) or date.min,
+        rejected_at=_d(_req(d, "rejected_at", ctx), ctx) or date.min,
         path=path,
         reason=str(_req(d, "reason", ctx)),
-        cycle_confidence=None if c is None else float(c),
+        cycle_confidence=_opt_float(c),
         scoreboard_rank=None if d.get("scoreboard_rank") is None else int(d["scoreboard_rank"]),
         journal=str(_req(d, "journal", ctx)),
         scan=str(_req(d, "scan", ctx)),
-        r_12m=None if d.get("r_12m") is None else float(d["r_12m"]),
-        r_24m=None if d.get("r_24m") is None else float(d["r_24m"]),
+        r_12m=_opt_float(d.get("r_12m")),
+        r_24m=_opt_float(d.get("r_24m")),
         axis_verdicts=d.get("axis_verdicts"),
     )
 
@@ -374,7 +380,7 @@ def load_rejections(path: Path) -> list[Rejection]:
 
 
 def _immutable_view(r: Rejection) -> dict[str, Any]:
-    v = {k: _plain(getattr(r, k)) for k in IMMUTABLE_FIELDS}
+    v = {k: to_plain(getattr(r, k)) for k in IMMUTABLE_FIELDS}
     v["axis_verdicts"] = r.axis_verdicts
     return v
 
@@ -409,4 +415,4 @@ def save_rejections(path: Path, rows: list[Rejection]) -> None:
     for r in rows:
         if r.path not in REJECTION_PATHS:
             raise StateFileError(f"path 값 불가 {r.path!r}")
-    _dump({"rejections": rows}, path)
+    dump_yaml(path, {"rejections": rows})

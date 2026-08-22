@@ -12,6 +12,10 @@
 | `reproduce` | 저장된 `state/scans/<date>/` 스냅샷에서 리포트 재생성 (재계산 없음) |
 
 이 계층의 산출물은 측정값과 사실이다. 주문을 내지 않고(`CLAUDE.md` §8), 성과 수치를
-광고하지 않는다(§7). L3·L4·L5 산출물과의 연결은 파일 계약(`positions.yaml` · thesis 스냅샷 ·
-`state/scans/`)으로만 한다 — 다른 계층 패키지를 import 하지 않는다.
+광고하지 않는다(§7). L2~L5 산출물과의 연결은 파일 계약(`positions.yaml` · thesis 스냅샷 ·
+`state/scans/` · `state/cache/l1_*.parquet`)으로만 한다 — L2~L5 패키지를 import 하지 않는다.
+L1 에 대해서만 **읽기 전용 리더**를 쓴다: `reproduce` 가 `msa.l1.scan.render_report` 로 리포트를
+다시 그리고, `rejections` 가 L1 패널·지표 캐시를 읽는다
+(TODO(rf-b): `msa.l1.panel.load_cached_panel` · `msa.l1.scan.scan_dirs`).
+가격은 `msa.data.store.Store` 를 `check.StorePriceSource` 가 감싼다.
 """

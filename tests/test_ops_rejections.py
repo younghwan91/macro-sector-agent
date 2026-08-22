@@ -9,14 +9,16 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from _synth_ops import make_rejection
 from msa.ops.rejections import (
     forward_return,
     question_c,
     summarize,
     theme_index_from_returns,
+    theme_series,
     update_returns,
 )
-from msa.ops.state_files import Rejection, load_rejections, save_rejections
+from msa.ops.state_files import load_rejections, save_rejections
 
 
 def _index(end: str = "2028-12-31") -> pd.DataFrame:
@@ -33,19 +35,10 @@ def _index(end: str = "2028-12-31") -> pd.DataFrame:
     return theme_index_from_returns(ret)
 
 
-def _rej(theme: str, when: date, path: str = "hard_gate", **over: object) -> Rejection:
-    kw: dict[str, object] = {
-        "theme": theme,
-        "rejected_at": when,
-        "path": path,
-        "reason": "r",
-        "cycle_confidence": None,
-        "scoreboard_rank": 3,
-        "journal": f"journal/{when}-{theme}-reject.md",
-        "scan": f"state/scans/{when}/",
-    }
-    kw.update(over)
-    return Rejection(**kw)  # type: ignore[arg-type]
+def _rej(theme: str, when: date, path: str = "hard_gate", **over: object):  # type: ignore[no-untyped-def]
+    return make_rejection(
+        theme=theme, rejected_at=when, path=path, reason="r", cycle_confidence=None, **over
+    )
 
 
 def test_forward_return_and_update_only_elapsed_horizons() -> None:
@@ -53,6 +46,12 @@ def test_forward_return_and_update_only_elapsed_horizons() -> None:
     assert forward_return(idx, "flat", date(2026, 1, 5), 12) == pytest.approx(0.0)
     assert forward_return(idx, "nope", date(2026, 1, 5), 12) is None
     assert forward_return(idx, "winner", date(2028, 6, 1), 12) is None  # 끝점 없음
+    # 프레임과 테마별 시리즈 매핑은 같은 답을 낸다
+    ts = theme_series(idx)
+    assert forward_return(ts, "winner", date(2026, 3, 2), 12) == forward_return(
+        idx, "winner", date(2026, 3, 2), 12
+    )
+    assert forward_return(ts, "nope", date(2026, 1, 5), 12) is None
     rows = [_rej("winner", date(2026, 3, 2)), _rej("loser", date(2027, 9, 1))]
     out = update_returns(rows, idx, asof=date(2027, 6, 30))
     assert out[0].r_12m is not None and out[0].r_24m is None  # 24M 미도래

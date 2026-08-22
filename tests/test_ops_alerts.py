@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 
@@ -166,14 +167,28 @@ def test_deliver_not_configured_still_writes_json(
 
 def test_deliver_sends_when_configured(tmp_path: Path) -> None:
     class Fake:
-        def __init__(self) -> None:
+        def __init__(self, fail_every: int = 0) -> None:
             self.sent: list[tuple[str, str]] = []
+            self.batches = 0
+            self.fail_every = fail_every
 
-        def send_sync(self, chat_id: str, text: str) -> bool:
-            self.sent.append((chat_id, text))
-            return True
+        def send_many_sync(self, chat_id: str, texts: Sequence[str]) -> list[bool]:
+            self.batches += 1
+            oks: list[bool] = []
+            for t in texts:
+                self.sent.append((chat_id, t))
+                oks.append(not (self.fail_every and len(self.sent) % self.fail_every == 0))
+            return oks
 
     fake = Fake()
-    res = deliver(_all_alerts(), tmp_path, cfg=TelegramConfig("t", "42"), notifier=fake)  # type: ignore[arg-type]
+    res = deliver(_all_alerts(), tmp_path, cfg=TelegramConfig("t", "42"), notifier=fake)
     assert res.status == "sent" and res.sent == 7 and all(c == "42" for c, _ in fake.sent)
+    assert fake.batches == 1  # 한 루프로 전부
     assert deliver([], tmp_path).status == "nothing_to_send"
+    partial = Fake(fail_every=3)
+    res = deliver(_all_alerts(), tmp_path, cfg=TelegramConfig("t", "42"), notifier=partial)
+    assert res.status == "partial" and (res.sent, res.failed) == (5, 2)
+    assert (
+        deliver(_all_alerts()[:1], tmp_path, cfg=TelegramConfig("t", "42"), notifier=Fake(1)).status
+        == "failed"
+    )

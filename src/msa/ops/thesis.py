@@ -1,8 +1,10 @@
 """thesis 객체의 최소 검증과 스냅샷 diff (`docs/specs/thesis.schema.yaml`, `docs/05` §6).
 
-L3 의 전체 스키마 검증기는 M7 에 온다. 여기서는 **운영 계층이 저장·대조에 필요한 만큼만** 본다 —
+L3 의 전체 스키마 검증기는 `msa.l3.schema.validate_thesis` (스펙 파일 기반 · `ValidationResult` ·
+`ThesisRejected`=exit 2) 다. 여기서는 **운영 계층이 저장·대조에 필요한 만큼만** 본다 —
 비어 있으면 저장이 거부되는 필드(`evidence` · `invalidations`, `CLAUDE.md` §3·§5)와
-`cycle_confidence` · 트리거/무효화 상태값 · `gate_result.path` enum.
+`cycle_confidence` · 트리거/무효화 상태값 · `gate_result.path` enum. 둘은 예외 종류(`RefusedInput`
+vs `Rejected`)와 문구가 달라 감싸지 않는다 — 저널은 "입력이 불완전하다" 로 거부한다.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from typing import Any
 
 from msa.errors import RefusedInput
 
+# TODO(rf-d): 아래 enum 들은 `msa.thesis` 가 단일 소유자가 되면 거기서 import 로 바꾼다 (값은 같다).
 #: `gate_result.path` / `rejections.yaml` 의 `path` 열 — 두 곳이 같은 값을 쓴다 (docs/09 §4).
 REJECTION_PATHS: tuple[str, ...] = (
     "hard_gate",
@@ -61,7 +64,10 @@ def _nonempty_list(d: dict[str, Any], key: str, errors: list[str]) -> list[Any]:
 
 
 def validate_thesis(t: dict[str, Any]) -> None:
-    """운영 계층 최소 검증. 실패하면 `ThesisInvalid` (모든 위반을 한 번에 보고한다)."""
+    """운영 계층 최소 검증. 실패하면 `ThesisInvalid` (모든 위반을 한 번에 보고한다).
+
+    `msa.l3.schema.validate_thesis` 를 감싸지 않는 이유는 모듈 docstring 참조 (예외·문구가 다르다).
+    """
     errors: list[str] = []
     for k in _REQUIRED_TOP:
         if k not in t or t[k] is None or t[k] == "" or t[k] == {} or t[k] == []:
@@ -110,30 +116,9 @@ def validate_thesis(t: dict[str, Any]) -> None:
         raise ThesisInvalid("thesis 저장 거부:\n  - " + "\n  - ".join(errors))
 
 
-def axis_verdicts(t: dict[str, Any]) -> dict[str, str]:
-    """5축 verdict 스냅샷 — `gate_result.axis_verdicts` 가 있으면 그것, 없으면 value_trap_axes."""
-    gate = t.get("gate_result") or {}
-    snap = gate.get("axis_verdicts")
-    if isinstance(snap, dict) and all(a in snap for a in AXES):
-        return {a: str(snap[a]) for a in AXES}
-    axes = t.get("value_trap_axes") or {}
-    return {a: str(axes.get(a, {}).get("verdict", "?")) for a in AXES}
-
-
-def trigger_counts(t: dict[str, Any]) -> tuple[int, int, int]:
-    """(met, missed, total) — 트리거 충족률의 재료 (`docs/10` §6)."""
-    trig = t.get("triggers") or []
-    met = sum(1 for x in trig if x.get("status") == "met")
-    missed = sum(1 for x in trig if x.get("status") == "missed")
-    return met, missed, len(trig)
-
-
-def invalidations_fired(t: dict[str, Any]) -> int:
-    return sum(1 for x in (t.get("invalidations") or []) if x.get("status") == "fired")
-
-
 # ---------------------------------------------------------------------------
 # 필드 단위 diff — 논지 표류 추적 (docs/05 §6, docs/09 §2)
+# TODO(rf-d): `msa.thesis.thesis_diff` 가 생기면 flatten/diff/render 를 그쪽 재-export 로 바꾼다.
 # ---------------------------------------------------------------------------
 
 

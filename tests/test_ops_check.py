@@ -9,46 +9,14 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from _synth_ops import ASOF
+from _synth_ops import make_position as _pos
+from _synth_ops import series as _series
 from conftest import make_thesis
+from msa.data.store import ShortRead
 from msa.ops.alerts import AlertKind
-from msa.ops.check import DictPriceSource, check_position, run_check
-from msa.ops.state_files import LadderStep, Position, PositionsFile, TpLevel, save_positions
-
-
-def _series(closes: list[float], end: date) -> pd.Series:
-    idx = pd.bdate_range(end=pd.Timestamp(end), periods=len(closes))
-    return pd.Series(closes, index=idx, dtype=float)
-
-
-def _pos(**over: object) -> Position:
-    kw: dict[str, object] = {
-        "ticker": "CCJ",
-        "theme": "uranium",
-        "role": "anchor",
-        "target_weight": 0.16,
-        "opened_at": date(2026, 9, 1),
-        "entry_price": 50.0,
-        "ladder": [
-            LadderStep(1, 0.5, 0.0, 50.0, date(2026, 9, 1), 50.0),
-            LadderStep(2, 0.3, 0.13, 43.5),
-            LadderStep(3, 0.2, 0.23, 38.5),
-        ],
-        "tier2_stop_price": 32.5,  # 평단 50 × 0.65
-        "time_stop_date": date(2028, 3, 1),
-        "horizon_months": (6, 18),
-        "thesis_snapshot": "journal/2026-09-01-uranium-entry.thesis.yaml",
-        "journal_entry": "journal/2026-09-01-uranium-entry.md",
-        "tp": [
-            TpLevel("tp1", 1 / 3, "P50 또는 +2R", price=85.0),
-            TpLevel("tp2", 1 / 3, "P75 또는 고점 50%"),
-            TpLevel("runner", 1 / 3, "트레일 −25% / 10주선"),
-        ],
-    }
-    kw.update(over)
-    return Position(**kw)  # type: ignore[arg-type]
-
-
-ASOF = date(2026, 12, 15)
+from msa.ops.check import DictPriceSource, StorePriceSource, check_position, run_check
+from msa.ops.state_files import PositionsFile, save_positions
 
 
 def _prices(ccj: list[float], ura: list[float]) -> DictPriceSource:
@@ -188,6 +156,71 @@ def test_run_check_writes_report_alerts_and_journal_draft(tmp_path: Path) -> Non
     draft = yaml.safe_load((rep.out_dir / "journal-draft-uranium.yaml").read_text())
     assert draft["type"] == "check" and len(draft["trigger_status"]) == 3
     assert len(rep.alerts) == 2  # 두 종목 모두 사다리 2단 충족
+
+
+class _FakeStore:
+    """`Store.prices` 의 모양만 흉내낸다 — 질의 횟수와 요청 열을 기록한다."""
+
+    def __init__(self, data: dict[str, pd.Series]) -> None:
+        self.data = data
+        self.calls: list[tuple[list[str], list[str] | None]] = []
+
+    def prices(
+        self,
+        tickers: list[str],
+        start: date,
+        end: date,
+        *,
+        min_rows: int,
+        expect_tickers: int | None = None,
+        columns: list[str] | None = None,
+    ) -> pd.DataFrame:
+        self.calls.append((list(tickers), None if columns is None else list(columns)))
+        frames = [
+            pd.DataFrame({"ticker": t, "date": s.index, "close": s.to_numpy()})
+            for t in tickers
+            if (s := self.data.get(t)) is not None
+        ]
+        if not frames:
+            raise ShortRead("0 rows")
+        return pd.concat(frames, ignore_index=True)
+
+
+def test_store_price_source_prefetch_is_one_query_and_memoized() -> None:
+    store = _FakeStore({"CCJ": _series([50.0] * 5, ASOF), "URA": _series([30.0] * 5, ASOF)})
+    src = StorePriceSource(store)  # type: ignore[arg-type]
+    src.prefetch(["ccj", "URA", "NOPE"], ASOF)
+    assert len(store.calls) == 1 and store.calls[0] == (
+        ["CCJ", "NOPE", "URA"],
+        ["ticker", "date", "close"],
+    )
+    assert src.closes("CCJ", ASOF).iloc[-1] == 50.0 and src.closes("ura", ASOF).name == "URA"
+    assert src.closes("NOPE", ASOF).empty
+    assert len(store.calls) == 1  # 메모에서 — 재질의 없음
+    # 선적재 밖(다른 end) 은 종목별로 읽는다 · 없는 종목은 빈 시리즈 (예외 아님)
+    other = date(2026, 12, 1)
+    assert src.closes("CCJ", other).iloc[-1] == 50.0 and len(store.calls) == 2
+    assert src.closes("GONE", other).empty and len(store.calls) == 3
+
+
+def test_run_check_prefetches_position_and_dsl_tickers(tmp_path: Path) -> None:
+    jdir = tmp_path / "journal"
+    jdir.mkdir()
+    (jdir / "2026-09-01-uranium-entry.thesis.yaml").write_text(yaml.safe_dump(make_thesis()))
+    ppath = tmp_path / "positions.yaml"
+    save_positions(ppath, PositionsFile(ASOF, [_pos()]))
+    store = _FakeStore({"CCJ": _series([50.0] * 60, ASOF), "URA": _series([30.0] * 60, ASOF)})
+    rep = run_check(
+        asof=ASOF,
+        mode="weekly",
+        prices=StorePriceSource(store),  # type: ignore[arg-type]
+        positions_path=ppath,
+        journal_dir=jdir,
+        repo_root=tmp_path,
+        out_root=None,
+    )
+    assert [c[0] for c in store.calls] == [["CCJ", "URA"]]  # 포지션 + DSL 티커를 한 질의로
+    assert rep.positions[0].close == 50.0
 
 
 def test_run_check_reports_missing_snapshot(tmp_path: Path) -> None:
