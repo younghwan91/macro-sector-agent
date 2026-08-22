@@ -8,7 +8,7 @@
 > L5 포트 구성기 `msa portfolio`(M6) · L3 에이전트 `msa research`(M7) · 운영 `msa check`/`journal`/`ops`(M8).
 > **M3.5 판정: 복합 `score` 의 12M rank-IC 는 2011 년 이후 0 과 구분되지 않는다 (FAIL, `docs/backtest-l1.md`).**
 > C(턴) 블록만 뚜렷이 일하고 A(망각)·D(밸류)는 반대 부호다. 그래서 **복합 스코어의 순위는 순위 산출 근거가 아니라
-> 관찰 지표다** — 가중치는 바꾸지 않았다 (`CLAUDE.md` §1). 실측 블로커: `FRED_API_KEY`(L2 드라이버·CPI) ·
+> 관찰 지표다** — 가중치는 바꾸지 않았다 (`CLAUDE.md` §1). 왜 그런지와 다음 절차는 `docs/12-design-question-a-block.md`(설계 질문 1·M3.6). 실측 블로커: `FRED_API_KEY`(L2 드라이버·CPI) ·
 > `ANTHROPIC_API_KEY`(L3 실행) · manual 실물 시계열. 진행 상태는 `docs/11-roadmap.md`. 데이터는 `~/data/us_micro.duckdb`(Sharadar) 이며
 > 없으면 `docs/08-data-contract.md` §6 부트스트랩 절차를 먼저 밟는다.
 
@@ -66,6 +66,7 @@ AG(은) · SBSW(PGM) · MP(희토류) · ALM(리튬) 로 구성해 단기에 30%
 | [09-operations](docs/09-operations.md) | 케이던스 · 결정 저널 · 배달 |
 | [10-validation](docs/10-validation.md) | 무엇을 재고 무엇을 못 재는가 — 결정론 계층의 백테스트 관문 + 캘리브레이션 |
 | [11-roadmap](docs/11-roadmap.md) | 구현 순서와 마일스톤 완료 판정 기준 |
+| [12-design-question-a-block](docs/12-design-question-a-block.md) | **설계 질문 1** — A(망각)는 가중합의 항인가 후보 집합의 조건인가. M3.5 FAIL 의 구조적 원인, 사전 등록된 결정 절차(M3.6) |
 | [specs/](docs/specs/) | `themes.example.yaml` · `macro-dag.example.yaml` · `thesis.schema.yaml` |
 
 ## 관련 저장소

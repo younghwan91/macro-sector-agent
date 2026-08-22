@@ -267,3 +267,13 @@ spread_summary.csv · breadth_lead_summary.csv · ic_indicator.csv · overfittin
 같은 캐시(`state/cache/l1_*_2fe9806ad09c49a3.parquet`)에서 `uv run msa backtest l1` 은 결정론적이다
 (부트스트랩 시드 0, PBO 전수). 스토어가 갱신되면 지문이 바뀌고 수치가 조금 움직인다 — 그때 **판정 규칙은
 그대로 두고** 이 문서에 새 절을 덧붙인다 (기존 절은 고치지 않는다, `CLAUDE.md` §6 의 저널 규약과 같은 태도).
+
+
+---
+
+## 11. 후속 (2026-08-23) — 설계 질문의 기록
+
+§9 가 "질문을 적어 두기만 한다" 고 한 A(망각)의 가산 문제를 `docs/12-design-question-a-block.md` 에 정리했다 —
+선언의 내부 모순(`02` §A·§8 vs §7), 설계 공간 5가지, **사전 등록된 결정 절차**(후보 S1 절대 게이트 `dd_10y ≤ −50%
+AND months_since_peak ≥ 12` · S2 풀/타이밍 2단 점수 · 합격 기준 동일 · 시도 수 608 → 632). 이 절은 이 문서의
+수치·판정을 바꾸지 않는다.
