@@ -53,14 +53,22 @@ CAGR·Sharpe 같은 전략 성과는 만들지 않는다.
 | `overfitting.json` | 시도 수 계산 · DSR · PBO 입출력 |
 | `exclusions.json` | 제외 건수 전부 |
 | `report.txt` | 사람이 읽는 요약 |
+
+## 구현 노트 (값에 영향 없음)
+
+2026-08-23 리팩터: 월별 rank-IC 는 (월말 × 테마) 행렬에서 유효 테마 수가 같은 행끼리 묶어 한 번에
+계산한다 — 행마다 `_spearman_np` 를 부른 것과 **비트 단위로 같다** (밀집 배열의 합산 순서가 같다).
+부트스트랩 재표집 인덱스는 `(n, L, n_boot, seed)` 별로 한 번만 뽑는다 (같은 난수열). 실제 캐시와
+합성 데이터로 구 구현과 대조했다 (`tests/test_l1_backtest.py` 의 `_ref_*`).
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import math
-from dataclasses import dataclass, field
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field, replace
+from functools import cache
 from pathlib import Path
 from typing import Any, cast
 
@@ -68,6 +76,9 @@ import numpy as np
 import pandas as pd
 from scipy.stats import rankdata
 
+from msa.dates import to_month_end
+from msa.fmt import num as _fmt
+from msa.io import dump_json
 from msa.l1.blocks import Indicators
 from msa.l1.panel import ThemePanel
 from msa.l1.scoreboard import BLOCKS, ORIENTATION, SCORED, scoreboard_history
@@ -146,9 +157,6 @@ class Forward:
     값은 `P[t+h]/P[t] − 1 − (S[t+h]/S[t] − 1)`."""
 
     excess: dict[int, pd.DataFrame]
-    theme_ret: dict[int, pd.DataFrame]
-    spy_ret: dict[int, pd.Series]
-    month_ends: pd.DatetimeIndex
     last_complete: pd.Timestamp
     exclusions: dict[str, Any]
 
@@ -162,19 +170,17 @@ def forward_excess(panel: ThemePanel, horizons: tuple[int, ...]) -> Forward:
       전부 없는 달은 지수가 정체해 전진 수익률이 0 으로 보이므로 NaN 으로 두고 센다.
     """
     P = panel.index_level("ew")
-    Pm = P.resample("ME").last()
+    Pm = to_month_end(P)
     me = pd.DatetimeIndex(Pm.index)
     last_day = pd.Timestamp(P.index.max())
     complete = me[me <= last_day]
     if len(complete) == 0:
         raise ValueError("완결된 월이 하나도 없다")
     last_complete = pd.Timestamp(complete[-1])
-    spy = panel.spy["close"].reindex(P.index).ffill().resample("ME").last().reindex(me)
+    spy = to_month_end(panel.spy["close"].reindex(P.index).ffill()).reindex(me)
     active = panel.wide("n_ret").resample("ME").max().reindex(me).fillna(0) >= 1
 
     excess: dict[int, pd.DataFrame] = {}
-    theme_ret: dict[int, pd.DataFrame] = {}
-    spy_ret: dict[int, pd.Series] = {}
     excl: dict[str, Any] = {"last_complete_month": str(last_complete.date())}
     for h in horizons:
         fwd = Pm.shift(-h) / Pm - 1.0
@@ -191,8 +197,6 @@ def forward_excess(panel: ThemePanel, horizons: tuple[int, ...]) -> Forward:
         keep = keep & act_ok
         fwd = fwd.where(keep)
         fs = fs.where(end_ok)
-        theme_ret[h] = fwd
-        spy_ret[h] = fs
         excess[h] = fwd.sub(fs, axis=0)
         excl[f"h{h}"] = {
             "theme_months_raw": n_raw,
@@ -202,19 +206,12 @@ def forward_excess(panel: ThemePanel, horizons: tuple[int, ...]) -> Forward:
             # 어느 테마도 전진 수익률이 없는 월말 (표본 끝 h 개월 + 미완결 월) — IC·스프레드 행 없음
             "months_without_any_forward": int((~keep).all(axis=1).sum()),
         }
-    return Forward(
-        excess=excess,
-        theme_ret=theme_ret,
-        spy_ret=spy_ret,
-        month_ends=me,
-        last_complete=last_complete,
-        exclusions=excl,
-    )
+    return Forward(excess=excess, last_complete=last_complete, exclusions=excl)
 
 
 def small_sample_history(panel: ThemePanel, themes: ThemeSet) -> pd.DataFrame:
     """월말 `n_listed < min_constituents` (date × theme, bool). 과거 `n_live` 의 대용이다."""
-    nl = panel.wide("n_listed").resample("ME").last()
+    nl = to_month_end(panel.wide("n_listed"))
     by_id = themes.by_id()
     minc = pd.Series({t: by_id[t].min_constituents for t in nl.columns if t in by_id})
     nl = nl[minc.index]
@@ -248,12 +245,54 @@ def spearman(x: pd.Series, y: pd.Series) -> tuple[float, int]:
     )
 
 
+def _spearman_rows(X: np.ndarray, Y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """행별 Spearman ρ 와 n — 행마다 `_spearman_np` 를 부른 것과 **비트 단위로 같은** 값.
+
+    유효(둘 다 값 있음) 항목을 열 순서대로 앞에 모은 뒤, 유효 개수 n 이 같은 행끼리 (r × n) 밀집
+    배열로 한 번에 계산한다. 밀집 행의 `mean`·`sum` 은 1차원 배열과 같은 합산 순서를 쓴다.
+    """
+    m = ~(np.isnan(X) | np.isnan(Y))
+    n = m.sum(axis=1)
+    ic = np.full(X.shape[0], np.nan)
+    if X.shape[0] == 0 or X.shape[1] == 0:
+        return ic, n
+    order = np.argsort(~m, axis=1, kind="stable")
+    Xs = np.take_along_axis(X, order, axis=1)
+    Ys = np.take_along_axis(Y, order, axis=1)
+    for k in np.unique(n):
+        if k < 3:
+            continue
+        rows = np.flatnonzero(n == k)
+        a = rankdata(np.ascontiguousarray(Xs[rows, :k]), method="average", axis=1)
+        b = rankdata(np.ascontiguousarray(Ys[rows, :k]), method="average", axis=1)
+        a = a - a.mean(axis=1, keepdims=True)
+        b = b - b.mean(axis=1, keepdims=True)
+        den = np.sqrt((a * a).sum(axis=1) * (b * b).sum(axis=1))
+        with np.errstate(invalid="ignore", divide="ignore"):
+            val = (a * b).sum(axis=1) / den
+        val[den == 0.0] = np.nan
+        ic[rows] = val
+    return ic, n
+
+
+def _score_matrices(
+    scores: pd.DataFrame, variants: tuple[str, ...]
+) -> tuple[dict[str, np.ndarray], list[str], pd.DatetimeIndex]:
+    """`scoreboard_history` 긴 표 → 변형별 (월말 × 테마) 행렬, 테마 목록, 월말 인덱스."""
+    wide = {v: scores[v].unstack("theme").sort_index() for v in variants}
+    themes = list(wide[variants[0]].columns)
+    dates = pd.DatetimeIndex(wide[variants[0]].index)
+    X = {v: wide[v].reindex(index=dates, columns=themes).to_numpy(dtype=float) for v in variants}
+    return X, themes, dates
+
+
 def rank_ic_series(
     scores: pd.DataFrame,
     fwd: Forward,
     classes: pd.Series,
     *,
     variants: tuple[str, ...] = VARIANTS,
+    horizons: Sequence[int] | None = None,
     min_n: int = MIN_THEMES_XS,
     min_n_class: int = MIN_THEMES_CLASS,
 ) -> pd.DataFrame:
@@ -261,50 +300,40 @@ def rank_ic_series(
 
     `scores` 는 `scoreboard_history` 의 긴 표(index (date, theme)). `partition` 은 `all` 또는
     `cycle_class`. n 이 문턱 미만인 (date, partition) 은 행을 만들되 ic=NaN 으로 남긴다 — 빠진 달을
-    세기 위해서다.
+    세기 위해서다. `horizons` 를 주면 `fwd.excess` 중 그 호라이즌만 쓴다.
     """
-    rows: list[dict[str, Any]] = []
-    wide = {v: scores[v].unstack("theme").sort_index() for v in variants}
-    themes = list(wide[variants[0]].columns)
-    dates = wide[variants[0]].index
+    X, themes, dates = _score_matrices(scores, variants)
     col_of = {t: j for j, t in enumerate(themes)}
     cls_idx = {
         c: np.array([col_of[t] for t in classes.index[classes == c] if t in col_of], dtype=int)
         for c in CYCLE_CLASSES
     }
-    X = {v: wide[v].reindex(index=dates, columns=themes).to_numpy(dtype=float) for v in variants}
-    for h, ex in fwd.excess.items():
-        Y = ex.reindex(index=dates, columns=themes).to_numpy(dtype=float)
-        for i, d in enumerate(dates):
-            y = Y[i]
-            if np.isnan(y).all():
-                continue
-            for v in variants:
-                x = X[v][i]
-                ic, n = _spearman_np(x, y)
-                rows.append(
-                    {
-                        "date": d,
-                        "variant": v,
-                        "horizon": h,
-                        "partition": PARTITION_ALL,
-                        "ic": ic if n >= min_n else float("nan"),
-                        "n": n,
-                    }
-                )
-                for c, idx in cls_idx.items():
-                    ic_c, n_c = _spearman_np(x[idx], y[idx]) if len(idx) else (float("nan"), 0)
-                    rows.append(
+    chunks: list[pd.DataFrame] = []
+    for h in horizons if horizons is not None else tuple(fwd.excess):
+        Y = fwd.excess[h].reindex(index=dates, columns=themes).to_numpy(dtype=float)
+        live = ~np.isnan(Y).all(axis=1)  # 어느 테마도 전진 수익률이 없는 달은 행을 만들지 않는다
+        d_live = dates[live]
+        Yl = Y[live]
+        for v in variants:
+            Xl = X[v][live]
+            parts: list[tuple[str, np.ndarray, np.ndarray, int]] = [(PARTITION_ALL, Xl, Yl, min_n)]
+            for c, idx in cls_idx.items():
+                parts.append((c, Xl[:, idx], Yl[:, idx], min_n_class))
+            for p, xs, ys, thr in parts:
+                ic, n = _spearman_rows(xs, ys)
+                chunks.append(
+                    pd.DataFrame(
                         {
-                            "date": d,
+                            "date": d_live,
                             "variant": v,
                             "horizon": h,
-                            "partition": c,
-                            "ic": ic_c if n_c >= min_n_class else float("nan"),
-                            "n": n_c,
+                            "partition": p,
+                            "ic": np.where(n >= thr, ic, np.nan),
+                            "n": n.astype(int),
                         }
                     )
-    out = pd.DataFrame(rows)
+                )
+    out = pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
     if out.empty:
         raise ValueError("IC 를 계산할 (월말, 호라이즌) 쌍이 하나도 없다")
     return out.sort_values(["horizon", "date"], kind="stable").reset_index(drop=True)
@@ -315,33 +344,37 @@ def indicator_ic_series(
     fwd: Forward,
     *,
     indicators: tuple[str, ...] = SCORED_INDICATORS,
+    horizons: Sequence[int] | None = None,
     min_n: int = MIN_THEMES_XS,
 ) -> pd.DataFrame:
     """지표 단독 rank-IC (방향 `ORIENTATION` 반영, 전체 파티션만).
 
     열: date, indicator, horizon, ic, n."""
-    rows: list[dict[str, Any]] = []
+    chunks: list[pd.DataFrame] = []
+    hs = tuple(horizons) if horizons is not None else tuple(fwd.excess)
     for i in indicators:
         if i not in ind.monthly.columns:
             continue
         w = ind.wide(i).astype(float) * ORIENTATION[i]
-        for h, ex in fwd.excess.items():
+        for h in hs:
+            ex = fwd.excess[h]
             dates = w.index.intersection(ex.index)
             themes = w.columns.intersection(ex.columns)
             X = w.reindex(index=dates, columns=themes).to_numpy(dtype=float)
             Y = ex.reindex(index=dates, columns=themes).to_numpy(dtype=float)
-            for k, d in enumerate(dates):
-                ic, n = _spearman_np(X[k], Y[k])
-                rows.append(
+            ic, n = _spearman_rows(X, Y)
+            chunks.append(
+                pd.DataFrame(
                     {
-                        "date": d,
+                        "date": dates,
                         "indicator": i,
                         "horizon": h,
-                        "ic": ic if n >= min_n else float("nan"),
-                        "n": n,
+                        "ic": np.where(n >= min_n, ic, np.nan),
+                        "n": n.astype(int),
                     }
                 )
-    return pd.DataFrame(rows)
+            )
+    return pd.concat(chunks, ignore_index=True) if chunks else pd.DataFrame()
 
 
 def spread_series(
@@ -360,10 +393,7 @@ def spread_series(
     `min_n` 미만이면 spread=NaN 으로 남기고 센다.
     """
     rows: list[dict[str, Any]] = []
-    wide = {v: scores[v].unstack("theme").sort_index() for v in variants}
-    themes = list(wide[variants[0]].columns)
-    dates = wide[variants[0]].index
-    X = {v: wide[v].reindex(index=dates, columns=themes).to_numpy(dtype=float) for v in variants}
+    X, themes, dates = _score_matrices(scores, variants)
     # 소표본: 표시가 없으면(테마·날짜가 표에 없으면) True 로 본다 — 모르는 것은 제외한다
     S = small.reindex(index=dates, columns=themes).fillna(True).to_numpy(dtype=bool)
     for h, ex in fwd.excess.items():
@@ -421,6 +451,17 @@ def effective_n(n: int, rho: float) -> float:
     return max(1.0, n * (1.0 - r) / (1.0 + r))
 
 
+@cache
+def _boot_index(n: int, block: int, n_boot: int, seed: int) -> np.ndarray:
+    """이동블록 재표집 인덱스 (n_boot × n). 같은 (n, L, n_boot, seed) 면 같은 난수열이다."""
+    rng = np.random.default_rng(seed)
+    n_blocks = math.ceil(n / block)
+    starts = rng.integers(0, n - block + 1, size=(n_boot, n_blocks))
+    idx = (starts[:, :, None] + np.arange(block)[None, None, :]).reshape(n_boot, -1)[:, :n]
+    idx.setflags(write=False)
+    return idx
+
+
 def block_bootstrap_mean(
     x: pd.Series,
     *,
@@ -445,11 +486,7 @@ def block_bootstrap_mean(
         out.update(ci_lo=float("nan"), ci_hi=float("nan"), se_boot=float("nan"), block_used=0.0)
         return out
     L = block if n >= 2 * block else max(1, n // 2)
-    rng = np.random.default_rng(seed)
-    n_blocks = math.ceil(n / L)
-    starts = rng.integers(0, n - L + 1, size=(n_boot, n_blocks))
-    idx = (starts[:, :, None] + np.arange(L)[None, None, :]).reshape(n_boot, -1)[:, :n]
-    means = s[idx].mean(axis=1)
+    means = s[_boot_index(n, L, n_boot, seed)].mean(axis=1)
     lo, hi = np.quantile(means, [alpha / 2, 1 - alpha / 2])
     out.update(ci_lo=float(lo), ci_hi=float(hi), se_boot=float(means.std(ddof=1)), block_used=L)
     return out
@@ -464,9 +501,9 @@ def avg_cross_corr(
     ρ̄ 는 시장 공통 요인이 지배해 유효 테마 수가 1/ρ̄ 근방으로 무너진다; 초과수익의 ρ̄ 가 횡단면
     순위 정보의 유효 폭에 가깝다.
     """
-    P = panel.index_level("ew").resample("ME").last()
+    P = to_month_end(panel.index_level("ew"))
     r = P.pct_change(fill_method=None)
-    spy = panel.spy["close"].resample("ME").last().reindex(r.index).pct_change(fill_method=None)
+    spy = to_month_end(panel.spy["close"]).reindex(r.index).pct_change(fill_method=None)
     out: dict[str, float] = {}
     for name, rr in (("raw", r), ("excess", r.sub(spy, axis=0))):
         x = rr.loc[start:] if start is not None else rr
@@ -523,50 +560,58 @@ def _window_slice(df: pd.DataFrame, window: str) -> pd.DataFrame:
     return df
 
 
-def summarize_ic(ic: pd.DataFrame) -> pd.DataFrame:
-    """window × horizon × variant × partition 요약. `n_months_dropped` 는 문턱 미만으로 빠진 달."""
+def _summarize(
+    df: pd.DataFrame,
+    keys: Sequence[str],
+    value: str,
+    extra: Callable[[pd.DataFrame, dict[str, Any]], None] | None = None,
+) -> pd.DataFrame:
+    """window × `keys` 별 시계열 요약 (`_summarize_series`) + `n_months_dropped` (+ `extra`).
+
+    `keys` 에는 `horizon` 이 있어야 하며 int 로 실린다. `extra(g, rec)` 는 그룹 프레임을 보고
+    요약에 열을 더한다 (IC: 평균 테마 수, 스프레드: 평균 우주 크기).
+    """
     rows = []
+    if df.empty:
+        return pd.DataFrame()
     for w in WINDOWS:
-        sub = _window_slice(ic, w)
-        for (v, h, p), g in sub.groupby(["variant", "horizon", "partition"], sort=False):
-            s = g.set_index("date")["ic"].sort_index()
-            rec = _summarize_series(
-                s, label={"window": w, "horizon": cast(int, h), "variant": v, "partition": p}
-            )
+        sub = _window_slice(df, w)
+        for key, g in sub.groupby(list(keys), sort=False):
+            s = g.set_index("date")[value].sort_index()
+            kv = dict(zip(keys, key, strict=True))
+            # 열 순서 규약: window · horizon · 나머지 키 (CSV 헤더가 이 순서다)
+            label: dict[str, Any] = {"window": w, "horizon": int(cast(int, kv.pop("horizon")))}
+            label.update(kv)
+            rec = _summarize_series(s, label=label)
             rec["n_months_dropped"] = int(s.isna().sum())
-            rec["mean_n_themes"] = (
-                float(g.loc[g["ic"].notna(), "n"].mean()) if rec["n_months"] else float("nan")
-            )
+            if extra is not None:
+                extra(g, rec)
             rows.append(rec)
     return pd.DataFrame(rows)
+
+
+def _ic_extra(g: pd.DataFrame, rec: dict[str, Any]) -> None:
+    rec["mean_n_themes"] = (
+        float(g.loc[g["ic"].notna(), "n"].mean()) if rec["n_months"] else float("nan")
+    )
+
+
+def _spread_extra(g: pd.DataFrame, rec: dict[str, Any]) -> None:
+    rec["mean_n_universe"] = float(g["n_universe"].mean())
+    rec["mean_n_small_excluded"] = float(g["n_small_excluded"].mean())
+
+
+def summarize_ic(ic: pd.DataFrame) -> pd.DataFrame:
+    """window × horizon × variant × partition 요약. `n_months_dropped` 는 문턱 미만으로 빠진 달."""
+    return _summarize(ic, ("variant", "horizon", "partition"), "ic", _ic_extra)
 
 
 def summarize_indicator_ic(iic: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    if iic.empty:
-        return pd.DataFrame()
-    for w in WINDOWS:
-        sub = _window_slice(iic, w)
-        for (i, h), g in sub.groupby(["indicator", "horizon"], sort=False):
-            s = g.set_index("date")["ic"].sort_index()
-            rec = _summarize_series(s, label={"window": w, "horizon": cast(int, h), "indicator": i})
-            rec["n_months_dropped"] = int(s.isna().sum())
-            rows.append(rec)
-    return pd.DataFrame(rows)
+    return _summarize(iic, ("indicator", "horizon"), "ic")
 
 
 def summarize_spread(sp: pd.DataFrame) -> pd.DataFrame:
-    rows = []
-    for w in WINDOWS:
-        sub = _window_slice(sp, w)
-        for (v, h), g in sub.groupby(["variant", "horizon"], sort=False):
-            s = g.set_index("date")["spread"].sort_index()
-            rec = _summarize_series(s, label={"window": w, "horizon": cast(int, h), "variant": v})
-            rec["n_months_dropped"] = int(s.isna().sum())
-            rec["mean_n_universe"] = float(g["n_universe"].mean())
-            rec["mean_n_small_excluded"] = float(g["n_small_excluded"].mean())
-            rows.append(rec)
-    return pd.DataFrame(rows)
+    return _summarize(sp, ("variant", "horizon"), "spread", _spread_extra)
 
 
 # ---------------------------------------------------------------- 브레드스 선행성
@@ -595,35 +640,27 @@ def breadth_lead_episodes(
             np.where(bs & ~bs.shift(1, fill_value=False), np.arange(len(bs)), np.nan),
             index=bs.index,
         ).ffill()
-        idx = np.arange(len(a))
-        for i in idx[up.to_numpy()]:
-            d = a.index[i]
+        for i in np.flatnonzero(up.to_numpy()).tolist():
+            lead = float("nan")
+            kind = "none"
             if pd.isna(b.iloc[i]):
-                rows.append(
-                    {
-                        "theme": t,
-                        "cycle_class": classes.get(t),
-                        "date": d,
-                        "lead": np.nan,
-                        "kind": "none",
-                    }
-                )
-                continue
-            if bool(bs.iloc[i]):
-                s = run_start.iloc[i]
-                lead = float(i - s)
+                pass
+            elif bool(bs.iloc[i]):
+                lead = float(i - run_start.iloc[i])
                 kind = "same" if lead == 0 else "lead"
             else:
-                fut = bs.iloc[i + 1 : i + 1 + lag_search]
-                hit = np.flatnonzero(fut.to_numpy())
+                hit = np.flatnonzero(bs.iloc[i + 1 : i + 1 + lag_search].to_numpy())
                 if len(hit):
                     lead = -float(hit[0] + 1)
                     kind = "lag"
-                else:
-                    lead = float("nan")
-                    kind = "none"
             rows.append(
-                {"theme": t, "cycle_class": classes.get(t), "date": d, "lead": lead, "kind": kind}
+                {
+                    "theme": t,
+                    "cycle_class": classes.get(t),
+                    "date": a.index[i],
+                    "lead": lead,
+                    "kind": kind,
+                }
             )
     return pd.DataFrame(rows, columns=["theme", "cycle_class", "date", "lead", "kind"])
 
@@ -755,30 +792,29 @@ def overfitting_summary(
     for w in WINDOWS:
         ic_w = _window_slice(ic[ic["partition"] == PARTITION_ALL], w)
         sp_w = _window_slice(sp, w)
+        # (series 이름, 긴 표, 값 열, 호라이즌) — IC 는 3·6·12M, 스프레드는 1M(PBO)까지
+        spec: tuple[tuple[str, pd.DataFrame, tuple[int, ...]], ...] = (
+            ("ic", ic_w, HORIZONS),
+            ("spread", sp_w, (PBO_HORIZON, *HORIZONS)),
+        )
         for v in VARIANTS:
-            for h in HORIZONS:
-                s = (
-                    ic_w[(ic_w["variant"] == v) & (ic_w["horizon"] == h)]
-                    .set_index("date")["ic"]
-                    .sort_index()
-                )
-                rec: dict[str, Any] = {"window": w, "variant": v, "horizon": h, "series": "ic"}
-                rec["n_trials_declared"] = 1 if v == "score" else None
-                if v == "score":
-                    rec["dsr_n1"] = dsr_of_series(s, 1, horizon=h)
-                rec["dsr_n_total"] = dsr_of_series(s, n_all, horizon=h)
-                out["dsr"].append(rec)
-            for h in (PBO_HORIZON, *HORIZONS):
-                s_sp = (
-                    sp_w[(sp_w["variant"] == v) & (sp_w["horizon"] == h)]
-                    .set_index("date")["spread"]
-                    .sort_index()
-                )
-                rec = {"window": w, "variant": v, "horizon": h, "series": "spread"}
-                if v == "score":
-                    rec["dsr_n1"] = dsr_of_series(s_sp, 1, horizon=h)
-                rec["dsr_n_total"] = dsr_of_series(s_sp, n_all, horizon=h)
-                out["dsr"].append(rec)
+            for series, frame, hs in spec:
+                for h in hs:
+                    s = (
+                        frame[(frame["variant"] == v) & (frame["horizon"] == h)]
+                        .set_index("date")[series]
+                        .sort_index()
+                    )
+                    rec: dict[str, Any] = {
+                        "window": w,
+                        "variant": v,
+                        "horizon": h,
+                        "series": series,
+                    }
+                    if v == "score":
+                        rec["dsr_n1"] = dsr_of_series(s, 1, horizon=h)
+                    rec["dsr_n_total"] = dsr_of_series(s, n_all, horizon=h)
+                    out["dsr"].append(rec)
         for h in (PBO_HORIZON, *HORIZONS):
             out["pbo"].append(pbo_of_spreads(sp, window=w, horizon=h, max_splits=pbo_max_splits))
     return out
@@ -787,14 +823,19 @@ def overfitting_summary(
 # ---------------------------------------------------------------- 판정
 
 
+def _cell(summ: pd.DataFrame, variant: str) -> pd.DataFrame:
+    """관문 칸 — 주 창 · 관문 호라이즌 · 전체 파티션 · `variant`."""
+    return summ[
+        (summ["window"] == "primary")
+        & (summ["horizon"] == GATE_HORIZON)
+        & (summ["variant"] == variant)
+        & (summ["partition"] == PARTITION_ALL)
+    ]
+
+
 def verdict(ic_summary: pd.DataFrame, overfit: dict[str, Any]) -> dict[str, Any]:
     """`docs/10` §2.3 — 주 창·12M·복합 IC 의 CI 가 0 을 넘는가. 나머지는 진단 줄로 덧붙인다."""
-    g = ic_summary[
-        (ic_summary["window"] == "primary")
-        & (ic_summary["horizon"] == GATE_HORIZON)
-        & (ic_summary["variant"] == "score")
-        & (ic_summary["partition"] == PARTITION_ALL)
-    ]
+    g = _cell(ic_summary, "score")
     if g.empty:
         return {"gate": "undetermined", "reason": "관문 셀이 비어 있다"}
     r = g.iloc[0]
@@ -817,12 +858,7 @@ def verdict(ic_summary: pd.DataFrame, overfit: dict[str, Any]) -> dict[str, Any]
     gate = "pass" if ci_excludes_zero_pos else "fail"
     blocks = {}
     for b in BLOCKS:
-        gb = ic_summary[
-            (ic_summary["window"] == "primary")
-            & (ic_summary["horizon"] == GATE_HORIZON)
-            & (ic_summary["variant"] == b)
-            & (ic_summary["partition"] == PARTITION_ALL)
-        ]
+        gb = _cell(ic_summary, b)
         if not gb.empty:
             rb = gb.iloc[0]
             blocks[b] = {
@@ -901,33 +937,8 @@ def run_backtest_frames(
     fwd = forward_excess(panel, (PBO_HORIZON, *HORIZONS))
     small = small_sample_history(panel, themes)
     log.info("backtest: rank-IC")
-    ic = rank_ic_series(
-        scores,
-        Forward(
-            excess={h: fwd.excess[h] for h in HORIZONS},
-            theme_ret=fwd.theme_ret,
-            spy_ret=fwd.spy_ret,
-            month_ends=fwd.month_ends,
-            last_complete=fwd.last_complete,
-            exclusions=fwd.exclusions,
-        ),
-        classes,
-    )
-    iic = (
-        indicator_ic_series(
-            ind,
-            Forward(
-                excess={h: fwd.excess[h] for h in HORIZONS},
-                theme_ret=fwd.theme_ret,
-                spy_ret=fwd.spy_ret,
-                month_ends=fwd.month_ends,
-                last_complete=fwd.last_complete,
-                exclusions=fwd.exclusions,
-            ),
-        )
-        if with_indicator_ic
-        else pd.DataFrame()
-    )
+    ic = rank_ic_series(scores, fwd, classes, horizons=HORIZONS)
+    iic = indicator_ic_series(ind, fwd, horizons=HORIZONS) if with_indicator_ic else pd.DataFrame()
     log.info("backtest: 스프레드")
     sp = spread_series(scores, fwd, small)
     log.info("backtest: 요약·부트스트랩")
@@ -984,57 +995,16 @@ def run_backtest_frames(
 def load_inputs(
     *, force: bool = False, compute_vcp: bool = True
 ) -> tuple[ThemePanel, Indicators, ThemeSet, dict[str, Any]]:
-    """`msa scan` 과 같은 경로로 패널·지표를 (캐시에서) 가져온다. 스토어는 지문 계산에만 연다."""
-    from msa.config import paths
-    from msa.data.store import Store, etf_prices_or_empty
-    from msa.l1.blocks import compute_indicators
-    from msa.l1.panel import build_panel
-    from msa.l1.physical import load_physical
-    from msa.l1.scan import _cache_paths, load_or_build_fund
-    from msa.themes import load_themes, membership_from_store
+    """`msa scan` 과 같은 경로(`scan.prepare_inputs`)로 패널·지표를 (캐시에서) 가져온다.
 
-    p = paths()
-    cache_dir = p.cache
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    themes = load_themes()
-    with Store(p.duckdb) as store:
-        membership = membership_from_store(store, themes)
-        panel = build_panel(store, membership, cache_dir=cache_dir, force=force)
-        fp = panel.built_from["fingerprint"]
-        fund = load_or_build_fund(store, membership, fp, cache_dir, force=force)
-    cp = _cache_paths(fp, cache_dir)
-    ind: Indicators | None = None
-    if not force and cp["ind"].exists() and cp["ind_meta"].exists():
-        im = json.loads(cp["ind_meta"].read_text())
-        if im.get("vcp_computed") == compute_vcp:
-            ind = Indicators(monthly=pd.read_parquet(cp["ind"]), meta=im)
-            log.info("backtest: 지표 캐시 사용 %s", cp["ind"].name)
-    if ind is None:
-        etf_syms = sorted(
-            {t.etf_proxy for t in themes if t.etf_proxy}
-            | {
-                t.physical_ref.symbol
-                for t in themes
-                if t.physical_ref and t.physical_ref.source == "etf"
-            }
-        )
-        etf = etf_prices_or_empty(etf_syms)
-        physical = load_physical(
-            themes, allow_fetch=False, etf_prefetched=etf if not etf.empty else None
-        )
-        ind = compute_indicators(panel, fund, physical, themes, compute_vcp=compute_vcp)
-        ind.meta["physical_status"] = {k: v.status for k, v in physical.refs.items()} | {
-            "_cpi": physical.cpi.status
-        }
-        ind.monthly.to_parquet(cp["ind"])
-        cp["ind_meta"].write_text(json.dumps(ind.meta, ensure_ascii=False, indent=1, default=str))
-    info = {
-        "fingerprint": fp,
-        "store_end": panel.built_from["store_end"],
-        "panel": panel.built_from,
-        "fund": fund.built_from,
-    }
-    return panel, ind, themes, info
+    FRED 는 받지 않고(`allow_fetch=False`) 미분류 시총 관문은 건너뛴다 — 백테스트는 스캔이 아니다.
+    """
+    from msa.l1.scan import prepare_inputs
+
+    inp = prepare_inputs(
+        force=force, compute_vcp=compute_vcp, allow_fetch=False, coverage_gate=False
+    )
+    return inp.panel, inp.indicators, inp.themes, inp.info()
 
 
 def run_backtest(
@@ -1050,7 +1020,7 @@ def run_backtest(
         root = out_root if out_root is not None else paths().backtests_l1
         out_dir = root / str(info["store_end"])
         write_outputs(res, out_dir)
-    return BacktestResult(**{**res.__dict__, "out_dir": out_dir})
+    return replace(res, out_dir=out_dir)
 
 
 def write_outputs(res: BacktestResult, out_dir: Path) -> None:
@@ -1064,61 +1034,51 @@ def write_outputs(res: BacktestResult, out_dir: Path) -> None:
     res.spread_summary.to_csv(out_dir / "spread_summary.csv", index=False)
     res.breadth_lead.to_csv(out_dir / "breadth_lead.csv", index=False)
     res.breadth_lead_summary.to_csv(out_dir / "breadth_lead_summary.csv", index=False)
-    (out_dir / "overfitting.json").write_text(
-        json.dumps(res.overfitting, ensure_ascii=False, indent=1, default=_json_default)
-    )
-    (out_dir / "verdict.json").write_text(
-        json.dumps(res.verdict, ensure_ascii=False, indent=1, default=_json_default)
-    )
-    (out_dir / "exclusions.json").write_text(
-        json.dumps(
-            {
-                "forward": res.meta["forward_exclusions"],
-                "months_with_lt_min_themes_scored": res.meta["months_with_lt_min_themes_scored"],
-                "ic_months_dropped": res.ic_summary[
-                    ["window", "horizon", "variant", "partition", "n_months", "n_months_dropped"]
-                ].to_dict(orient="records"),
-                "spread_months_dropped": res.spread_summary[
-                    [
-                        "window",
-                        "horizon",
-                        "variant",
-                        "n_months",
-                        "n_months_dropped",
-                        "mean_n_small_excluded",
-                    ]
-                ].to_dict(orient="records"),
-            },
-            ensure_ascii=False,
-            indent=1,
-            default=_json_default,
-        )
-    )
-    (out_dir / "meta.json").write_text(
-        json.dumps(res.meta, ensure_ascii=False, indent=1, default=_json_default)
-    )
+    exclusions = {
+        "forward": res.meta["forward_exclusions"],
+        "months_with_lt_min_themes_scored": res.meta["months_with_lt_min_themes_scored"],
+        "ic_months_dropped": res.ic_summary[
+            ["window", "horizon", "variant", "partition", "n_months", "n_months_dropped"]
+        ].to_dict(orient="records"),
+        "spread_months_dropped": res.spread_summary[
+            [
+                "window",
+                "horizon",
+                "variant",
+                "n_months",
+                "n_months_dropped",
+                "mean_n_small_excluded",
+            ]
+        ].to_dict(orient="records"),
+    }
+    for name, obj in (
+        ("overfitting.json", res.overfitting),
+        ("verdict.json", res.verdict),
+        ("exclusions.json", exclusions),
+        ("meta.json", res.meta),
+    ):
+        dump_json(out_dir / name, _plain(obj))
     (out_dir / "report.txt").write_text(render_report(res), encoding="utf-8")
     log.info("backtest: 저장 %s", out_dir)
 
 
-def _json_default(o: Any) -> Any:
+def _plain(o: Any) -> Any:
+    """numpy 스칼라·배열·Timestamp → JSON 평문 (`dump_json` 의 `default=str` 에 앞서 변환한다)."""
+    if isinstance(o, dict):
+        return {k: _plain(v) for k, v in o.items()}
+    if isinstance(o, list | tuple):
+        return [_plain(v) for v in o]
     if isinstance(o, np.generic):
         return o.item()
     if isinstance(o, pd.Timestamp):
         return str(o.date())
     if isinstance(o, np.ndarray):
         return o.tolist()
-    return str(o)
-
-
-def _fmt(x: Any, w: int = 6, p: int = 3) -> str:
-    """NaN/None 안전 고정폭 실수 포맷."""
-    if x is None or (isinstance(x, float) and math.isnan(x)):
-        return f"{'nan':>{w}}"
-    return f"{float(x):{w}.{p}f}"
+    return o
 
 
 def _pct(x: Any, w: int = 6, p: int = 0) -> str:
+    """고정폭 백분율 (기호 없음, `%` 없음) — `msa.fmt.num` 에 ×100 만 얹은 것."""
     return _fmt(float(x) * 100.0 if x is not None and pd.notna(x) else float("nan"), w, p)
 
 

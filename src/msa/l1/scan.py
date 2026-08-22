@@ -11,8 +11,12 @@
 | `report.txt` | 사람이 읽는 요약 (스코어보드 + 제외·결측 보고) |
 | `meta.json` | 스토어 최종일·지문·위생 상수·결측 지표·적자 제외 비율 |
 
-캐시(`state/cache/`)는 지문으로 관리한다. 패널은 `panel.py` 가, 재무 패널·지표는 여기서 같은 지문
-(`구성원 + 스토어 최종일`)으로 저장한다. `--force` 면 전부 다시 만든다.
+캐시(`state/cache/`)는 지문으로 관리한다 (`msa.l1.cache.FingerprintCache`). 패널은 `panel.py` 가,
+재무 패널·지표는 여기서 같은 지문(`구성원 + 스토어 최종일`)으로 저장한다. `--force` 면 전부 다시
+만든다. 지표 캐시는 실물 참조 상태(`physical_status`)와 `vcp_computed` 가 같을 때만 유효하다.
+
+`prepare_inputs()` 가 스토어 → 패널 → 재무 → 실물 → 지표까지를 한 번에 준비한다 — `msa scan` 과
+`msa backtest l1` 이 같은 함수를 쓴다 (백테스트는 미분류 시총 관문을 생략한다).
 
 커버리지 감사 중 **미분류 시총 비율**은 `scripts/audit_themes.py` 와 같은 정의로 여기서도 계산하며,
 5% 를 넘으면 스캔을 진행하지 않는다 (`CLAUDE.md` §2, `docs/01` §5).
@@ -20,9 +24,9 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -30,7 +34,9 @@ import numpy as np
 import pandas as pd
 
 from msa.config import paths
-from msa.data.store import Store, StoreError, etf_prices
+from msa.data.store import Store, StoreError, etf_prices_or_empty
+from msa.dates import parse_date
+from msa.io import write_snapshot
 from msa.l1.blocks import (
     BLOCK_INDICATORS,
     FLAG_OUTPUTS,
@@ -38,10 +44,12 @@ from msa.l1.blocks import (
     Indicators,
     compute_indicators,
 )
+from msa.l1.cache import FingerprintCache
 from msa.l1.fundamentals import FundPanel, build_fund_panel
 from msa.l1.panel import ThemePanel, build_panel
-from msa.l1.physical import load_physical
+from msa.l1.physical import PhysicalBundle, etf_symbols, load_physical
 from msa.l1.scoreboard import Scoreboard, build_scoreboard
+from msa.status import Axis1Status
 from msa.themes import Membership, ThemeSet, load_themes, membership_from_store
 
 log = logging.getLogger(__name__)
@@ -57,6 +65,37 @@ class ScanResult:
     coverage: pd.DataFrame
     meta: dict[str, Any]
     out_dir: Path | None
+
+
+@dataclass(frozen=True)
+class ScanInputs:
+    """`prepare_inputs` 의 산출 — 스토어를 닫은 뒤에도 스캔·백테스트가 필요로 하는 전부."""
+
+    themes: ThemeSet
+    membership: Membership
+    panel: ThemePanel
+    fund: FundPanel
+    physical: PhysicalBundle
+    etf: pd.DataFrame  # `etf_prices` 프레임 (못 읽었으면 빈 프레임)
+    indicators: Indicators
+    unclassified_mcap: dict[str, float] | None  # 관문을 건너뛰었으면 None
+
+    @property
+    def fingerprint(self) -> str:
+        return str(self.panel.built_from["fingerprint"])
+
+    @property
+    def store_end(self) -> str:
+        return str(self.panel.built_from["store_end"])
+
+    def info(self) -> dict[str, Any]:
+        """메타에 싣는 공통 항목."""
+        return {
+            "fingerprint": self.fingerprint,
+            "store_end": self.store_end,
+            "panel": self.panel.built_from,
+            "fund": self.fund.built_from,
+        }
 
 
 def unclassified_mcap_share(
@@ -106,35 +145,108 @@ def etf_proxy_corr(
     return pd.Series(out)
 
 
-def _cache_paths(fp: str, cache_dir: Path) -> dict[str, Path]:
-    return {
-        "fund": cache_dir / f"l1_fund_{fp}.parquet",
-        "ss": cache_dir / f"l1_fund_ss_{fp}.parquet",
-        "acts": cache_dir / f"l1_fund_actions_{fp}.parquet",
-        "fund_meta": cache_dir / f"l1_fund_{fp}.json",
-        "ind": cache_dir / f"l1_indicators_{fp}.parquet",
-        "ind_meta": cache_dir / f"l1_indicators_{fp}.json",
-    }
-
-
 def load_or_build_fund(
-    store: Store, membership: Membership, fp: str, cache_dir: Path, *, force: bool
+    store: Store,
+    membership: Membership,
+    fc: FingerprintCache,
+    *,
+    force: bool,
+    end: str | None = None,
 ) -> FundPanel:
-    cp = _cache_paths(fp, cache_dir)
-    if not force and all(cp[k].exists() for k in ("fund", "ss", "acts", "fund_meta")):
-        log.info("fund: 캐시 사용 %s", cp["fund"].name)
+    """재무 패널 — 캐시가 있으면 읽고, 없으면 만들어 저장한다. `end` 는 스토어 최종일(패널 메타)."""
+    if not force and fc.has(fc.fund, fc.fund_ss, fc.fund_actions, fc.fund_meta):
+        log.info("fund: 캐시 사용 %s", fc.fund.name)
         return FundPanel(
-            frame=pd.read_parquet(cp["fund"]),
-            same_store=pd.read_parquet(cp["ss"]),
-            actions=pd.read_parquet(cp["acts"]),
-            built_from=json.loads(cp["fund_meta"].read_text()),
+            frame=fc.read_frame(fc.fund),
+            same_store=fc.read_frame(fc.fund_ss),
+            actions=fc.read_frame(fc.fund_actions),
+            built_from=fc.read_meta(fc.fund_meta),
         )
-    fund = build_fund_panel(store, membership)
-    fund.frame.to_parquet(cp["fund"])
-    fund.same_store.to_parquet(cp["ss"])
-    fund.actions.to_parquet(cp["acts"])
-    cp["fund_meta"].write_text(json.dumps(fund.built_from, ensure_ascii=False, indent=1))
+    fund = build_fund_panel(store, membership, end=end)
+    fund.frame.to_parquet(fc.fund)
+    fund.same_store.to_parquet(fc.fund_ss)
+    fund.actions.to_parquet(fc.fund_actions)
+    fc.write_meta(fc.fund_meta, fund.built_from)
     return fund
+
+
+def load_or_build_indicators(
+    panel: ThemePanel,
+    fund: FundPanel,
+    physical: PhysicalBundle,
+    themes: ThemeSet,
+    fc: FingerprintCache,
+    *,
+    force: bool,
+    compute_vcp: bool,
+) -> Indicators:
+    """지표 — 캐시가 있고 실물 참조 상태·`vcp_computed` 가 같으면 읽고, 아니면 계산해 저장한다."""
+    phys_sig = physical.status_signature()
+    if not force and fc.has(fc.indicators, fc.indicators_meta):
+        im = fc.read_meta(fc.indicators_meta)
+        if im.get("physical_status") == phys_sig and im.get("vcp_computed") == compute_vcp:
+            log.info("indicators: 캐시 사용 %s", fc.indicators.name)
+            return Indicators(monthly=fc.read_frame(fc.indicators), meta=im)
+    log.info("indicators: 계산 시작 (vcp=%s)", compute_vcp)
+    ind = compute_indicators(panel, fund, physical, themes, compute_vcp=compute_vcp)
+    ind.meta["physical_status"] = phys_sig
+    ind.monthly.to_parquet(fc.indicators)
+    fc.write_meta(fc.indicators_meta, ind.meta)
+    return ind
+
+
+def prepare_inputs(
+    *,
+    force: bool = False,
+    compute_vcp: bool = True,
+    allow_fetch: bool = True,
+    themes_path: Path | None = None,
+    coverage_gate: bool = True,
+) -> ScanInputs:
+    """스토어 → 구성원 → 패널 → 재무 → ETF·실물 → 지표. 캐시는 지문으로 찾는다.
+
+    `coverage_gate=True` 면 미분류 시총 비율이 `UNCLASSIFIED_MCAP_MAX` 이상일 때 `StoreError`
+    (스캔 경로, `CLAUDE.md` §2). 백테스트는 `False` 로 부른다.
+    """
+    p = paths()
+    themes = load_themes(themes_path)
+    uncls: dict[str, float] | None = None
+    with Store(p.duckdb) as store:
+        membership = membership_from_store(store, themes)
+        if len(membership.frame) == 0:
+            raise StoreError("배정된 구성원이 0개다.")
+        if coverage_gate:
+            uncls = unclassified_mcap_share(store, membership, membership.meta)
+            if not (uncls["share"] < UNCLASSIFIED_MCAP_MAX):
+                raise StoreError(
+                    f"미분류 시총 비율 {uncls['share']:.2%} ≥ {UNCLASSIFIED_MCAP_MAX:.0%} — "
+                    "스캔을 진행하지 않는다 "
+                    "(docs/01 §5). themes.yaml 의 industry_match 를 점검해라."
+                )
+        panel = build_panel(store, membership, cache_dir=p.cache, force=force)
+        fc = FingerprintCache.at(str(panel.built_from["fingerprint"]), p.cache)
+        fund = load_or_build_fund(
+            store, membership, fc, force=force, end=str(panel.built_from["store_end"])
+        )
+
+    # ETF: 프록시 + 실물 참조를 한 번에
+    etf = etf_prices_or_empty(etf_symbols(themes))
+    physical = load_physical(
+        themes, allow_fetch=allow_fetch, etf_prefetched=etf if not etf.empty else None
+    )
+    ind = load_or_build_indicators(
+        panel, fund, physical, themes, fc, force=force, compute_vcp=compute_vcp
+    )
+    return ScanInputs(
+        themes=themes,
+        membership=membership,
+        panel=panel,
+        fund=fund,
+        physical=physical,
+        etf=etf,
+        indicators=ind,
+        unclassified_mcap=uncls,
+    )
 
 
 def run_scan(
@@ -147,61 +259,14 @@ def run_scan(
     allow_fetch: bool = True,
     compute_vcp: bool = True,
 ) -> ScanResult:
-    p = paths()
-    cache_dir = p.cache
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    themes = load_themes(themes_path)
-    with Store(p.duckdb) as store:
-        membership = membership_from_store(store, themes)
-        meta = membership.meta
-        if len(membership.frame) == 0:
-            raise StoreError("배정된 구성원이 0개다.")
-        uncls = unclassified_mcap_share(store, membership, meta)
-        if not (uncls["share"] < UNCLASSIFIED_MCAP_MAX):
-            raise StoreError(
-                f"미분류 시총 비율 {uncls['share']:.2%} ≥ {UNCLASSIFIED_MCAP_MAX:.0%} — "
-                "스캔을 진행하지 않는다 "
-                "(docs/01 §5). themes.yaml 의 industry_match 를 점검해라."
-            )
-        panel = build_panel(store, membership, cache_dir=cache_dir, force=force)
-        fp = panel.built_from["fingerprint"]
-        fund = load_or_build_fund(store, membership, fp, cache_dir, force=force)
-        counts = membership.counts()
-
-    # ETF: 프록시 + 실물 참조를 한 번에
-    etf_syms = sorted(
-        {t.etf_proxy for t in themes if t.etf_proxy}
-        | {
-            t.physical_ref.symbol
-            for t in themes
-            if t.physical_ref and t.physical_ref.source == "etf"
-        }
+    inp = prepare_inputs(
+        force=force, compute_vcp=compute_vcp, allow_fetch=allow_fetch, themes_path=themes_path
     )
-    try:
-        etf = etf_prices(etf_syms, min_rows=0)
-    except StoreError as e:
-        log.warning("ETF 벌크를 읽지 못했다 — 프록시 상관·ETF 실물 참조 없이 진행: %s", e)
-        etf = pd.DataFrame(columns=["ticker", "date", "close", "closeadj", "volume"])
-    physical = load_physical(
-        themes, allow_fetch=allow_fetch, etf_prefetched=etf if not etf.empty else None
-    )
+    themes, panel, ind, physical, etf = inp.themes, inp.panel, inp.indicators, inp.physical, inp.etf
+    assert inp.unclassified_mcap is not None
+    counts = inp.membership.counts()
 
-    cp = _cache_paths(fp, cache_dir)
-    phys_sig = {k: v.status for k, v in physical.refs.items()} | {"_cpi": physical.cpi.status}
-    ind: Indicators | None = None
-    if not force and cp["ind"].exists() and cp["ind_meta"].exists():
-        im = json.loads(cp["ind_meta"].read_text())
-        if im.get("physical_status") == phys_sig and im.get("vcp_computed") == compute_vcp:
-            log.info("indicators: 캐시 사용 %s", cp["ind"].name)
-            ind = Indicators(monthly=pd.read_parquet(cp["ind"]), meta=im)
-    if ind is None:
-        log.info("indicators: 계산 시작 (vcp=%s)", compute_vcp)
-        ind = compute_indicators(panel, fund, physical, themes, compute_vcp=compute_vcp)
-        ind.meta["physical_status"] = phys_sig
-        ind.monthly.to_parquet(cp["ind"])
-        cp["ind_meta"].write_text(json.dumps(ind.meta, ensure_ascii=False, indent=1, default=str))
-
-    store_end = pd.Timestamp(panel.built_from["store_end"])
+    store_end = pd.Timestamp(inp.store_end)
     asof_ts = min(pd.Timestamp(asof), store_end) if asof else store_end
     sb = build_scoreboard(ind, themes, asof_ts, n_live=counts["n_live"])
     data_date = min(asof_ts, store_end)  # 버킷 라벨(월말)이 아니라 실제 데이터 기준일
@@ -212,7 +277,7 @@ def run_scan(
     cov["etf_corr_12m"] = corr.reindex(cov.index)
     cov["etf_corr_ok"] = cov["etf_corr_12m"] > ETF_CORR_MIN
     st = physical.status_table(themes)
-    cov["axis1_declared"] = st["status"].ne("not_declared")
+    cov["axis1_declared"] = st["status"].ne(Axis1Status.NOT_DECLARED.value)
     cov["axis1_data"] = st["status"]
     cov["physical_ref"] = (st["source"].fillna("") + ":" + st["symbol"].fillna("")).str.strip(":")
     cov["min_constituents"] = [t.min_constituents for t in themes]
@@ -225,18 +290,18 @@ def run_scan(
     scan_meta: dict[str, Any] = {
         "asof": str(data_date.date()),
         "bucket": str(sb.date.date()),
-        "store_end": panel.built_from["store_end"],
-        "fingerprint": fp,
+        "store_end": inp.store_end,
+        "fingerprint": inp.fingerprint,
         "themes": len(themes),
-        "membership": membership.report(),
-        "unclassified_mcap": uncls,
+        "membership": inp.membership.report(),
+        "unclassified_mcap": inp.unclassified_mcap,
         "panel": panel.built_from,
-        "fund": fund.built_from,
+        "fund": inp.fund.built_from,
         "indicators": {k: v for k, v in ind.meta.items() if k != "physical_status"},
         "physical": {
             "declared": int(cov["axis1_declared"].sum()),
             "data_ok": int(st["status"].str.startswith("ok").sum()) if len(st) else 0,
-            "data_missing": int((st["status"] == "data_missing").sum())
+            "data_missing": int((st["status"] == Axis1Status.DATA_MISSING.value).sum())
             + int((st["status"] == "missing").sum()),
             "cpi": physical.cpi.status,
         },
@@ -251,22 +316,40 @@ def run_scan(
 
     out_dir: Path | None = None
     if write:
-        root = out_root if out_root is not None else p.scans
-        out_dir = root / str(data_date.date())
-        out_dir.mkdir(parents=True, exist_ok=True)
-        sb.table.to_csv(out_dir / "scoreboard.csv")
+        root = out_root if out_root is not None else paths().scans
         row = ind.at(sb.date)
         ordered = [i for b in BLOCK_INDICATORS.values() for i in b if i in row.columns]
         ordered += [c for c in (*TEXT_OUTPUTS, *FLAG_OUTPUTS) if c in row.columns]
-        row[ordered].to_csv(out_dir / "indicators.csv")
-        sb.indicator_pct.to_csv(out_dir / "indicator_pct.csv")
-        cov.to_csv(out_dir / "coverage.csv")
-        (out_dir / "meta.json").write_text(
-            json.dumps(scan_meta, ensure_ascii=False, indent=1, default=str)
+        out_dir = write_snapshot(
+            root / str(data_date.date()),
+            frames={
+                "scoreboard.csv": sb.table,
+                "indicators.csv": row[ordered],
+                "indicator_pct.csv": sb.indicator_pct,
+                "coverage.csv": cov,
+            },
+            jsons={"meta.json": scan_meta},
+            texts={"report.txt": render_report(sb, cov, scan_meta)},
         )
-        (out_dir / "report.txt").write_text(render_report(sb, cov, scan_meta), encoding="utf-8")
         log.info("scan: 저장 %s", out_dir)
     return ScanResult(scoreboard=sb, indicators=ind, coverage=cov, meta=scan_meta, out_dir=out_dir)
+
+
+def scan_dirs(root: Path | None = None) -> list[tuple[date, Path]]:
+    """`state/scans/<YYYY-MM-DD>/` 스냅샷 디렉터리를 (날짜, 경로) 로 날짜 오름차순. 이름이 날짜가
+    아닌 것은 건너뛴다. 루트가 없으면 빈 목록 — L3·ops 가 최신/이하 스냅샷을 고를 때 쓴다."""
+    base = root if root is not None else paths().scans
+    if not base.exists():
+        return []
+    out: list[tuple[date, Path]] = []
+    for d in base.iterdir():
+        if not d.is_dir():
+            continue
+        try:
+            out.append((parse_date(d.name), d))
+        except ValueError:
+            continue
+    return sorted(out)
 
 
 def render_report(sb: Scoreboard, cov: pd.DataFrame, meta: dict[str, Any]) -> str:
