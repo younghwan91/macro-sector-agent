@@ -32,8 +32,8 @@
 - `horizon_months: [lo, hi]` — 시간 스탑 = 기준일 + hi 개월
 
 선택: `triggers` · `tailwind` · `gate_result.portfolio_eligible` (false 면 편입 불가로 제외하고
-그 사실을 적는다) · `key_uncertainties` · `generated_at` ·
-`value_trap_axes.unit_demand.axis1_available`.
+그 사실을 적는다) · `value_trap_axes.unit_demand.axis1_available`. 그 밖의 필드
+(`key_uncertainties` · `generated_at` · …) 는 읽지 않는다 — 전문은 저널에 있다.
 
 ## 3. `cases.yaml` — 케이스 스터디 표 (`L_i` 의 사망 사례 낙폭 출처)
 
@@ -67,33 +67,32 @@ import logging
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import date
 from pathlib import Path
 from typing import Any
 
-import yaml
-
+from msa import coerce
 from msa.errors import RefusedInput
+from msa.io import load_yaml_mapping
 
 log = logging.getLogger(__name__)
 
 PICK_ROLES: tuple[str, ...] = ("anchor", "torque", "royalty", "midstream", "etf")
+# TODO(rf-d): → msa.thesis 의 확신도 출처 enum 으로 교체 (L3 머지 후)
 CONFIDENCE_SOURCES: tuple[str, ...] = ("human", "referee")
 CASE_TYPES: tuple[str, ...] = ("cycle", "death")
 
 PICKS_REQUIRED_COLUMNS: tuple[str, ...] = ("theme", "ticker", "role")
-PICKS_OPTIONAL_COLUMNS: tuple[str, ...] = (
+#: 선택 실수 열 — `Pick` 의 `float | None` 필드와 이름이 같다 (dict 로 바로 넘긴다).
+_FLOAT_COLS: tuple[str, ...] = (
     "entry_price",
     "adv20_usd",
     "rank_score",
     "idio_vol_ann",
-    "min_weight",
-    "split_first_leg",
     "tp_p50_price",
     "tp_p75_price",
     "prev_cycle_peak_price",
-    "notes",
 )
+PICKS_OPTIONAL_COLUMNS: tuple[str, ...] = (*_FLOAT_COLS, "min_weight", "split_first_leg", "notes")
 
 
 class InputError(RefusedInput, ValueError):
@@ -128,26 +127,23 @@ class Pick:
 
 
 def _opt_float(raw: str | None, *, field_name: str, where: str) -> float | None:
-    if raw is None:
+    """빈 값·NA 토큰은 None, 숫자가 아니면 예외 (`msa.coerce` 는 "모르면 None" — 여기서 거른다)."""
+    if coerce.opt_str(raw) is None or str(raw).strip().lower() in coerce.NA_TOKENS:
         return None
-    s = raw.strip()
-    if s == "" or s.lower() in ("na", "nan", "none", "null", "—"):
-        return None
-    try:
-        return float(s)
-    except ValueError:
-        raise InputError(f"{where}: {field_name}={raw!r} 는 숫자가 아니다") from None
+    v = coerce.opt_float(raw)
+    if v is None:
+        raise InputError(f"{where}: {field_name}={raw!r} 는 숫자가 아니다")
+    return v
 
 
 def _opt_bool(raw: str | None, *, field_name: str, where: str) -> bool:
-    if raw is None or raw.strip() == "":
-        return False
-    s = raw.strip().lower()
-    if s in ("1", "true", "yes", "y"):
-        return True
-    if s in ("0", "false", "no", "n"):
-        return False
-    raise InputError(f"{where}: {field_name}={raw!r} 는 true/false 여야 한다")
+    """빈 값은 False, true/false 꼴이 아니면 예외."""
+    v = coerce.opt_bool(raw)
+    if v is None:
+        if raw is None:
+            return False
+        raise InputError(f"{where}: {field_name}={raw!r} 는 true/false 여야 한다")
+    return v
 
 
 def load_picks(path: Path | str) -> list[Pick]:
@@ -181,37 +177,18 @@ def load_picks(path: Path | str) -> list[Pick]:
             mw = _opt_float(row.get("min_weight"), field_name="min_weight", where=where) or 0.0
             if mw < 0 or mw > 1:
                 raise InputError(f"{where}: min_weight={mw} 는 [0,1] 이어야 한다")
+            floats = {c: _opt_float(row.get(c), field_name=c, where=where) for c in _FLOAT_COLS}
             picks.append(
                 Pick(
                     theme=theme,
                     ticker=ticker,
                     role=role,
-                    entry_price=_opt_float(
-                        row.get("entry_price"), field_name="entry_price", where=where
-                    ),
-                    adv20_usd=_opt_float(row.get("adv20_usd"), field_name="adv20_usd", where=where),
-                    rank_score=_opt_float(
-                        row.get("rank_score"), field_name="rank_score", where=where
-                    ),
-                    idio_vol_ann=_opt_float(
-                        row.get("idio_vol_ann"), field_name="idio_vol_ann", where=where
-                    ),
                     min_weight=mw,
                     split_first_leg=_opt_bool(
                         row.get("split_first_leg"), field_name="split_first_leg", where=where
                     ),
-                    tp_p50_price=_opt_float(
-                        row.get("tp_p50_price"), field_name="tp_p50_price", where=where
-                    ),
-                    tp_p75_price=_opt_float(
-                        row.get("tp_p75_price"), field_name="tp_p75_price", where=where
-                    ),
-                    prev_cycle_peak_price=_opt_float(
-                        row.get("prev_cycle_peak_price"),
-                        field_name="prev_cycle_peak_price",
-                        where=where,
-                    ),
                     notes=(row.get("notes") or "").strip(),
+                    **floats,
                 )
             )
     if not picks:
@@ -236,8 +213,6 @@ class ThesisInput:
     portfolio_eligible: bool = True
     gate_status: str | None = None
     axis1_available: bool | None = None
-    key_uncertainties: tuple[str, ...] = ()
-    generated_at: date | None = None
     source_path: str = ""
 
 
@@ -309,14 +284,6 @@ def parse_thesis(raw: Mapping[str, Any], *, where: str = "<thesis>") -> ThesisIn
         if isinstance(ud, Mapping) and "axis1_available" in ud:
             axis1 = bool(ud["axis1_available"])
     tw = raw.get("tailwind")
-    ga = raw.get("generated_at")
-    gen: date | None
-    if isinstance(ga, date):
-        gen = ga
-    elif isinstance(ga, str) and ga:
-        gen = date.fromisoformat(ga[:10])
-    else:
-        gen = None
     return ThesisInput(
         theme=theme,
         cycle_confidence=float(c),
@@ -328,8 +295,6 @@ def parse_thesis(raw: Mapping[str, Any], *, where: str = "<thesis>") -> ThesisIn
         portfolio_eligible=eligible,
         gate_status=str(gate_status) if gate_status else None,
         axis1_available=axis1,
-        key_uncertainties=tuple(str(x) for x in (raw.get("key_uncertainties") or [])),
-        generated_at=gen,
         source_path=where,
     )
 
@@ -344,10 +309,7 @@ def load_theses(dir_path: Path | str) -> dict[str, ThesisInput]:
     if not files:
         raise InputError(f"{d}: thesis 파일이 0개다")
     for f in files:
-        raw = yaml.safe_load(f.read_text(encoding="utf-8"))
-        if not isinstance(raw, Mapping):
-            raise InputError(f"{f}: 최상위가 객체가 아니다")
-        t = parse_thesis(raw, where=str(f))
+        t = parse_thesis(load_yaml_mapping(f, err=InputError), where=str(f))
         if t.theme in out:
             raise InputError(
                 f"{f}: 테마 {t.theme} 의 thesis 가 둘이다 ({out[t.theme].source_path})"
@@ -384,13 +346,8 @@ class Case:
 
     @property
     def usable_for_loss(self) -> bool:
-        """`L_i` 에 쓸 수 있는가 — 사망 · 검증됨 · 출처 ≥1 · 낙폭 있음, 전부."""
-        return (
-            self.type == "death"
-            and self.verified
-            and len(self.sources) > 0
-            and self.drawdown_peak_to_trough is not None
-        )
+        """`L_i` 에 쓸 수 있는가 — 사망·검증됨·출처 ≥1·낙폭 있음 (`unusable_reason` 이 없음)."""
+        return self.unusable_reason() is None
 
     def unusable_reason(self) -> str | None:
         if self.type != "death":
@@ -482,10 +439,7 @@ def load_cases(path: Path | str | None) -> CaseTable:
             "cases: 파일 없음 %s — 모든 테마의 사망 사례 낙폭이 비어 C1-(ii) 를 못 만든다", p
         )
         return CaseTable(cases=(), path=str(p), exists=False)
-    raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-    if not isinstance(raw, Mapping) or "cases" not in raw:
-        raise InputError(f"{p}: 최상위에 cases 키가 없다")
-    rows = raw["cases"] or []
+    rows = load_yaml_mapping(p, required_keys=("cases",), err=InputError)["cases"] or []
     cases = tuple(_parse_case(r, str(p)) for r in rows)
     dups = sorted(i for i, n in Counter(c.id for c in cases).items() if n > 1)
     if dups:

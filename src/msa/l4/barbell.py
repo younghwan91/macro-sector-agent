@@ -56,18 +56,16 @@ def classify(scored: pd.DataFrame, top: int = DEFAULT_TOP) -> Barbell:
     고른다."""
     if top < 1:
         raise ValueError("top 은 1 이상이어야 한다")
-    df = scored.copy()
-    if df.empty:
+    if scored.empty:
         return Barbell([], [])
     mp = (
-        df["marginal_producer"].astype("boolean")
-        if "marginal_producer" in df
-        else pd.Series(pd.NA, index=df.index, dtype="boolean")
+        scored["marginal_producer"].astype("boolean")
+        if "marginal_producer" in scored
+        else pd.Series(pd.NA, index=scored.index, dtype="boolean")
     )
     not_marginal = ~(mp.fillna(False).astype(bool))
-    t_order = df.sort_values(["t_pct", "s_pct"], ascending=[False, False], kind="mergesort")
-    # 동률·NaN 결정론: t_pct NaN 은 맨 뒤, 그 다음 티커 오름차순
-    t_order = t_order.assign(_tk=t_order.index.astype(str)).sort_values(
+    # 동률·NaN 결정론: T̃ ↓ → S̃ ↓ → 티커 ↑, t_pct NaN 은 맨 뒤
+    t_order = scored.assign(_tk=scored.index.astype(str)).sort_values(
         ["t_pct", "s_pct", "_tk"],
         ascending=[False, False, True],
         na_position="last",

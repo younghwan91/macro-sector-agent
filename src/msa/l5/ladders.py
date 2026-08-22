@@ -21,7 +21,7 @@ M0.1 에서 정정한 산술을 이 모듈이 재현해야 한다 (테스트가 
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import date
 
 import pandas as pd
@@ -76,15 +76,7 @@ class LadderMath:
     loss_contribution_at_theme_cap: float  # 0.35 × 0.35
 
     def as_dict(self) -> dict[str, object]:
-        return {
-            "fractions": list(self.fractions),
-            "leg_prices": list(self.leg_prices),
-            "avg_cost": self.avg_cost,
-            "avg_vs_initial": self.avg_vs_initial,
-            "tier2_price": self.tier2_price,
-            "tier2_vs_initial": self.tier2_vs_initial,
-            "loss_contribution_at_theme_cap": self.loss_contribution_at_theme_cap,
-        }
+        return asdict(self)
 
 
 def ladder_math(c: float) -> LadderMath:
@@ -124,7 +116,6 @@ class PositionPlan:
     leg_prices: tuple[float | None, float | None, float | None]
     tier1_invalidations: tuple[str, ...]
     tier2_price: float | None
-    tier2_vs_initial: float
     tier2_capital_rule_price: float | None  # 포지션 손실 = 총자본 8% 가 되는 가격 (평단 기준)
     tier2_effective_price: float | None  # 둘 중 먼저 오는(높은) 쪽
     tier2_rule: str  # "avg−35%" | "capital 8%"
@@ -135,10 +126,19 @@ class PositionPlan:
     tp1_p50_price: float | None
     tp2_r_price: float | None  # 직전 고점 50% 회복가
     tp2_p75_price: float | None
-    runner_trail: float
     triggers: tuple[str, ...]
 
+    @property
+    def tier2_vs_initial(self) -> float:
+        """Tier-2 스탑 / 초기가 − 1 — 사다리 산술에서 나온다 (가격이 없어도 비율은 있다)."""
+        return self.ladder.tier2_vs_initial
+
+    @property
+    def runner_trail(self) -> float:
+        return RUNNER_TRAIL
+
     def as_dict(self) -> dict[str, object]:
+        """진단 JSON 키 — 순서 포함 그대로 (파생 속성 둘도 같은 자리에 넣는다)."""
         return {
             "ticker": self.ticker,
             "theme": self.theme,
@@ -219,7 +219,6 @@ def build_position_plan(
         leg_prices=leg_px,
         tier1_invalidations=thesis.invalidations,
         tier2_price=t2_px,
-        tier2_vs_initial=lm.tier2_vs_initial,
         tier2_capital_rule_price=cap_px,
         tier2_effective_price=eff_px,
         tier2_rule=rule,
@@ -230,6 +229,5 @@ def build_position_plan(
         tp1_p50_price=pick.tp_p50_price,
         tp2_r_price=tp2_px,
         tp2_p75_price=pick.tp_p75_price,
-        runner_trail=RUNNER_TRAIL,
         triggers=thesis.triggers,
     )

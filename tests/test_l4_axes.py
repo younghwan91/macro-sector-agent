@@ -82,6 +82,61 @@ def test_hard_filters_each_rule_logged_with_reason() -> None:
     assert hf.loc["BOTH", "reason"].count(" · ") == 1  # 두 사유가 전부 남는다
 
 
+def _ref_hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
+    """벡터화 전의 행 루프 구현 (참조). 사유 문구·순서·연결이 같아야 한다."""
+    reasons: dict[str, list[str]] = {str(t): [] for t in frame.index}
+    has_fund = frame["fund_calendardate"].notna()
+    runway = pd.to_numeric(frame["cash_runway_q"], errors="coerce")
+    nd = pd.to_numeric(frame["net_debt_ebitda"], errors="coerce")
+    basis = frame["nd_basis"]
+    wall = pd.to_numeric(frame["maturity_wall_12m"], errors="coerce")
+    status = frame["fund_status"]
+    for t in frame.index:
+        k = str(t)
+        if not bool(has_fund.loc[t]):
+            if str(status.loc[t]) == "none":
+                reasons[k].append(
+                    "재무 없음 (SF1 에 행 0개 — 20-F 해외발행사 등 미수록) — 생존 필터 판정 불가"
+                )
+            else:
+                reasons[k].append("재무 없음 (asof 이전 15개월 내 분기 없음) — 생존 필터 판정 불가")
+            continue
+        r = runway.loc[t]
+        if pd.isna(r):
+            reasons[k].append("런웨이 판정 불가 (현금흐름표 또는 현금 없음) — 하드 필터 미통과")
+        elif r < axes.RUNWAY_MIN_Q:
+            reasons[k].append(f"런웨이 {r:.2f}분기 < {axes.RUNWAY_MIN_Q:.0f}")
+        x = nd.loc[t]
+        if pd.notna(x) and x > axes.ND_EBITDA_EXCLUDE:
+            b = "EBITDA" if basis.loc[t] == "ebitda" else "시총(EBITDA≤0 대체)"
+            reasons[k].append(f"순부채/{b} {x:.1f}× > {axes.ND_EBITDA_EXCLUDE:.0f}")
+        w = wall.loc[t]
+        if pd.notna(w) and w > axes.MATURITY_WALL_EXCLUDE:
+            reasons[k].append(f"만기벽(12m 대용) {w:.2f} > {axes.MATURITY_WALL_EXCLUDE}")
+    out = pd.DataFrame(index=frame.index)
+    out["reason"] = pd.Series({k: " · ".join(v) for k, v in reasons.items()}).reindex(frame.index)
+    out["excluded"] = out["reason"].str.len() > 0
+    return out
+
+
+def test_hard_filters_vectorized_equals_reference() -> None:
+    rng = np.random.default_rng(11)
+    rows: dict[str, dict[str, object]] = {}
+    for i in range(300):
+        kw: dict[str, object] = {
+            "cash_runway_q": rng.choice([np.nan, np.inf, 1.0, 3.99, 4.0, 12.5, 50.0]),
+            "net_debt_ebitda": rng.choice([np.nan, -1.0, 2.0, 6.0, 6.1, 9.37]),
+            "nd_basis": rng.choice(["ebitda", "mcap", "n/a"]),
+            "maturity_wall_12m": rng.choice([np.nan, 0.0, 0.5, 0.51, 1.234]),
+        }
+        if i % 7 == 0:
+            kw["fund_calendardate"] = np.nan
+            kw["fund_status"] = rng.choice(["stale", "none"])
+        rows[f"T{i:03d}"] = _base(**kw)
+    f = _frame(rows)
+    pd.testing.assert_frame_equal(axes.hard_filters(f), _ref_hard_filters(f))
+
+
 def test_hard_filter_boundaries_are_not_inclusive() -> None:
     f = _frame(
         {

@@ -26,7 +26,7 @@ from msa.l5.inputs import (
 from msa.l5.optimize import Problem, compress_confidence, solve
 from msa.l5.plan import render_plan
 from msa.l5.run import PortfolioInputs, build_portfolio, write_outputs
-from msa.themes import load_themes
+from msa.themes import ThemeSet, load_themes
 
 REPO = Path(__file__).resolve().parents[1]
 ASOF = date(2026, 8, 22)
@@ -72,6 +72,18 @@ def _synthetic_daily_ew(themes: list[str], *, seed: int = 0) -> pd.DataFrame:
     s[rec] = 0.0035 + rng.normal(0, 0.008, rec.sum())
     out[t0] = s
     return out
+
+
+@pytest.fixture(scope="module")
+def themes() -> ThemeSet:
+    """`state/themes.yaml` — 모듈에서 한 번만 파싱한다 (0.3s)."""
+    return load_themes(REPO / "state" / "themes.yaml")
+
+
+@pytest.fixture(scope="module")
+def daily_ew() -> pd.DataFrame:
+    """uranium·grid_equipment·coal 합성 일별 EW (uranium 에 −70% 에피소드)."""
+    return _synthetic_daily_ew(["uranium", "grid_equipment", "coal"])
 
 
 def _thesis(theme: str, c: float, **over: object) -> ThesisInput:
@@ -319,6 +331,76 @@ def test_similar_regime_drawdown_finds_episode() -> None:
     assert risk.similar_regime_drawdown(flat.iloc[:0]).history is None
 
 
+def _ref_similar_regime_drawdown(
+    level: pd.Series, *, theme: str = "", threshold: float = risk.SIMILAR_REGIME_DD
+) -> risk.HistoricalDrawdown:
+    """벡터화 전의 중첩 while 구현 (참조)."""
+    s = level.dropna()
+    if s.empty:
+        return risk.HistoricalDrawdown(theme, threshold, None, (), None)
+    px = s.to_numpy(dtype=np.float64)
+    dates = s.index
+    peak = np.maximum.accumulate(px)
+    dd = px / peak - 1.0
+    episodes: list[risk.RegimeEpisode] = []
+    i = 0
+    n = len(px)
+    while i < n:
+        if dd[i] <= -threshold:
+            entry = px[i]
+            j = i
+            trough = entry
+            trough_j = i
+            while j < n and dd[j] < 0.0:
+                if px[j] < trough:
+                    trough = px[j]
+                    trough_j = j
+                j += 1
+            episodes.append(
+                risk.RegimeEpisode(
+                    entry_date=str(pd.Timestamp(dates[i]).date()),
+                    trough_date=str(pd.Timestamp(dates[trough_j]).date()),
+                    loss_from_entry=float(1.0 - trough / entry),
+                    ongoing=j >= n,
+                )
+            )
+            i = j
+        else:
+            i += 1
+    mx = max((e.loss_from_entry for e in episodes), default=None)
+    return risk.HistoricalDrawdown(
+        theme=theme,
+        threshold=threshold,
+        max_loss=mx,
+        episodes=tuple(episodes),
+        history=(str(pd.Timestamp(dates[0]).date()), str(pd.Timestamp(dates[-1]).date())),
+    )
+
+
+def test_similar_regime_vectorized_equals_reference(daily_ew: pd.DataFrame) -> None:
+    """합성 EW 3 테마 + 에피소드 여러 개(회복·미회복·동률 저점)를 심은 랜덤워크 10개."""
+    rng = np.random.default_rng(5)
+    series: list[pd.Series] = [risk.index_level(daily_ew[t]) for t in daily_ew.columns]
+    for k in range(10):
+        n = 1500
+        r = rng.normal(0.0, 0.03, n)
+        for start in rng.integers(0, n - 200, size=3):  # −55% 급락 → 반등
+            r[start : start + 60] = -0.015
+            r[start + 60 : start + 160] = 0.012
+        lvl = pd.Series(np.cumprod(1 + r), index=pd.bdate_range("2015-01-01", periods=n))
+        if k % 3 == 0:  # 동률 저점 — 첫 번째 것이 저점일이어야 한다
+            lvl.iloc[300:305] = lvl.iloc[300:305].min()
+        if k % 4 == 0:
+            lvl.iloc[::97] = np.nan
+        series.append(lvl)
+    n_episodes = 0
+    for lvl in series:
+        got = risk.similar_regime_drawdown(lvl, theme="x")
+        assert got == _ref_similar_regime_drawdown(lvl, theme="x")
+        n_episodes += len(got.episodes)
+    assert n_episodes >= 10  # 비교가 빈 에피소드끼리만은 아니다
+
+
 def test_similar_regime_ongoing_episode_counts() -> None:
     lvl = pd.Series(
         [100, 50, 40, 45], index=pd.date_range("2020-01-31", periods=4, freq="ME"), dtype=float
@@ -536,8 +618,9 @@ def _write_inputs(
         )
 
 
-def test_build_portfolio_end_to_end(tmp_path: Path) -> None:
-    themes = load_themes(REPO / "state" / "themes.yaml")
+def test_build_portfolio_end_to_end(
+    tmp_path: Path, themes: ThemeSet, daily_ew: pd.DataFrame
+) -> None:
     _write_inputs(tmp_path)
     cases_path = tmp_path / "cases.yaml"
     cases_path.write_text(
@@ -559,9 +642,8 @@ def test_build_portfolio_end_to_end(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     inputs = load_inputs(tmp_path, cases_path=cases_path, capital_usd=2_000_000)
-    daily = _synthetic_daily_ew(["uranium", "grid_equipment", "coal"])  # uranium 에 −70% 에피소드
     res = build_portfolio(
-        inputs, asof=ASOF, themes=themes, daily_ew=daily, inputs_dir=str(tmp_path)
+        inputs, asof=ASOF, themes=themes, daily_ew=daily_ew, inputs_dir=str(tmp_path)
     )
     assert res.solution is not None and res.solution.status == "optimal"
     w = res.solution.weights
@@ -638,12 +720,12 @@ def test_build_portfolio_end_to_end(tmp_path: Path) -> None:
     assert (tmp_path / "out" / "plan.md").read_text(encoding="utf-8") == text
 
 
-def test_build_portfolio_no_cases_file_is_flagged(tmp_path: Path) -> None:
-    themes = load_themes(REPO / "state" / "themes.yaml")
+def test_build_portfolio_no_cases_file_is_flagged(
+    tmp_path: Path, themes, daily_ew: pd.DataFrame
+) -> None:  # type: ignore[no-untyped-def]
     _write_inputs(tmp_path)
     inputs = load_inputs(tmp_path, cases_path=tmp_path / "nope.yaml")
-    daily = _synthetic_daily_ew(["uranium", "grid_equipment", "coal"])
-    res = build_portfolio(inputs, asof=ASOF, themes=themes, daily_ew=daily)
+    res = build_portfolio(inputs, asof=ASOF, themes=themes, daily_ew=daily_ew)
     assert res.solution is not None
     assert res.solution.mdd_scenario is None and res.solution.mdd_binding in ("vol", "none")
     assert any("케이스 스터디 표가 없다" in w for w in res.warnings)
@@ -651,12 +733,12 @@ def test_build_portfolio_no_cases_file_is_flagged(tmp_path: Path) -> None:
     assert "C1-(ii) 에서 빠짐" in render_plan(res)
 
 
-def test_build_portfolio_all_excluded(tmp_path: Path) -> None:
-    themes = load_themes(REPO / "state" / "themes.yaml")
+def test_build_portfolio_all_excluded(
+    tmp_path: Path, themes: ThemeSet, daily_ew: pd.DataFrame
+) -> None:
     _write_inputs(tmp_path, c_uranium=0.3, c_grid=0.2)
     inputs = load_inputs(tmp_path, cases_path=None)
-    daily = _synthetic_daily_ew(["uranium", "grid_equipment", "coal"])
-    res = build_portfolio(inputs, asof=ASOF, themes=themes, daily_ew=daily)
+    res = build_portfolio(inputs, asof=ASOF, themes=themes, daily_ew=daily_ew)
     assert res.solution is None and res.positions == ()
     assert "포트폴리오 없음" in render_plan(res)
 

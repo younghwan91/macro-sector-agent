@@ -70,15 +70,21 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from msa.config import paths
 from msa.data import pit
 from msa.data.store import Store, StoreError
+from msa.dates import months_between
 from msa.l1.physical import PhysicalSeries, load_etf_series, load_fred_series, load_manual_series
+from msa.l1.scoreboard import xs_pct
+from msa.status import FundStatus
 from msa.themes import MEMBER_META_MIN_ROWS, Membership, Theme
 from msa.vendor.redflags import FINANCIAL_SECTORS, AnnualRow, detect_red_flags
 from msa.vendor.vcp import build_contractions, compress_pivots, find_pivots
@@ -89,6 +95,10 @@ TTM_MAX_SPAN_DAYS = 300  # L1 은 400 — 아래 구현 노트
 STALE_MONTHS = 15
 LISTED_WINDOW_TD = 10
 PRICE_LOOKBACK_DAYS = 430  # 252 거래일 + 여유
+#: 재무 질의 하한 — 가장 긴 창(마진 자기이력 40분기 + TTM 3분기 + 참조가 10년 저점 ±95일)을 덮는다.
+#: `datekey ≥ calendardate` 이므로 11년은 위 창의 어느 행도 자르지 않는다. `fund_status` 의
+#: "없음/오래됨" 판정은 이 하한과 무관하게 별도 distinct 질의로 센다 (`_sf1_covered`).
+FUND_LOOKBACK_YEARS = 11
 MARGIN_HIST_QUARTERS = 40
 MARGIN_HIST_MIN_QUARTERS = 12
 MARGIN_HIST_MIN_MEMBERS = 2
@@ -191,6 +201,24 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "sma200_up_1m",
 )
 
+#: `price_features` 가 만들고 특성 표로 그대로 옮기는 열.
+PRICE_FEATURE_COLUMNS: tuple[str, ...] = (
+    "price",
+    "mcap",
+    "last_price_date",
+    "adv20_usd",
+    "stage2",
+    "vcp_base",
+    "from_52w_low",
+    "from_52w_high",
+    "above_50d",
+    "rvol_expansion",
+    "sma200_up_1m",
+)
+
+#: ticker → 그 ticker 의 분기 행 (`qt` 의 부분 프레임, 원래 순서). `_by_ticker` 로 한 번 만든다.
+ByTicker = Mapping[str, pd.DataFrame]
+
 
 @dataclass(frozen=True)
 class FeatureSet:
@@ -241,6 +269,11 @@ def latest_rows(qt: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
     return pit.latest_fresh_rows(qt, asof, stale_months=STALE_MONTHS)
 
 
+def _by_ticker(qt: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    """ticker → 분기 부분 프레임. 종목별 도우미들이 전체 표를 매번 마스킹하지 않게 한 번 만든다."""
+    return {str(k): g for k, g in qt.groupby("ticker", sort=False)}
+
+
 def _row_near(tq: pd.DataFrame, target: pd.Timestamp, tol_days: int) -> pd.Series | None:
     d = (tq["calendardate"] - target).abs()
     if d.empty:
@@ -253,13 +286,16 @@ def _row_near(tq: pd.DataFrame, target: pd.Timestamp, tol_days: int) -> pd.Serie
     return row
 
 
-def dilution_3y(qt: pd.DataFrame, latest: pd.DataFrame) -> pd.DataFrame:
+def dilution_3y(
+    qt: pd.DataFrame, latest: pd.DataFrame, *, by_tk: ByTicker | None = None
+) -> pd.DataFrame:
     """주식수 3년 CAGR. 36개월(±60일) 전 행을 날짜로 찾는다.
 
     열: shares, shares_3y_ago, dilution_3y."""
+    by_tk = _by_ticker(qt) if by_tk is None else by_tk
     rows: dict[str, dict[str, float]] = {}
     for tk, cur in latest.iterrows():
-        tq = qt.loc[qt["ticker"] == tk]
+        tq = by_tk[str(tk)]
         prev = _row_near(tq, cur["calendardate"] - pd.DateOffset(months=36), DILUTION_TOL_DAYS)
         s1 = float(cur["sharesbas"]) if pd.notna(cur.get("sharesbas")) else np.nan
         s0 = (
@@ -272,13 +308,14 @@ def dilution_3y(qt: pd.DataFrame, latest: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame.from_dict(rows, orient="index")
 
 
-def regression_features(qt: pd.DataFrame, latest: pd.DataFrame) -> pd.DataFrame:
+def regression_features(
+    qt: pd.DataFrame, latest: pd.DataFrame, *, by_tk: ByTicker | None = None
+) -> pd.DataFrame:
     """12분기 QoQ ΔEBITDA_ttm ~ Δrevenue_ttm 회귀 기울기(`incremental_margin`)와 `opleverage`."""
+    by_tk = _by_ticker(qt) if by_tk is None else by_tk
     rows: dict[str, dict[str, float]] = {}
     for tk, cur in latest.iterrows():
-        tq = qt.loc[qt["ticker"] == tk, ["calendardate", "revenue_ttm", "ebitda_ttm"]].tail(
-            REG_QUARTERS + 1
-        )
+        tq = by_tk[str(tk)][["calendardate", "revenue_ttm", "ebitda_ttm"]].tail(REG_QUARTERS + 1)
         d = tq[["revenue_ttm", "ebitda_ttm"]].diff().dropna()
         b = np.nan
         if len(d) >= REG_MIN_PAIRS:
@@ -313,9 +350,11 @@ def theme_margin_history(qt: pd.DataFrame, asof: pd.Timestamp) -> pd.Series:
     return s
 
 
-def annual_rows_for(qt: pd.DataFrame, ticker: str, latest_cd: pd.Timestamp) -> list[AnnualRow]:
+def annual_rows_for(
+    qt: pd.DataFrame, ticker: str, latest_cd: pd.Timestamp, *, by_tk: ByTicker | None = None
+) -> list[AnnualRow]:
     """레드플래그 입력 — TTM 을 12개월 간격(±60일)으로 최대 4개 뽑아 '연도' 행으로 만든다."""
-    tq = qt.loc[qt["ticker"] == ticker]
+    tq = by_tk[ticker] if by_tk is not None else qt.loc[qt["ticker"] == ticker]
     out: list[AnnualRow] = []
     for k in range(3, -1, -1):
         r = _row_near(tq, latest_cd - pd.DateOffset(months=12 * k), DILUTION_TOL_DAYS)
@@ -352,6 +391,7 @@ def fundamental_features(
     호출자(`picks`)가 "재무 없음" 으로 제외 사유를 적는다.
     """
     latest = latest_rows(qt, asof)
+    by_tk = _by_ticker(qt)
     stats: dict[str, Any] = {}
     hist = theme_margin_history(qt, asof)
     stats["margin_hist_quarters"] = len(hist)
@@ -375,9 +415,9 @@ def fundamental_features(
     fcf_ttm = latest["fcf_q_ttm"].copy()
     basis = pd.Series(4.0, index=f.index).where(fcf_ttm.notna(), np.nan)
     if fcf_ttm.isna().any():
-        g = qt.groupby("ticker")["fcf_q"]
-        n_q = g.apply(lambda s: float(s.tail(4).notna().sum()))
-        mean_q = g.apply(lambda s: float(s.tail(4).mean()) if s.tail(4).notna().any() else np.nan)
+        g4 = qt.groupby("ticker", sort=False).tail(4).groupby("ticker", sort=False)["fcf_q"]
+        n_q = g4.count().astype(float)
+        mean_q = g4.mean()
         fill = fcf_ttm.isna()
         fcf_ttm.loc[fill] = (mean_q.reindex(f.index) * 4).loc[fill]
         basis.loc[fill] = n_q.reindex(f.index).loc[fill].where(lambda s: s > 0, np.nan)
@@ -400,14 +440,14 @@ def fundamental_features(
     ic = latest["ebit_ttm"] / latest["intexp_ttm"]
     f["interest_coverage"] = ic.where(latest["intexp_ttm"] > 0, np.nan)
 
-    f = f.join(dilution_3y(qt, latest))
+    f = f.join(dilution_3y(qt, latest, by_tk=by_tk))
 
     # 레드플래그 (벤더링)
     flags: dict[str, str] = {}
     nflags: dict[str, int] = {}
     for tk in f.index:
         sec = str(sectors.get(tk, "")) if sectors is not None else ""
-        rows = annual_rows_for(qt, str(tk), latest.loc[tk, "calendardate"])
+        rows = annual_rows_for(qt, str(tk), latest.loc[tk, "calendardate"], by_tk=by_tk)
         fl = detect_red_flags(rows, financial=sec in FINANCIAL_SECTORS)
         flags[str(tk)] = ";".join(x.key for x in fl)
         nflags[str(tk)] = len(fl)
@@ -418,7 +458,7 @@ def fundamental_features(
     margin = (latest["ebitda_ttm"] / latest["revenue_ttm"]).where(latest["revenue_ttm"] > 0)
     f["ebitda_margin"] = margin
     f["margin_headroom"] = p75 - margin
-    f = f.join(regression_features(qt, latest))
+    f = f.join(regression_features(qt, latest, by_tk=by_tk))
     f["fixed_cost_ratio"] = (
         (latest["revenue_ttm"] - latest["cor_ttm"]) / latest["revenue_ttm"]
     ).where(latest["revenue_ttm"] > 0)
@@ -449,15 +489,15 @@ def price_beta_hist(
     info: dict[str, Any] = {"status": "n/a"}
     if len(s) < 24:
         info["reason"] = f"참조 시계열 {len(s)}개월 — 24개월 미만"
-        return pd.Series(np.nan, index=pd.Index([], dtype=object)), info
+        return pd.Series(dtype=float), info
     t0 = pd.Timestamp(s.idxmin())
     after = s.loc[t0:]
     t1 = pd.Timestamp(after.idxmax())
-    months = (t1.year - t0.year) * 12 + (t1.month - t0.month)
+    months = months_between(t0, t1)
     info.update({"trough": str(t0.date()), "peak": str(t1.date()), "months": int(months)})
     if months < BETA_MIN_UPTURN_MONTHS:
         info["reason"] = f"상승 국면 {months}개월 — {BETA_MIN_UPTURN_MONTHS}개월 미만"
-        return pd.Series(np.nan, index=pd.Index([], dtype=object)), info
+        return pd.Series(dtype=float), info
     dlogp = math.log(float(s.loc[t1]) / float(s.loc[t0]))
     out: dict[str, float] = {}
     for tk, tq in qt.groupby("ticker"):
@@ -479,6 +519,7 @@ def load_reference_series(theme: Theme, *, allow_fetch: bool) -> PhysicalSeries 
     """테마 `physical_ref` 를 월말 시계열로. 없으면 None.
 
     `kind` 가 price 가 아니어도 쓰되 기록한다."""
+    # TODO(rf-b): → msa.l1.physical.load_ref(ref, allow_fetch=allow_fetch) 로 교체 (L1 머지 후)
     ref = theme.physical_ref
     if ref is None:
         return None
@@ -494,69 +535,85 @@ def load_reference_series(theme: Theme, *, allow_fetch: bool) -> PhysicalSeries 
 # ---------------------------------------------------------------- 가격 특성 (순수 함수)
 
 
+def _nanmean(seg: np.ndarray) -> float:
+    """`pd.Series(seg).mean()` 과 같은 산술 — NaN 을 0 으로 치환한 numpy 합 / 유효 개수.
+
+    groupby·rolling·reduceat 의 합은 누적 순서가 달라 마지막 비트가 어긋난다 (테스트가 잰다).
+    pandas `nanmean` 이 (bottleneck 없이) 하는 계산을 그대로 적었다 — 비어 있으면 NaN.
+    """
+    m = np.isnan(seg)
+    cnt = seg.size - int(m.sum())
+    if cnt == 0:
+        return float("nan")
+    return float(np.where(m, 0.0, seg).sum() / cnt)
+
+
+def _nan_minmax(seg: np.ndarray) -> tuple[float, float]:
+    ok = seg[~np.isnan(seg)]
+    return (float(ok.min()), float(ok.max())) if ok.size else (np.nan, np.nan)
+
+
 def price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
     """종목별 가격 특성. `px` 열: ticker, date, close(조정), closeunadj, volume, mcap.
 
-    반환 index ticker: price, mcap, last_price_date, adv20_usd, stage2, vcp_base, from_52w_low,
-    from_52w_high, above_50d, rvol_expansion, sma200_up_1m, rs_raw.
+    반환 index ticker(오름차순): `PRICE_FEATURE_COLUMNS`. 종목별 루프는 numpy 슬라이스만 만진다
+    (프레임 마스킹·Series 생성 없음) — 값은 종목별 `Series.tail(k).mean()` 과 비트 단위로 같다.
     """
-    p = px.copy()
-    p["date"] = pd.to_datetime(p["date"])
+    p = px.assign(date=pd.to_datetime(px["date"]))
     p = p.loc[p["date"] <= pd.Timestamp(asof)].sort_values(["ticker", "date"])
-    rows: dict[str, dict[str, Any]] = {}
-    for tk, g in p.groupby("ticker", sort=True):
-        rs = rs_raw(g["close"].astype(float).reset_index(drop=True))  # 253행 필요 — 자르기 전
-        g = g.tail(252)
-        c = g["close"].astype(float).reset_index(drop=True)
-        cu = g["closeunadj"].astype(float).reset_index(drop=True)
-        v = g["volume"].astype(float).reset_index(drop=True)
-        n = len(c)
-        last_mcap = g["mcap"].dropna()
-        r: dict[str, Any] = {
-            "price": float(cu.iloc[-1]) if n else np.nan,
-            "mcap": float(last_mcap.iloc[-1]) if len(last_mcap) else np.nan,
-            "last_price_date": g["date"].iloc[-1].date() if n else None,
-            "adv20_usd": float((cu * v).tail(20).mean()) if n >= 5 else np.nan,
-        }
-        sma50 = c.tail(50).mean() if n >= 50 else np.nan
-        sma150 = c.tail(150).mean() if n >= 150 else np.nan
-        sma200 = c.tail(200).mean() if n >= 200 else np.nan
-        sma200_prev = c.iloc[:-21].tail(200).mean() if n >= 221 else np.nan
-        lo = c.min() if n >= 120 else np.nan
-        hi = c.max() if n >= 120 else np.nan
-        last = float(c.iloc[-1]) if n else np.nan
-        r["from_52w_low"] = last / lo - 1 if n >= 120 else np.nan
-        r["from_52w_high"] = last / hi - 1 if n >= 120 else np.nan
-        r["above_50d"] = bool(last > sma50) if n >= 50 else None
-        r["sma200_up_1m"] = bool(sma200 > sma200_prev) if n >= 221 else None
-        r["stage2"] = (
+    t = p.groupby("ticker", sort=True).tail(252)
+    tk = t["ticker"].to_numpy()
+    c_all = t["close"].to_numpy(dtype=float)
+    cu_all = t["closeunadj"].to_numpy(dtype=float)
+    v_all = t["volume"].to_numpy(dtype=float)
+    mc_all = t["mcap"].to_numpy(dtype=float)
+    dates = t["date"].to_numpy()
+    bounds = np.flatnonzero(np.r_[True, tk[1:] != tk[:-1], True]) if len(tk) else np.array([0])
+    cols: dict[str, list[Any]] = {k: [] for k in PRICE_FEATURE_COLUMNS}
+    tickers: list[str] = []
+    for a, b in pairwise(bounds):
+        n = int(b - a)
+        c, cu, v = c_all[a:b], cu_all[a:b], v_all[a:b]
+        tickers.append(str(tk[a]))
+        mc = mc_all[a:b]
+        mc = mc[~np.isnan(mc)]
+        cols["price"].append(float(cu[-1]))
+        cols["mcap"].append(float(mc[-1]) if mc.size else np.nan)
+        cols["last_price_date"].append(pd.Timestamp(dates[b - 1]).date())
+        cols["adv20_usd"].append(_nanmean((cu * v)[-20:]) if n >= 5 else np.nan)
+        sma50 = _nanmean(c[-50:]) if n >= 50 else np.nan
+        sma150 = _nanmean(c[-150:]) if n >= 150 else np.nan
+        sma200 = _nanmean(c[-200:]) if n >= 200 else np.nan
+        sma200_prev = _nanmean(c[-221:-21]) if n >= 221 else np.nan
+        lo, hi = _nan_minmax(c) if n >= 120 else (np.nan, np.nan)
+        last = float(c[-1])
+        from_low = last / lo - 1 if n >= 120 else np.nan
+        from_high = last / hi - 1 if n >= 120 else np.nan
+        cols["from_52w_low"].append(from_low)
+        cols["from_52w_high"].append(from_high)
+        cols["above_50d"].append(bool(last > sma50) if n >= 50 else None)
+        cols["sma200_up_1m"].append(bool(sma200 > sma200_prev) if n >= 221 else None)
+        cols["stage2"].append(
             bool(
                 last > sma150 > sma200
                 and sma200 > sma200_prev
-                and r["from_52w_low"] >= 0.30
-                and r["from_52w_high"] >= -0.25
+                and from_low >= 0.30
+                and from_high >= -0.25
             )
             if n >= 221
             else None
         )
-        r["rvol_expansion"] = (
-            float(v.tail(20).mean() / v.tail(50).mean())
-            if n >= 50 and v.tail(50).mean() > 0
-            else np.nan
+        v50 = _nanmean(v[-50:]) if n >= 50 else np.nan
+        cols["rvol_expansion"].append(
+            float(_nanmean(v[-20:]) / v50) if n >= 50 and v50 > 0 else np.nan
         )
-        r["vcp_base"] = vcp_base(c, v) if n >= 60 else None
-        r["rs_raw"] = rs
-        rows[str(tk)] = r
-    return pd.DataFrame.from_dict(rows, orient="index")
-
-
-def rs_raw(c: pd.Series) -> float:
-    """IBD 식 가중 수익률 — 252거래일 이력이 없으면 NaN."""
-    n = len(c)
-    if n < 253:
-        return float("nan")
-    last = float(c.iloc[-1])
-    return float(sum(w * (last / float(c.iloc[-1 - k]) - 1) for k, w in RS_WEIGHTS))
+        cols["vcp_base"].append(vcp_base(pd.Series(c), pd.Series(v)) if n >= 60 else None)
+    out = pd.DataFrame(index=pd.Index(tickers))
+    for k in ("price", "mcap", "adv20_usd", "from_52w_low", "from_52w_high", "rvol_expansion"):
+        out[k] = np.asarray(cols[k], dtype=float)
+    for k in ("last_price_date", "above_50d", "sma200_up_1m", "stage2", "vcp_base"):
+        out[k] = pd.Series(cols[k], index=out.index, dtype=object)
+    return out[list(PRICE_FEATURE_COLUMNS)]
 
 
 def vcp_base(
@@ -577,23 +634,21 @@ def vcp_base(
 
 
 def rs_rating_from_universe(universe_rs_raw: pd.Series) -> pd.Series:
-    """전체 유니버스 `rs_raw` → 1~99 백분위."""
-    s = universe_rs_raw.dropna()
-    pct = s.rank(pct=True, method="average")
-    return (pct * 98 + 1).round().clip(1, 99)
+    """전체 유니버스 RS 원값 → 1~99 백분위 (동률 평균 순위)."""
+    return (xs_pct(universe_rs_raw.dropna(), +1) * 98 + 1).round().clip(1, 99)
 
 
 # ---------------------------------------------------------------- 스토어 연결
 
 
 def _trading_dates(store: Store, asof: pd.Timestamp) -> pd.DatetimeIndex:
-    spy = store.prices(
-        ["SPY"],
-        start=(asof - pd.Timedelta(days=PRICE_LOOKBACK_DAYS)).date(),
-        end=asof.date(),
-        min_rows=200,
+    """SPY 달력 — asof 이전 430일 창. 200일 미만이면 달력이 아니다 (조용히 진행하지 않는다)."""
+    spy = store.close_series(
+        "SPY", start=(asof - pd.Timedelta(days=PRICE_LOOKBACK_DAYS)).date(), end=asof.date()
     )
-    return pd.DatetimeIndex(pd.to_datetime(spy["date"])).sort_values()
+    if len(spy) < 200:
+        raise StoreError(f"SPY 달력 {len(spy)}일 — 최소 200일을 기대했다 (`CLAUDE.md` §2)")
+    return pd.DatetimeIndex(spy.index)
 
 
 def universe_rs(store: Store, trading_dates: pd.DatetimeIndex) -> pd.Series:
@@ -617,6 +672,37 @@ def universe_rs(store: Store, trading_dates: pd.DatetimeIndex) -> pd.Series:
     return rs.dropna()
 
 
+def universe_rs_cached(
+    store: Store, trading_dates: pd.DatetimeIndex, *, asof: pd.Timestamp, store_end: pd.Timestamp
+) -> pd.Series:
+    """`universe_rs` 를 `state/cache/rs_universe_<asof>_<store_end>.parquet` 에 메모한다.
+
+    같은 asof 로 여러 테마를 돌릴 때 유니버스 슬라이스를 테마마다 다시 읽지 않기 위한 것이다.
+    키는 (asof, 스토어 최종일) — 스토어가 갱신되면 최종일이 바뀌어 캐시가 비껴간다.
+    """
+    path = paths().cache / f"rs_universe_{asof.date()}_{store_end.date()}.parquet"
+    if path.exists():
+        return pd.read_parquet(path)["rs"]
+    rs = universe_rs(store, trading_dates)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rs.rename("rs").to_frame().to_parquet(path)
+    return rs
+
+
+def _sf1_covered(store: Store, tickers: list[str], asof: pd.Timestamp) -> set[str]:
+    """asof 까지 SF1(ARQ) 행이 하나라도 있는 종목 — `pit_quarterly` 의 필터와 같은 조건.
+
+    재무 질의를 `FUND_LOOKBACK_YEARS` 로 자르기 때문에 "행 0개(none)" 와 "오래됨(stale)" 의 구분은
+    하한 없는 이 질의로 센다.
+    """
+    sql = (
+        "select distinct ticker from fundamentals where dimension = 'ARQ' and datekey <= ? "
+        "and calendardate is not null and ticker in (" + ",".join("?" * len(tickers)) + ")"
+    )
+    df = store.query(sql, [asof.date(), *tickers])
+    return set(df["ticker"].astype(str))
+
+
 def build_features(
     store: Store,
     theme: Theme,
@@ -626,7 +712,10 @@ def build_features(
     allow_fetch: bool = True,
     with_physical: bool = True,
 ) -> FeatureSet:
-    """스토어에서 테마 구성원의 특성 표를 만든다. `asof` 기본 = 스토어 최종일."""
+    """스토어에서 테마 구성원의 특성 표를 만든다. `asof` 기본 = 스토어 최종일.
+
+    티커 메타는 `membership.meta`(배정에 쓴 것) 를 다시 쓴다 — 비어 있을 때만 스토어를 읽는다.
+    """
     se = store.store_end()
     store_end = pd.Timestamp(se) if se else pd.Timestamp.today().normalize()
     asof_ts = min(pd.Timestamp(asof), store_end) if asof else store_end
@@ -634,7 +723,12 @@ def build_features(
     if not members:
         raise StoreError(f"{theme.id}: 구성원이 0개다")
     mf = membership.frame.set_index("ticker").reindex(members)
-    meta = store.tickers_meta(min_rows=MEMBER_META_MIN_ROWS).set_index("ticker")
+    meta_src = (
+        membership.meta
+        if len(membership.meta)
+        else store.tickers_meta(min_rows=MEMBER_META_MIN_ROWS)
+    )
+    meta = meta_src.set_index("ticker")
     names = meta["name"].reindex(members)
     sectors = meta["sector"].reindex(members)
 
@@ -645,6 +739,7 @@ def build_features(
         start=(asof_ts - pd.Timedelta(days=PRICE_LOOKBACK_DAYS)).date(),
         end=asof_ts.date(),
         min_rows=0,
+        columns=["ticker", "date", "close", "closeunadj", "volume", "mcap"],
     )
     pf = price_features(px, asof_ts) if not px.empty else pd.DataFrame()
     universe = pd.DataFrame(index=pd.Index(members, name="ticker"))
@@ -667,22 +762,29 @@ def build_features(
     if not listed:
         frame = pd.DataFrame(columns=list(FEATURE_COLUMNS))
         return FeatureSet(theme.id, asof_ts, store_end, frame, universe, stats, inputs_unavailable)
+    # 상장 종목이 있으면 가격 표도 비어 있지 않다 (상장 판정이 가격 행에서 나온다)
 
-    # RS — 전체 유니버스 백분위
-    rs_u = universe_rs(store, td)
+    # RS — 전체 유니버스 백분위 (asof·스토어 최종일 키로 메모)
+    rs_u = universe_rs_cached(store, td, asof=asof_ts, store_end=store_end)
     rs_rating = rs_rating_from_universe(rs_u)
     stats["rs_universe_n"] = len(rs_u)
 
-    # 재무 — PIT
+    # 재무 — PIT. 하한 11년(`FUND_LOOKBACK_YEARS`) · "행 0개" 판정은 하한 없는 distinct 질의
     fund = store.fundamentals(
-        listed, fields=list(FUND_FIELDS), end=asof_ts.date(), min_rows=0, date_column="datekey"
+        listed,
+        fields=list(FUND_FIELDS),
+        start=(asof_ts - pd.DateOffset(years=FUND_LOOKBACK_YEARS)).date(),
+        end=asof_ts.date(),
+        min_rows=0,
+        date_column="datekey",
     )
     qt = (
         add_ttm(pit_quarterly(fund, asof_ts))
         if not fund.empty
         else pd.DataFrame(columns=["ticker", "calendardate", "datekey", *FUND_FIELDS])
     )
-    mcap = pf["mcap"].reindex(listed) if not pf.empty else pd.Series(np.nan, index=listed)
+    covered = _sf1_covered(store, listed, asof_ts)
+    mcap = pf["mcap"].reindex(listed)
     ff, fstats = (
         fundamental_features(qt, asof_ts, mcap, sectors=sectors)
         if len(qt)
@@ -709,36 +811,16 @@ def build_features(
         inputs_unavailable["price_beta_hist"] = str(beta_info.get("reason", beta_info["status"]))
     stats["price_beta_hist"] = beta_info
 
-    frame = pd.DataFrame(index=pd.Index(listed, name="ticker"))
-    frame["name"] = names.reindex(listed)
-    for col in (
-        "price",
-        "mcap",
-        "last_price_date",
-        "adv20_usd",
-        "stage2",
-        "vcp_base",
-        "from_52w_low",
-        "from_52w_high",
-        "above_50d",
-        "rvol_expansion",
-        "sma200_up_1m",
-    ):
-        frame[col] = pf[col].reindex(listed) if not pf.empty else np.nan
+    frame = pd.DataFrame({"name": names.reindex(listed)}, index=pd.Index(listed, name="ticker"))
+    frame = frame.join(pf[list(PRICE_FEATURE_COLUMNS)])
     frame["rs_rating"] = rs_rating.reindex(listed)
     if not ff.empty:
-        for col in ff.columns:
-            if col == "mcap":
-                continue
-            frame[col] = ff[col].reindex(listed)
+        frame = frame.join(ff.drop(columns="mcap"))
     frame["price_beta_hist"] = beta
-    covered = set(qt["ticker"].unique()) if len(qt) else set()
+    ok = set(ff.index) if not ff.empty else set()
     frame["fund_status"] = [
-        "ok" if (not ff.empty and t in ff.index) else ("stale" if t in covered else "none")
+        FundStatus.OK if t in ok else FundStatus.STALE if t in covered else FundStatus.NONE
         for t in listed
     ]
-    for col in FEATURE_COLUMNS:
-        if col not in frame.columns:
-            frame[col] = np.nan
-    frame = frame[list(FEATURE_COLUMNS)]
+    frame = frame.reindex(columns=list(FEATURE_COLUMNS))
     return FeatureSet(theme.id, asof_ts, store_end, frame, universe, stats, inputs_unavailable)

@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +24,8 @@ import pandas as pd
 
 from msa.config import paths
 from msa.data.store import Store, StoreError
+from msa.fmt import ratio
+from msa.io import write_snapshot
 from msa.l4 import axes
 from msa.l4.barbell import DEFAULT_TOP, Barbell, classify
 from msa.l4.features import INPUTS_UNUSED, FeatureSet, build_features
@@ -137,16 +138,19 @@ def run_picks(
     out_dir: Path | None = None
     if write:
         root = out_root if out_root is not None else p.picks
-        out_dir = root / str(fs.asof.date()) / theme_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-        ranking.to_csv(out_dir / "ranking.csv")
-        excluded.to_csv(out_dir / "excluded.csv")
-        (out_dir / "report.txt").write_text(report, encoding="utf-8")
-        (out_dir / "meta.json").write_text(
-            json.dumps(picks_meta, ensure_ascii=False, indent=1, default=str), encoding="utf-8"
+        out_dir = write_snapshot(
+            root / str(fs.asof.date()) / theme_id,
+            frames={"ranking.csv": ranking, "excluded.csv": excluded},
+            texts={"report.txt": report},
+            jsons={"meta.json": picks_meta},
         )
         log.info("picks: 저장 %s", out_dir)
     return PicksResult(theme_id, fs.asof, ranking, excluded, bb, fs, picks_meta, report, out_dir)
+
+
+def _txt(r: pd.Series, key: str) -> str:
+    """행의 문자열 셀 — 없음·None·NaN·빈 문자열은 전부 `""`."""
+    return str(r.get(key, "") or "")
 
 
 def _inputs_missing(ranking: pd.DataFrame) -> dict[str, dict[str, str]]:
@@ -154,11 +158,11 @@ def _inputs_missing(ranking: pd.DataFrame) -> dict[str, dict[str, str]]:
     if ranking.empty:
         return out
     for tk, r in ranking.iterrows():
-        d: dict[str, str] = {}
-        if str(r.get("s_inputs_missing", "") or ""):
-            d["S"] = str(r["s_inputs_missing"])
-        if str(r.get("t_inputs_missing", "") or ""):
-            d["T"] = str(r["t_inputs_missing"])
+        d = {
+            axis: _txt(r, key)
+            for axis, key in (("S", "s_inputs_missing"), ("T", "t_inputs_missing"))
+            if _txt(r, key)
+        }
         if d:
             out[str(tk)] = d
     return out
@@ -173,8 +177,13 @@ def _yn(v: Any) -> str:
     return "예" if bool(v) else "아니오"
 
 
+def _signed_pct(x: Any, unit: str = "%") -> str:
+    """비율 → 부호 있는 정수 백분율 (`+12%`·`-3pp`·`+20%/y`). 결측은 `n/a`."""
+    return "n/a" if x is None or pd.isna(x) else f"{float(x) * 100:+.0f}{unit}"
+
+
 def _stock_block(tk: str, r: pd.Series, theme: str, group: str) -> list[str]:
-    f = axes.fmt_ratio
+    f = ratio
     head = (
         f"{tk} · {theme} · {group or '—'}   #{int(r['rank'])}  종합 {f(r['composite'], digits=2)}"
     )
@@ -188,8 +197,7 @@ def _stock_block(tk: str, r: pd.Series, theme: str, group: str) -> list[str]:
         if nd_basis == "mcap"
         else "ND/EBITDA n/a"
     )
-    dil = r.get("dilution_3y")
-    dil_txt = "n/a" if dil is None or pd.isna(dil) else f"{float(dil) * 100:+.0f}%/y"
+    dil_txt = _signed_pct(r.get("dilution_3y"), "%/y")
     rb = r.get("runway_basis_q")
     rb_txt = "" if rb is None or pd.isna(rb) or float(rb) == 4 else f"({int(rb)}Q 기준)"
     adv_m = f(pd.to_numeric(r["adv20_usd"], errors="coerce") / 1e6)
@@ -200,15 +208,14 @@ def _stock_block(tk: str, r: pd.Series, theme: str, group: str) -> list[str]:
         f"이자보상 {f(r['interest_coverage'])} · ADV ${adv_m}M · "
         f"가격 ${f(r['price'], digits=2)}",
     ]
-    pen = str(r.get("penalties", "") or "")
-    rf = str(r.get("red_flags", "") or "")
+    pen = _txt(r, "penalties")
+    rf = _txt(r, "red_flags")
     lines.append(
         f"      감점 {int(r.get('n_penalties', 0))}/{int(r.get('n_penalty_evaluable', 0))}"
         + (f" [{pen}]" if pen else "")
         + (f" · 레드플래그 [{rf}]" if rf else "")
     )
-    mh = r.get("margin_headroom")
-    mh_txt = "n/a" if mh is None or pd.isna(mh) else f"{float(mh) * 100:+.0f}pp"
+    mh_txt = _signed_pct(r.get("margin_headroom"), "pp")
     lines.append(
         f"  T {f(r['t_pct'], digits=2)}  마진여지 P75까지 {mh_txt} · "
         f"opleverage {f(r['opleverage'])}× (증분마진 {f(r['incremental_margin'], digits=2)}) · "
@@ -217,23 +224,21 @@ def _stock_block(tk: str, r: pd.Series, theme: str, group: str) -> list[str]:
         f"EV/시총 {f(r['equity_leverage'], digits=2)} · "
         f"한계생산자 {_yn(r.get('marginal_producer'))}  [입력 {int(r.get('t_n_inputs', 0))}/6]"
     )
-    fl = r.get("from_52w_low")
-    fl_txt = "n/a" if fl is None or pd.isna(fl) else f"{float(fl) * 100:+.0f}%"
     lines.append(
         f"  M {f(r['m_pct'], digits=2)}  Stage2 {_yn(r.get('stage2'))} · "
         f"RS {f(r['rs_rating'], digits=0)} · VCP 베이스 {_yn(r.get('vcp_base'))} · "
-        f"52wL {fl_txt} · 50일선 위 {_yn(r.get('above_50d'))} · "
+        f"52wL {_signed_pct(r.get('from_52w_low'))} · 50일선 위 {_yn(r.get('above_50d'))} · "
         f"RVOL {f(r['rvol_expansion'], digits=2)}"
     )
     lines.append(
         "  하드필터: 통과"
         + ("  (종합 부분 — 축 결측)" if bool(r.get("composite_partial", False)) else "")
     )
-    notes: list[str] = []
-    if str(r.get("s_inputs_missing", "") or ""):
-        notes.append(f"S 입력 없음: {r['s_inputs_missing']}")
-    if str(r.get("t_inputs_missing", "") or ""):
-        notes.append(f"T 입력 없음: {r['t_inputs_missing']}")
+    notes = [
+        f"{axis} 입력 없음: {_txt(r, key)}"
+        for axis, key in (("S", "s_inputs_missing"), ("T", "t_inputs_missing"))
+        if _txt(r, key)
+    ]
     if notes:
         lines.append("  주의: " + " · ".join(notes))
     return lines
@@ -249,7 +254,7 @@ def render_report(
     theme_name: str = "",
 ) -> str:
     u = meta["universe"]
-    anchor_share_txt = axes.fmt_ratio(bb.anchor_share * 100 if bb.n else float("nan"), "%", 0)
+    anchor_share_txt = ratio(bb.anchor_share * 100 if bb.n else float("nan"), "%", 0)
     L: list[str] = [
         f"L4 종목 선정 — {fs.theme} ({theme_name})  asof {meta['asof']} "
         f"(스토어 {meta['store_end']})",
@@ -278,8 +283,8 @@ def render_report(
     ts = fs.theme_stats
     L.append(
         f"테마 통계: 마진 자기이력 {ts.get('margin_hist_quarters', 0)}분기 · P75 마진 "
-        f"{axes.fmt_ratio(ts.get('theme_margin_p75', float('nan')), digits=3)} · 횡단면 P25 마진 "
-        f"{axes.fmt_ratio(ts.get('theme_margin_p25_xs', float('nan')), digits=3)} "
+        f"{ratio(ts.get('theme_margin_p75', float('nan')), digits=3)} · 횡단면 P25 마진 "
+        f"{ratio(ts.get('theme_margin_p25_xs', float('nan')), digits=3)} "
         f"(n={ts.get('theme_margin_n_xs', 0)}) · "
         f"RS 유니버스 {ts.get('rs_universe_n', 0)} · 가격탄력 {ts.get('price_beta_hist', {})}"
     )

@@ -33,7 +33,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
+from functools import cached_property
+from typing import Any
 
 import cvxpy as cp
 import numpy as np
@@ -75,7 +77,10 @@ def compress_confidence(c: Mapping[str, float], lam: float = LAMBDA_COMPRESS) ->
 
 @dataclass(frozen=True)
 class Problem:
-    """종목 단위로 정렬된 최적화 입력. 길이는 전부 n."""
+    """종목 단위로 정렬된 최적화 입력. 길이는 전부 n.
+
+    `loss_vec`/`has_loss`/`sigma_half` 는 한 번 계산해 완화 시도마다 다시 쓴다 (`cached_property`).
+    """
 
     tickers: tuple[str, ...]
     themes: tuple[str, ...]
@@ -108,6 +113,20 @@ class Problem:
     def n(self) -> int:
         return len(self.tickers)
 
+    @cached_property
+    def has_loss(self) -> NDArray[np.bool_]:
+        """`L_i` 가 있는 종목 (C1-(ii) 부분합에 들어가는 것)."""
+        return np.array([v is not None for v in self.scenario_loss], dtype=bool)
+
+    @cached_property
+    def loss_vec(self) -> FArray:
+        """`L_i` (없으면 0 — 합에서 빠지는 것은 `has_loss` 가 말한다)."""
+        return np.array([v if v is not None else 0.0 for v in self.scenario_loss], dtype=np.float64)
+
+    @cached_property
+    def sigma_half(self) -> FArray:
+        return _sigma_half(self.sigma)
+
 
 @dataclass(frozen=True)
 class Solution:
@@ -132,26 +151,8 @@ class Solution:
     binding_caps: tuple[str, ...]  # 경계에 붙은 C3/C4/C5/클러스터 상한
 
     def as_dict(self) -> dict[str, object]:
-        return {
-            "status": self.status,
-            "solver": self.solver,
-            "stage": self.stage,
-            "relaxed": list(self.relaxed),
-            "budget_used": self.budget_used,
-            "mdd_vol": self.mdd_vol,
-            "mdd_scenario": self.mdd_scenario,
-            "mdd_binding": self.mdd_binding,
-            "scenario_missing": list(self.scenario_missing),
-            "c4_applied": self.c4_applied,
-            "c4_skipped": list(self.c4_skipped),
-            "gross": self.gross,
-            "cash": self.cash,
-            "theme_weights": self.theme_weights,
-            "class_weights": self.class_weights,
-            "cluster_weights": self.cluster_weights,
-            "objective": self.objective,
-            "binding_caps": list(self.binding_caps),
-        }
+        """진단용 — `weights` 는 빼고 전부 (비중은 weights.csv·positions 가 들고 있다)."""
+        return {k: v for k, v in asdict(self).items() if k != "weights"}
 
 
 def _sigma_half(sigma: FArray) -> FArray:
@@ -179,59 +180,55 @@ def _groups(keys: Sequence[str | None]) -> dict[str, list[int]]:
     return g
 
 
-def _try_solve(
-    p: Problem, *, with_c3: bool, budget: float, solver: str
-) -> tuple[str, FArray | None, dict[str, float]]:
-    """한 번 푼다. (status, w, 제약 슬랙) 을 돌려준다."""
+@dataclass(frozen=True)
+class _Built:
+    """한 번 만든 cvxpy 문제 — `budget` 만 파라미터라 완화 2단의 예산 변경에 다시 만들지 않는다."""
+
+    prob: cp.Problem
+    w: cp.Variable
+    budget: cp.Parameter
+    named: dict[str, Any]
+
+
+def _build(p: Problem, *, with_c3: bool) -> _Built:
+    """제약을 전부 세운다. `named` 는 경계 판정(슬랙)에 쓰는 제약들이다."""
     n = p.n
     w = cp.Variable(n, nonneg=True)
-    cons = []
-    named: dict[str, object] = {}
+    budget = cp.Parameter(nonneg=True)
+    cons: list[Any] = []
+    named: dict[str, Any] = {}
+
+    def add(name: str | None, c: Any) -> None:
+        cons.append(c)
+        if name is not None:
+            named[name] = c
 
     # C5 현금 하한
-    c5 = cp.sum(w) <= 1.0 - CASH_FLOOR
-    cons.append(c5)
-    named["C5"] = c5
+    add("C5", cp.sum(w) <= 1.0 - CASH_FLOOR)
     if p.min_gross > 0:
-        cons.append(cp.sum(w) >= p.min_gross)
+        add(None, cp.sum(w) >= p.min_gross)
     # 하한
     mw = np.asarray(p.min_weight, dtype=np.float64)
     if (mw > 0).any():
-        cons.append(w >= mw)
+        add(None, w >= mw)
     # C1-(i)
-    half = _sigma_half(p.sigma)
-    c1i = p.k * cp.norm(half @ w, 2) <= budget
-    cons.append(c1i)
-    named["C1-i"] = c1i
+    add("C1-i", p.k * cp.norm(p.sigma_half @ w, 2) <= budget)
     # C1-(ii) 부분합
-    l_vec = np.array([v if v is not None else 0.0 for v in p.scenario_loss], dtype=np.float64)
-    has_l = np.array([v is not None for v in p.scenario_loss])
-    if has_l.any():
-        c1ii = l_vec @ w <= budget
-        cons.append(c1ii)
-        named["C1-ii"] = c1ii
+    if p.has_loss.any():
+        add("C1-ii", p.loss_vec @ w <= budget)
     # C3
     if with_c3:
         for i, tk in enumerate(p.tickers):
-            c = w[i] <= CAP_STOCK
-            cons.append(c)
-            named[f"C3-stock:{tk}"] = c
+            add(f"C3-stock:{tk}", w[i] <= CAP_STOCK)
         for t, idx in _groups(p.themes).items():
-            c = cp.sum(w[idx]) <= CAP_THEME
-            cons.append(c)
-            named[f"C3-theme:{t}"] = c
+            add(f"C3-theme:{t}", cp.sum(w[idx]) <= CAP_THEME)
         for k_, idx in _groups(p.classes).items():
-            c = cp.sum(w[idx]) <= CAP_CLASS
-            cons.append(c)
-            named[f"C3-class:{k_}"] = c
+            add(f"C3-class:{k_}", cp.sum(w[idx]) <= CAP_CLASS)
     # C4
     if p.capital_usd is not None and p.capital_usd > 0:
         for i, adv in enumerate(p.adv20_usd):
             if adv is not None and adv > 0:
-                cap = LIQ_FRACTION_OF_ADV * adv / p.capital_usd
-                c = w[i] <= cap
-                cons.append(c)
-                named[f"C4:{p.tickers[i]}"] = c
+                add(f"C4:{p.tickers[i]}", w[i] <= LIQ_FRACTION_OF_ADV * adv / p.capital_usd)
     # 클러스터 상한 (선택)
     cl = _groups(p.clusters)
     for name, cap in p.cluster_caps.items():
@@ -239,23 +236,28 @@ def _try_solve(
             raise OptimizeError(
                 f"클러스터 상한 {name!r}: 후보에 그 클러스터가 없다 (있는 것: {sorted(cl)})"
             )
-        c = cp.sum(w[cl[name]]) <= cap
-        cons.append(c)
-        named[f"cluster:{name}"] = c
+        add(f"cluster:{name}", cp.sum(w[cl[name]]) <= cap)
 
     coef = np.asarray(p.coef, dtype=np.float64)
-    prob = cp.Problem(cp.Maximize(coef @ w), cons)
+    return _Built(cp.Problem(cp.Maximize(coef @ w), cons), w, budget, named)
+
+
+def _try_solve(
+    built: _Built, *, budget: float, solver: str
+) -> tuple[str, FArray | None, dict[str, float]]:
+    """한 번 푼다. (status, w, 제약 슬랙) 을 돌려준다."""
+    built.budget.value = budget
     try:
-        prob.solve(solver=solver)
+        built.prob.solve(solver=solver)
     except cp.error.SolverError as e:  # pragma: no cover - 솔버 내부 실패
         raise OptimizeError(f"{solver} 실패: {e}") from e
-    status = str(prob.status)
+    status = str(built.prob.status)
     if status not in ("optimal", "optimal_inaccurate"):
         return status, None, {}
-    wv = np.asarray(w.value, dtype=np.float64).reshape(-1)
+    wv = np.asarray(built.w.value, dtype=np.float64).reshape(-1)
     wv = np.where(wv < 1e-9, 0.0, wv)
     slacks: dict[str, float] = {}
-    for k_, c in named.items():
+    for k_, c in built.named.items():
         sl = getattr(c, "expr", None)
         # cvxpy 의 Inequality: expr = lhs − rhs ≤ 0. 값이 0 근방이면 경계.
         val = getattr(sl, "value", None) if sl is not None else None
@@ -272,8 +274,11 @@ def solve(p: Problem, *, relax: bool = True) -> Solution:
         attempts.append((1, False, p.mdd_budget, ("C3",)))
         attempts.extend((2, False, b, ("C3", f"C1 예산 {b:.2f}")) for b in RELAX_BUDGETS)
     last_status = ""
+    built: dict[bool, _Built] = {}  # C3 포함/제외 두 문제만 있다 — 예산은 파라미터
     for stage, with_c3, budget, relaxed in attempts:
-        status, w, slacks = _try_solve(p, with_c3=with_c3, budget=budget, solver=solver)
+        if with_c3 not in built:
+            built[with_c3] = _build(p, with_c3=with_c3)
+        status, w, slacks = _try_solve(built[with_c3], budget=budget, solver=solver)
         last_status = status
         if w is None:
             log.warning("optimize: stage %d (C3=%s, B=%.2f) → %s", stage, with_c3, budget, status)
@@ -297,23 +302,18 @@ def _finish(
 ) -> Solution:
     sigma_p = float(np.sqrt(max(float(w @ p.sigma @ w), 0.0)))
     mdd_vol = p.k * sigma_p
-    has_l = [v is not None for v in p.scenario_loss]
+    has_l = p.has_loss
     mdd_sc: float | None = None
-    if any(has_l):
+    if has_l.any():
         mdd_sc = float(sum(w[i] * (p.scenario_loss[i] or 0.0) for i in range(p.n) if has_l[i]))
     tol = 1e-4
     vol_b = mdd_vol >= budget - tol
     sc_b = mdd_sc is not None and mdd_sc >= budget - tol
     binding = "both" if vol_b and sc_b else "vol" if vol_b else "scenario" if sc_b else "none"
-    tw: dict[str, float] = {}
-    cw: dict[str, float] = {}
-    clw: dict[str, float] = {}
-    for i in range(p.n):
-        tw[p.themes[i]] = tw.get(p.themes[i], 0.0) + float(w[i])
-        cw[p.classes[i]] = cw.get(p.classes[i], 0.0) + float(w[i])
-        cl = p.clusters[i]
-        if cl is not None:
-            clw[cl] = clw.get(cl, 0.0) + float(w[i])
+
+    def group_sums(keys: Sequence[str | None]) -> dict[str, float]:
+        return {k: float(sum(float(w[i]) for i in idx)) for k, idx in _groups(keys).items()}
+
     c4_applied = p.capital_usd is not None and p.capital_usd > 0
     c4_skipped = tuple(
         p.tickers[i] for i in range(p.n) if c4_applied and not (p.adv20_usd[i] or 0) > 0
@@ -339,9 +339,9 @@ def _finish(
         c4_skipped=c4_skipped,
         gross=gross,
         cash=1.0 - gross,
-        theme_weights=tw,
-        class_weights=cw,
-        cluster_weights=clw,
+        theme_weights=group_sums(p.themes),
+        class_weights=group_sums(p.classes),
+        cluster_weights=group_sums(p.clusters),
         objective=float(np.asarray(p.coef) @ w),
         binding_caps=binding_caps,
     )
