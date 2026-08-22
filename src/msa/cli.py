@@ -1,6 +1,7 @@
 """`msa` CLI.
 
-도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3) · `portfolio`(M6) · `research`(M7).
+도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3) · `portfolio`(M6) ·
+`research`(M7).
 나머지(`macro`·`picks`·`check`)는 `--help` 에는 나오되
 호출하면 `NotImplementedError` 를 던진다 — 있는 척하는 스텁이 조용히 빈 결과를
 내는 것보다 낫다 (`CLAUDE.md` §2).
