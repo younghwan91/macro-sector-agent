@@ -39,12 +39,22 @@
   exclude_tickers: []                  # 큐레이션 제외 — 이유 필수
   etf_proxy: SIL                       # 1차 지수 프록시
   etf_proxy_alt: [SILJ, SLVP]          # 검증용
-  physical_ref: SILVER                 # 실물/원자재 가격 참조 (있으면)
+  physical_ref: {source: etf, symbol: SLV}   # 실물/원자재 참조. 객체 또는 null (아래 규정)
   min_constituents: 5                  # 이하면 중앙값 통계 신뢰 불가 → 경고 표시
   notes: >
     은은 통화 수요와 산업 수요(태양광 페이스트)가 겹친다.
     금광과 상관 0.8 이상이므로 L5 유효 베팅 수 계산에서 같은 클러스터로 묶인다.
 ```
+
+**`physical_ref` 는 스칼라가 아니라 객체다.** 형식은 `{source, symbol}` 이며 `source` 의
+허용값은 `etf`(예: `SLV`) · `fred`(예: `PCOALAUUSDM`) · `manual`(예: `UXC_SPOT` — 수동 갱신)
+셋이다. 시리즈 가용성이 불확실하면 `verify: true` 를 덧붙여 M2 실측 확인 대상으로 표시한다
+(`specs/themes.example.yaml` 참조). 티커만 적는 스칼라 표기는 어느 소스에서 받는지를
+잃어버리므로 쓰지 않는다.
+
+> **`physical_ref: null` 은 "축 1 을 쓸 수 없다"는 뜻이다.** 이 필드가 `04-value-trap.md`
+> 축 1 의 적용 가능 여부를 결정하는 스위치이며, `null` 이면 `axis1_available = false` 로
+> 내려가 판별의 중심이 축 3(LLM 판정)으로 넘어간다. 그래서 값을 비워 두는 것 자체가 선언이다.
 
 ## 3. 버킷 목록 초안 (109개)
 
