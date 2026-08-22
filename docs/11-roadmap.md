@@ -228,15 +228,25 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
 
 ## M8 · 운영
 **완료 기준**
-- [ ] 월간/주간/일간 케이던스 스케줄러
-- [ ] 결정 저널 append-only 강제 (수정 시도 시 거부)
-- [ ] 텔레그램 알림 6종
-- [ ] `state/scans/` 스냅샷 보존 + 과거 스캔 재현 가능
-- [ ] 캘리브레이션 집계 스크립트 (표본 부족 시 "결론 없음" 출력. N ≥ 20 이면
-      캘리브레이션 곡선의 기울기를 `10-validation.md` §4 이 고정한 방식으로 산출한다 —
-      `λ` 의 실측 근거이며, 값의 갱신 자체는 문서화된 근거와 함께 사람이 결정한다)
-- [ ] **기각 대장 집계** (`10-validation.md`) — 하드 게이트·C6 미달·상위 K 탈락 테마의
-      이후 12·24개월 수익률을 기계적으로 기록하고 게이트 위양성률을 산출
+- [x] 월간/주간/일간 케이던스 스케줄러 — `msa ops schedule --print-cron` (crontab · systemd 텍스트 생성,
+      설치는 사람이) + `msa ops due <cadence>` 1영업일 게이트. 미국 공휴일 미고려(문서화됨)
+- [x] 결정 저널 append-only 강제 (수정 시도 시 거부) — `msa journal verify` (HEAD 대비 수정·삭제 검출),
+      `scripts/journal-precommit.sh` + `msa journal install-hook`. 항목 6종은 필수 필드가 비면 작성 거부
+      (`msa journal new --from`), 기존 파일은 덮어쓰지 않는다, `msa journal diff <theme>` 논지 표류 diff
+- [x] 텔레그램 알림 6종 — `msa.ops.alerts.AlertKind` (09 §3 의 6행) + `tier2_stop_hit` 1종 추가(07 §4).
+      문구 규약은 테스트가 강제한다. 토큰·chat_id 둘 다 없으면 "not configured" (파일 `alerts.json` 은 항상)
+- [x] `state/scans/` 스냅샷 보존 + 과거 스캔 재현 가능 — `msa ops reproduce <date>` 가 저장 파일만으로
+      리포트를 재생성해 보관본과 대조한다 (2026-08-14 스냅샷: 동일. 2026-07-31 은 `bucket` 키 이전
+      렌더러 산출이라 헤더 1줄·CPI 1줄이 다르다고 **보고**된다)
+- [x] 캘리브레이션 집계 스크립트 — `msa ops calibration` (표본 = 저널 청산 항목. N<20 → "결론 없음 (N=…)"
+      + 표본 나열. N ≥ 20 이고 3개 이상 구간이면 `10-validation.md` §4 가 고정한 **구간 표본수 가중
+      최소자승 기울기** → λ 실측 근거. 갱신은 사람이. 조건부 캘리브레이션 문장이 항상 붙는다)
+- [x] **기각 대장 집계** — `msa ops rejections-update` (테마 EW 지수로 `r_12m`/`r_24m` 기계 갱신,
+      불변 규칙 위반 시 저장 거부, 세 질문 (a)(b)(c) 를 `state/rejections-summary.md` 에 — (c) 는
+      `state/scans/<date>/scoreboard.csv` 순위 스냅샷, (b) 는 지표 캐시의 사후 축 1 판정)
+- [ ] **연결** — `positions.yaml` 을 L5 가 쓰고, thesis 스냅샷을 L3/사람이 만들고, `rejections.yaml`
+      행을 월간 스캔이 적재하는 배선. M8 은 읽는 쪽과 사람이 쓰는 명령만 있다 (`09` §4 구현 노트)
+- [ ] `msa check` 실전 검증 — 실제 포지션으로 한 분기 이상 돌려 manual 비율·오탐을 본다
 
 ---
 
