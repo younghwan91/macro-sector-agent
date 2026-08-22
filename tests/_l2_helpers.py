@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from msa.l2.dag import StateRule
+from msa.l2.drivers import direction_states
 from msa.l2.sources import RawSeries
 
 THEMES = ["alpha", "beta", "gamma", "delta", "epsilon"]  # epsilon 은 DAG 에 없다 → undercovered
@@ -229,6 +231,11 @@ def write_themes(tmp: Path, ids: list[str] = THEMES) -> Path:
     p = tmp / "themes.yaml"
     p.write_text(yaml.safe_dump({"schema_version": 1, "defaults": {}, "themes": recs}))
     return p
+
+
+def rule_direction(rule: StateRule, value: float) -> int:
+    """스칼라 방향 상태 — `drivers.direction_states` 의 밴드 규칙을 값 하나에 적용 (테스트 전용)."""
+    return int(direction_states(pd.Series([value]), rule.band_lo, rule.band_hi).iloc[0])
 
 
 # ---------------------------------------------------------------- 합성 시리즈

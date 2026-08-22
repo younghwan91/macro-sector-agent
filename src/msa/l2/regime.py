@@ -22,6 +22,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from msa.coerce import opt_float
 from msa.l2.drivers import DriverStates, rolling_z
 
 GROWTH_COMPONENTS: tuple[tuple[str, float, bool], ...] = (
@@ -83,10 +84,17 @@ def _axis(
     return axis, n, missing
 
 
+def quadrants(growth: pd.Series, inflation: pd.Series) -> np.ndarray:
+    """축 값 → 분면 이름 (둘 중 하나라도 없으면 `"unavailable"`). 벡터 한 번에."""
+    g, i = growth.to_numpy(dtype=float), inflation.to_numpy(dtype=float)
+    ok = np.isfinite(g) & np.isfinite(i)
+    conds = [ok & (g >= 0) & (i >= 0), ok & (g >= 0) & (i < 0), ok & (g < 0) & (i >= 0), ok]
+    names = [QUADRANTS[(1, 1)], QUADRANTS[(1, -1)], QUADRANTS[(-1, 1)], QUADRANTS[(-1, -1)]]
+    return np.select(conds, names, default="unavailable")
+
+
 def classify(growth: float, inflation: float) -> str:
-    if not (np.isfinite(growth) and np.isfinite(inflation)):
-        return "unavailable"
-    return QUADRANTS[(1 if growth >= 0 else -1, 1 if inflation >= 0 else -1)]
+    return str(quadrants(pd.Series([growth]), pd.Series([inflation]))[0])
 
 
 def compute_regime(ds: DriverStates, *, months: int = 24) -> RegimeResult:
@@ -107,23 +115,32 @@ def compute_regime(ds: DriverStates, *, months: int = 24) -> RegimeResult:
         },
         index=ds.grid,
     )
-    axes["quadrant"] = [
-        classify(a, b) for a, b in zip(axes["growth_z"], axes["inflation_z"], strict=True)
-    ]
+    axes["quadrant"] = quadrants(axes["growth_z"], axes["inflation_z"])
     axes["credit_stress"] = axes["credit_state"] == 1.0
     tail = axes.loc[: ds.asof].tail(months)
-    last = tail.iloc[-1] if len(tail) else None
-    current: dict[str, Any] = {
-        "asof": str(ds.asof.date()),
-        "growth_z": None if last is None else _f(last["growth_z"]),
-        "inflation_z": None if last is None else _f(last["inflation_z"]),
-        "n_growth": 0 if last is None else int(last["n_growth"]),
-        "n_inflation": 0 if last is None else int(last["n_inflation"]),
-        "quadrant": "unavailable" if last is None else str(last["quadrant"]),
-        "credit_state": None if last is None else _f(last["credit_state"]),
-        "credit_stress": bool(last is not None and last["credit_stress"]),
-        "credit_penalty": CREDIT_PENALTY,
-    }
+    current: dict[str, Any] = {"asof": str(ds.asof.date())}
+    if len(tail):
+        last = tail.iloc[-1]
+        current |= {
+            "growth_z": opt_float(last["growth_z"]),
+            "inflation_z": opt_float(last["inflation_z"]),
+            "n_growth": int(last["n_growth"]),
+            "n_inflation": int(last["n_inflation"]),
+            "quadrant": str(last["quadrant"]),
+            "credit_state": opt_float(last["credit_state"]),
+            "credit_stress": bool(last["credit_stress"]),
+        }
+    else:
+        current |= {
+            "growth_z": None,
+            "inflation_z": None,
+            "n_growth": 0,
+            "n_inflation": 0,
+            "quadrant": "unavailable",
+            "credit_state": None,
+            "credit_stress": False,
+        }
+    current["credit_penalty"] = CREDIT_PENALTY
     return RegimeResult(
         axes=tail,
         current=current,
@@ -131,10 +148,6 @@ def compute_regime(ds: DriverStates, *, months: int = 24) -> RegimeResult:
         missing_inflation=miss_i,
         credit_available=bool(credit.notna().any()),
     )
-
-
-def _f(v: Any) -> float | None:
-    return None if v is None or (isinstance(v, float) and not np.isfinite(v)) else float(v)
 
 
 def render_ascii(res: RegimeResult, *, width: int = 61, height: int = 21, lim: float = 3.0) -> str:

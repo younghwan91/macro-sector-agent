@@ -27,33 +27,60 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from msa.l2.dag import DagValidation, EdgeTarget, MacroDag, expand_edges
+from msa.l2.dag import DagValidation, MacroDag, expand_edges
+from msa.status import CoverageStatus
 
 HARD_EXCLUDE_BELOW = -0.5
 HARD_EXCLUDE_MIN_COVERAGE = 0.5  # 선언: 가중치 절반 이상이 관측돼야 하드 제외가 발동한다
 EVENT_WINDOW_MONTHS = 12
+TOP_CONTRIB_N = 3  # `top_contrib` 열에 적는 개별 엣지 수 (|기여| 내림차순)
+
+CONTRIB_COLUMNS: tuple[str, ...] = (
+    "theme",
+    "edge",
+    "from",
+    "sign",
+    "strength",
+    "w",
+    "state",
+    "contrib",
+    "status",
+    "common_factor",
+)
+TABLE_COLUMNS: tuple[str, ...] = (
+    "tailwind",
+    "tailwind_raw",
+    "ind_part",
+    "cf_part",
+    "cf_median",
+    "status",
+    "hard_exclude",
+    "undercovered",
+    "n_edges",
+    "n_edges_available",
+    "n_edges_missing",
+    "n_cf_available",
+    "weight_coverage",
+    "top_contrib",
+)
 
 
 @dataclass
 class TailwindResult:
-    table: pd.DataFrame  # theme × 열
-    contributions: pd.DataFrame  # (theme, edge) 행
+    table: pd.DataFrame  # theme × TABLE_COLUMNS
+    contributions: pd.DataFrame  # (theme, edge) 행 — CONTRIB_COLUMNS
     cf_median: float
     n_pairs: int
     n_pairs_available: int
 
-    def top(self, n: int = 10) -> pd.DataFrame:
-        t = self.table.loc[self.table["status"] != "unavailable"]
-        return t.sort_values("tailwind", ascending=False).head(n)
-
-    def bottom(self, n: int = 10) -> pd.DataFrame:
-        t = self.table.loc[self.table["status"] != "unavailable"]
-        return t.sort_values("tailwind", ascending=True).head(n)
+    def ranked(self, n: int = 10, *, ascending: bool = False) -> pd.DataFrame:
+        """계산된 테마만, tailwind 순 상위(기본)/하위(`ascending=True`) `n`개."""
+        t = self.table.loc[self.table["status"] != CoverageStatus.UNAVAILABLE]
+        return t.sort_values("tailwind", ascending=ascending).head(n)
 
 
 def policy_event_effect(
@@ -82,6 +109,62 @@ def policy_event_effect(
     return 0.0
 
 
+def _contributions(
+    dag: MacroDag,
+    theme_ids: list[str],
+    state_row: pd.Series,
+    asof: pd.Timestamp,
+    events: pd.DataFrame | None,
+) -> pd.DataFrame:
+    """(테마, 엣지) 기여 행. 쌍의 순서는 `expand_edges` 그대로(엣지 순 → 테마 순)."""
+    pairs = expand_edges(dag, theme_ids)
+    c = pd.DataFrame(
+        {
+            "theme": [p.theme for p in pairs],
+            "edge": [p.edge.index for p in pairs],
+            "from": [p.edge.source for p in pairs],
+            "sign": [p.edge.sign for p in pairs],
+            "strength": [p.edge.strength for p in pairs],
+            "w": [p.edge.weight for p in pairs],
+            "common_factor": [p.edge.wildcard for p in pairs],
+        },
+        columns=[k for k in CONTRIB_COLUMNS if k not in ("state", "contrib", "status")],
+    )
+    is_agent = c["from"].isin(dag.agent_drivers)
+    state = c["from"].map(state_row).astype(float)  # 없는 드라이버 → NaN
+    # policy_events: 테마별 판정 (결정 3) — 테마당 한 번만 센다
+    agent_themes = c.loc[is_agent, "theme"].unique()
+    eff = {t: policy_event_effect(events, t, asof) for t in agent_themes}
+    state = state.mask(is_agent, c["sign"] * c["theme"].map(eff).astype(float))
+    ok = state.notna()
+    c["state"] = state
+    c["contrib"] = (c["w"] * c["sign"] * state).where(ok)
+    c["status"] = np.where(ok, "ok", np.where(is_agent, "missing_events", "missing_driver"))
+    c["common_factor"] = c["common_factor"].astype(bool)
+    return c[list(CONTRIB_COLUMNS)]
+
+
+def _top_contrib(ind: pd.DataFrame) -> pd.Series:
+    """테마 → 개별 가용 엣지 중 |기여| 상위 `TOP_CONTRIB_N` 개를 `from(sign×state)` 로 `; ` 연결."""
+    if ind.empty:
+        return pd.Series(dtype=object)
+    label = (
+        ind["from"]
+        + "("
+        + ind["sign"].map("{:+d}".format)
+        + "×"
+        + ind["state"].map("{:+.0f}".format)
+        + ")"
+    )
+    top = (
+        ind.assign(_a=ind["contrib"].abs(), _label=label)
+        .sort_values(["theme", "_a"], ascending=[True, False], kind="stable")
+        .groupby("theme", sort=False)
+        .head(TOP_CONTRIB_N)
+    )
+    return top.groupby("theme")["_label"].agg("; ".join)
+
+
 def compute_tailwind(
     dag: MacroDag,
     theme_ids: list[str],
@@ -92,80 +175,38 @@ def compute_tailwind(
     validation: DagValidation | None = None,
 ) -> TailwindResult:
     """`state_row`: driver → state (NaN = 없음). 테마별 표와 (테마, 엣지) 기여 행을 돌려준다."""
-    pairs: list[EdgeTarget] = expand_edges(dag, theme_ids)
-    agent_drivers = {d.id for d in dag.drivers if d.provider == "agent"}
-    recs: list[dict[str, Any]] = []
-    for p in pairs:
-        e = p.edge
-        if e.source in agent_drivers:
-            eff = policy_event_effect(events, p.theme, asof)
-            state = float("nan") if np.isnan(eff) else e.sign * eff
-            status = "missing_events" if np.isnan(eff) else "ok"
-        else:
-            state = float(state_row.get(e.source, np.nan))
-            status = "ok" if np.isfinite(state) else "missing_driver"
-        contrib_v = e.weight * e.sign * state if status == "ok" else float("nan")
-        recs.append(
-            {
-                "theme": p.theme,
-                "edge": e.index,
-                "from": e.source,
-                "sign": e.sign,
-                "strength": e.strength,
-                "w": e.weight,
-                "state": state,
-                "contrib": contrib_v,
-                "status": status,
-                "common_factor": e.wildcard,
-            }
-        )
-    contrib = pd.DataFrame(
-        recs,
-        columns=[
-            "theme",
-            "edge",
-            "from",
-            "sign",
-            "strength",
-            "w",
-            "state",
-            "contrib",
-            "status",
-            "common_factor",
-        ],
-    )
-    rows: list[dict[str, Any]] = []
-    for theme in theme_ids:
-        c = contrib.loc[contrib["theme"] == theme]
-        avail = c.loc[c["status"] == "ok"]
-        w_total = float(c["w"].sum())
-        w_avail = float(avail["w"].sum())
-        ind = avail.loc[~avail["common_factor"]]
-        cf = avail.loc[avail["common_factor"]]
-        if w_avail > 0:
-            ind_part = float(ind["contrib"].sum()) / w_avail
-            cf_part = float(cf["contrib"].sum()) / w_avail
-        else:
-            ind_part = cf_part = float("nan")
-        n_ind = int((~c["common_factor"]).sum())
-        n_ind_avail = int((~ind["common_factor"]).sum())
-        top = ind.reindex(ind["contrib"].abs().sort_values(ascending=False).index).head(3)
-        rows.append(
-            {
-                "theme": theme,
-                "ind_part": ind_part,
-                "cf_part": cf_part,
-                "n_edges": n_ind,
-                "n_edges_available": n_ind_avail,
-                "n_edges_missing": n_ind - n_ind_avail,
-                "n_cf_available": len(cf),
-                "weight_coverage": (w_avail / w_total) if w_total > 0 else float("nan"),
-                "top_contrib": "; ".join(
-                    f"{r['from']}({r['sign']:+d}×{r['state']:+.0f})" for _, r in top.iterrows()
-                ),
-            }
-        )
-    table = pd.DataFrame(rows).set_index("theme")
+    contrib = _contributions(dag, theme_ids, state_row, asof, events)
+    avail = contrib["status"] == "ok"
+    cf = contrib["common_factor"]
+    g = contrib.assign(
+        w_ok=contrib["w"].where(avail, 0),
+        contrib_ind=contrib["contrib"].where(avail & ~cf, 0.0),
+        contrib_cf=contrib["contrib"].where(avail & cf, 0.0),
+        n_ind=~cf,
+        n_ind_ok=avail & ~cf,
+        n_cf_ok=avail & cf,
+    ).groupby("theme", sort=False)
+    agg = g.agg(
+        w_total=("w", "sum"),
+        w_avail=("w_ok", "sum"),
+        contrib_ind=("contrib_ind", "sum"),
+        contrib_cf=("contrib_cf", "sum"),
+        n_edges=("n_ind", "sum"),
+        n_edges_available=("n_ind_ok", "sum"),
+        n_cf_available=("n_cf_ok", "sum"),
+    ).reindex(theme_ids)  # 테마 순서를 입력 순서로 — 아래 정렬의 동률 순서가 여기에 달렸다
+    w_avail = agg["w_avail"].where(agg["w_avail"] > 0)  # 0 → NaN (가용 엣지 없음 → 계산 불가)
+    table = pd.DataFrame(index=pd.Index(theme_ids, name="theme"))
+    table["ind_part"] = agg["contrib_ind"] / w_avail
+    table["cf_part"] = agg["contrib_cf"] / w_avail
+    table["n_edges"] = agg["n_edges"].fillna(0).astype(int)
+    table["n_edges_available"] = agg["n_edges_available"].fillna(0).astype(int)
+    table["n_edges_missing"] = table["n_edges"] - table["n_edges_available"]
+    table["n_cf_available"] = agg["n_cf_available"].fillna(0).astype(int)
+    table["weight_coverage"] = agg["w_avail"] / agg["w_total"].where(agg["w_total"] > 0)
+    ind = contrib.loc[avail & ~cf]
+    table["top_contrib"] = _top_contrib(ind).reindex(theme_ids).fillna("").to_numpy()
+
     valid = table["cf_part"].notna()
     cf_median = float(table.loc[valid, "cf_part"].median()) if valid.any() else 0.0
     table["cf_median"] = cf_median
@@ -173,8 +214,8 @@ def compute_tailwind(
     table["tailwind"] = table["ind_part"] + (table["cf_part"] - cf_median)
     table["status"] = np.where(
         table["tailwind"].isna(),
-        "unavailable",
-        np.where(table["n_edges_missing"] > 0, "partial", "ok"),
+        CoverageStatus.UNAVAILABLE,
+        np.where(table["n_edges_missing"] > 0, CoverageStatus.PARTIAL, CoverageStatus.OK),
     )
     table["hard_exclude"] = (table["tailwind"] < HARD_EXCLUDE_BELOW) & (
         table["weight_coverage"] >= HARD_EXCLUDE_MIN_COVERAGE
@@ -182,26 +223,10 @@ def compute_tailwind(
     under = validation.undercovered if validation is not None else {}
     table["undercovered"] = [t in under for t in table.index]
     table = table.sort_values("tailwind", ascending=False, na_position="last")
-    cols = [
-        "tailwind",
-        "tailwind_raw",
-        "ind_part",
-        "cf_part",
-        "cf_median",
-        "status",
-        "hard_exclude",
-        "undercovered",
-        "n_edges",
-        "n_edges_available",
-        "n_edges_missing",
-        "n_cf_available",
-        "weight_coverage",
-        "top_contrib",
-    ]
     return TailwindResult(
-        table=table[cols],
+        table=table[list(TABLE_COLUMNS)],
         contributions=contrib,
         cf_median=cf_median,
         n_pairs=len(contrib),
-        n_pairs_available=int((contrib["status"] == "ok").sum()),
+        n_pairs_available=int(avail.sum()),
     )

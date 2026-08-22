@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 
 from _l2_helpers import FakeStore, daily, monthly, write_dag
+from msa.dates import last_month_end
 from msa.l2.dag import load_dag
 from msa.l2.drivers import (
     PUB_LAG,
@@ -18,7 +19,6 @@ from msa.l2.drivers import (
     compute_driver_states,
     direction_states,
     employment_composite_z,
-    last_month_end,
     measure_from_series,
     month_end_grid,
     usd_liquidity_level,

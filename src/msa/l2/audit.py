@@ -55,25 +55,24 @@ def _eval_conditions(
 
 
 def evaluate_rule(rule: Mapping[str, Any], state_row: pd.Series) -> tuple[str, str]:
-    """→ (status, detail). `all_of` / `any_of` 중 하나를 받는다."""
-    if "all_of" in rule:
-        conds = list(rule["all_of"])
-        hits, unav = _eval_conditions(conds, state_row)
-        if unav:
-            return "UNAVAILABLE", f"상태 없음: {', '.join(unav)}"
-        return ("FLAGGED" if all(hits) else "NOT_FLAGGED"), _fmt(conds, state_row)
-    if "any_of" in rule:
-        conds = list(rule["any_of"])
-        hits, unav = _eval_conditions(conds, state_row)
-        if any(hits):
-            return "FLAGGED", _fmt(conds, state_row)
-        if unav:
-            return "UNAVAILABLE", f"상태 없음: {', '.join(unav)}"
-        return "NOT_FLAGGED", _fmt(conds, state_row)
-    return "UNAVAILABLE", f"알 수 없는 규칙 형식: {sorted(rule)}"
+    """→ (status, detail). `all_of` / `any_of` 중 하나를 받는다.
+
+    `any_of` 는 성립한 조건이 하나라도 있으면 나머지가 없어도 FLAGGED 로 **결정**된다. `all_of` 는
+    하나라도 없으면 UNAVAILABLE 이다 (성립하지 않은 조건이 있어도 — 없는 것은 없다고 적는다).
+    """
+    key = next((k for k in ("all_of", "any_of") if k in rule), None)
+    if key is None:
+        return "UNAVAILABLE", f"알 수 없는 규칙 형식: {sorted(rule)}"
+    conds = list(rule[key])
+    hits, unav = _eval_conditions(conds, state_row)
+    decided = any(hits) if key == "any_of" else False
+    if unav and not decided:
+        return "UNAVAILABLE", f"상태 없음: {', '.join(unav)}"
+    combine = all if key == "all_of" else any
+    return ("FLAGGED" if combine(hits) else "NOT_FLAGGED"), _describe(conds, state_row)
 
 
-def _fmt(conds: list[Mapping[str, Any]], state_row: pd.Series) -> str:
+def _describe(conds: list[Mapping[str, Any]], state_row: pd.Series) -> str:
     parts = []
     for c in conds:
         drv = str(c.get("driver", ""))

@@ -55,15 +55,16 @@ FRED 캐시는 **최신 개정치**다. ALFRED 빈티지를 쓰지 않으므로 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
-from typing import Any
+from dataclasses import asdict, dataclass, field
 
 import numpy as np
 import pandas as pd
 from pandas.tseries.offsets import MonthEnd
 
+from msa.dates import last_month_end, month_ends
 from msa.l2.dag import Driver, MacroDag
 from msa.l2.sources import RawSeries, SeriesStore
+from msa.status import SeriesStatus
 
 log = logging.getLogger(__name__)
 
@@ -137,13 +138,8 @@ LIQUIDITY_UNITS: dict[str, tuple[str, float]] = {
 
 
 def month_end_grid(asof: pd.Timestamp, start: str = GRID_START) -> pd.DatetimeIndex:
-    return pd.date_range(start, asof, freq="ME")
-
-
-def last_month_end(asof: pd.Timestamp) -> pd.Timestamp:
-    """`asof` 이하의 마지막 월말. 8/23 이면 7/31 — 그 달이 끝나야 월말 값이 있다."""
-    me = asof + MonthEnd(0)
-    return me if me == asof else asof - MonthEnd(1)
+    """L2 월말 격자 — `msa.dates.month_ends` 에 L2 의 시작일 선언(`GRID_START`)을 붙인 것."""
+    return month_ends(start, asof)
 
 
 def availability_dates(index: pd.DatetimeIndex, lag: PubLag) -> pd.DatetimeIndex:
@@ -260,7 +256,28 @@ class DriverState:
 
     @property
     def ok(self) -> bool:
-        return self.status == "ok"
+        return self.status == SeriesStatus.OK
+
+
+#: `DriverStates.snapshot()` 의 열 = `drivers.csv` 열 순서. 필드명이 다른 셋은 `_SNAPSHOT_RENAME`.
+SNAPSHOT_COLUMNS: tuple[str, ...] = (
+    "provider",
+    "source_used",
+    "status",
+    "measure",
+    "value",
+    "state",
+    "favorable",
+    "obs_date",
+    "lag",
+    "common_factor",
+    "missing_series",
+    "note",
+)
+_SNAPSHOT_RENAME = {"id": "driver", "measure_name": "measure", "measure_value": "value"}
+
+#: 한 드라이버의 계산 결과 — (스냅샷 행, 측정값 시계열, 상태 시계열). 결측이면 뒤 둘은 None.
+DriverResult = tuple[DriverState, pd.Series | None, pd.Series | None]
 
 
 @dataclass
@@ -273,9 +290,9 @@ class DriverStates:
     events: pd.DataFrame | None = None  # policy_events (date, theme, effect, confirmed)
     events_note: str = ""
 
-    def state_at(self, when: pd.Timestamp | None = None) -> pd.Series:
-        t = self.asof if when is None else when
-        row = self.states.loc[t] if t in self.states.index else self.states.iloc[-1]
+    def state_at(self) -> pd.Series:
+        """`asof` 행의 driver → state (격자의 마지막 행)."""
+        row = self.states.loc[self.asof]
         assert isinstance(row, pd.Series)
         return row
 
@@ -288,26 +305,14 @@ class DriverStates:
         return [r.id for r in self.rows if r.ok]
 
     def snapshot(self) -> pd.DataFrame:
-        recs: list[dict[str, Any]] = []
+        """드라이버 × `SNAPSHOT_COLUMNS` (index `driver`) — `drivers.csv`·리포트의 표."""
+        recs = []
         for r in self.rows:
-            recs.append(
-                {
-                    "driver": r.id,
-                    "provider": r.provider,
-                    "source_used": r.source_used,
-                    "status": r.status,
-                    "measure": r.measure_name,
-                    "value": r.measure_value,
-                    "state": r.state,
-                    "favorable": r.favorable,
-                    "obs_date": None if r.obs_date is None else str(r.obs_date.date()),
-                    "lag": r.lag,
-                    "common_factor": r.common_factor,
-                    "missing_series": ",".join(r.missing_series),
-                    "note": r.note,
-                }
-            )
-        return pd.DataFrame(recs).set_index("driver")
+            d = asdict(r)
+            d["obs_date"] = None if r.obs_date is None else str(r.obs_date.date())
+            d["missing_series"] = ",".join(r.missing_series)
+            recs.append({_SNAPSHOT_RENAME.get(k, k): v for k, v in d.items()})
+        return pd.DataFrame(recs).set_index("driver")[list(SNAPSHOT_COLUMNS)]
 
 
 # ---------------------------------------------------------------- 계산
@@ -341,47 +346,50 @@ def _finish(
     lag: str,
     note: str,
     asof: pd.Timestamp,
-) -> tuple[DriverState, pd.Series, pd.Series]:
+) -> DriverResult:
     rule = d.rule
     if rule is None:
         states = pd.Series(np.nan, index=measure.index, dtype=float)
     else:
         states = direction_states(measure, rule.band_lo, rule.band_hi)
     v = float(measure.loc[asof]) if asof in measure.index else float("nan")
+    ok = bool(np.isfinite(v))
+    last_obs = None if grid_series is None else grid_series.loc[:asof].last_valid_index()
     st = DriverState(
         id=d.id,
         provider=d.provider,
         source_used=source_used,
-        status="ok" if np.isfinite(v) else "missing",
+        status=SeriesStatus.OK if ok else SeriesStatus.MISSING,
         measure_name=d.measure,
         measure_value=v,
-        state=float(states.loc[asof]) if np.isfinite(v) and rule is not None else float("nan"),
-        favorable=(rule.favorable(v) if (rule is not None and np.isfinite(v)) else None),
-        obs_date=(
-            pd.Timestamp(grid_series.loc[:asof].last_valid_index())  # type: ignore[arg-type]
-            if grid_series is not None and grid_series.loc[:asof].last_valid_index() is not None
-            else None
-        ),
+        state=float(states.loc[asof]) if ok and rule is not None else float("nan"),
+        favorable=rule.favorable(v) if (rule is not None and ok) else None,
+        obs_date=None if last_obs is None else pd.Timestamp(last_obs),  # type: ignore[arg-type]
         lag=lag,
-        note=note,
+        note=note or ("" if ok else "이력 부족 — 측정값 계산 불가"),
         common_factor=d.common_factor,
     )
-    if not st.ok and not note:
-        st.note = "이력 부족 — 측정값 계산 불가"
     return st, measure, states
 
 
-def _missing(d: Driver, source_used: str, note: str, missing: list[str]) -> DriverState:
-    return DriverState(
+def _missing(d: Driver, source_used: str, note: str, missing: list[str]) -> DriverResult:
+    st = DriverState(
         id=d.id,
         provider=d.provider,
         source_used=source_used,
-        status="missing",
+        status=SeriesStatus.MISSING,
         measure_name=d.measure,
         note=note,
         missing_series=missing,
         common_factor=d.common_factor,
     )
+    return st, None, None
+
+
+def _etf_measure(d: Driver, raw: RawSeries, grid: pd.DatetimeIndex) -> tuple[pd.Series, pd.Series]:
+    """ETF 가격(당일 가용) → 격자 시리즈와 측정값. 본 드라이버·FRED 폴백이 같이 쓴다."""
+    g = raw_to_grid(raw, DEFAULT_LAG["etf"], grid)
+    return g, measure_from_series(d.measure, g)
 
 
 def compute_driver_states(
@@ -407,7 +415,7 @@ def compute_driver_states(
     for d in dag.drivers:
         if d.provider == "etf" and d.symbol:
             etf_syms.add(d.symbol)
-            etf_syms.update(str(a) for a in (d.raw.get("source", {}).get("alt") or []))
+            etf_syms.update(d.alt)
         if d.provider == "fred" and d.fallback and d.fallback.get("provider") == "etf":
             sym = d.series[0]
             fred_raw[sym] = store.fred(sym)
@@ -418,30 +426,31 @@ def compute_driver_states(
 
     # 2) 드라이버별 계산
     for d in dag.drivers:
-        measures[d.id] = nan
-        states[d.id] = nan
         try:
             if d.provider == "fred":
-                rows.append(_fred_driver(d, store, fred_raw, grid, asof, measures, states))
+                res = _fred_driver(d, store, fred_raw, grid, asof)
             elif d.provider == "derived":
-                rows.append(_derived_driver(d, store, grid, asof, measures, states))
+                res = _derived_driver(d, store, grid, asof)
             elif d.provider == "etf":
-                rows.append(_etf_driver(d, store, grid, asof, measures, states))
+                res = _etf_driver(d, store, grid, asof)
             elif d.provider == "manual":
-                rows.append(_manual_driver(d, store, grid, asof, measures, states))
+                res = _manual_driver(d, store, grid, asof)
             elif d.provider == "sharadar_derived":
-                rows.append(_sharadar_driver(d, store, grid, asof, measures, states))
+                res = _sharadar_driver(d, store, grid, asof)
             elif d.provider == "agent":
                 events, events_note = store.manual_events()
                 note = events_note if events is not None else f"이벤트 목록 없음 — {events_note}"
-                st = _missing(d, "manual:policy_events.csv", note, [])
-                st.status = "ok" if events is not None else "missing"
-                st.note = note + " · 테마별 판정은 tailwind 단계"
-                rows.append(st)
+                res = _missing(d, "manual:policy_events.csv", note, [])
+                res[0].status = SeriesStatus.OK if events is not None else SeriesStatus.MISSING
+                res[0].note = note + " · 테마별 판정은 tailwind 단계"
             else:
-                rows.append(_missing(d, d.provider, f"알 수 없는 provider `{d.provider}`", []))
+                res = _missing(d, d.provider, f"알 수 없는 provider `{d.provider}`", [])
         except ValueError as e:
-            rows.append(_missing(d, d.provider, f"{type(e).__name__}: {e}", []))
+            res = _missing(d, d.provider, f"{type(e).__name__}: {e}", [])
+        st, m, s = res
+        rows.append(st)
+        measures[d.id] = nan if m is None else m
+        states[d.id] = nan if s is None else s
     return DriverStates(
         asof=asof,
         grid=grid,
@@ -453,27 +462,14 @@ def compute_driver_states(
     )
 
 
-def _store_result(
-    d: Driver,
-    res: tuple[DriverState, pd.Series, pd.Series],
-    measures: dict[str, pd.Series],
-    states: dict[str, pd.Series],
-) -> DriverState:
-    st, m, s = res
-    measures[d.id] = m
-    states[d.id] = s
-    return st
-
-
 def _fred_driver(
     d: Driver,
     store: SeriesStore,
     fred_raw: dict[str, RawSeries],
     grid: pd.DatetimeIndex,
     asof: pd.Timestamp,
-    measures: dict[str, pd.Series],
-    states: dict[str, pd.Series],
-) -> DriverState:
+) -> DriverResult:
+    src = f"fred:{'+'.join(d.series)}"
     raws = {sym: fred_raw.get(sym) or store.fred(sym) for sym in d.series}
     missing = [sym for sym, r in raws.items() if not r.ok]
     if missing:
@@ -482,9 +478,8 @@ def _fred_driver(
             fb_sym = str(d.fallback["symbol"])
             fb = store.etf(fb_sym)
             if fb.ok:
-                g = raw_to_grid(fb, DEFAULT_LAG["etf"], grid)
-                m = measure_from_series(d.measure, g)
-                st = _finish(
+                g, m = _etf_measure(d, fb, grid)
+                res = _finish(
                     d,
                     m,
                     g,
@@ -493,14 +488,14 @@ def _fred_driver(
                     f"FRED {missing} 없음 → ETF {fb_sym} 폴백 · {fb.note}",
                     asof,
                 )
-                st[0].missing_series = missing
-                return _store_result(d, st, measures, states)
+                res[0].missing_series = missing
+                return res
             note = (
                 f"FRED {missing} 없음 ({raws[missing[0]].note}) · 폴백 {fb_sym} 도 없음 ({fb.note})"
             )
-            return _missing(d, f"fred:{'+'.join(d.series)}", note, [*missing, fb_sym])
+            return _missing(d, src, note, [*missing, fb_sym])
         note = " · ".join(f"{sym}: {raws[sym].note}" for sym in missing)
-        return _missing(d, f"fred:{'+'.join(d.series)}", note, missing)
+        return _missing(d, src, note, missing)
     lags = {sym: _lag_for_fred(sym) for sym in d.series}
     grids = {sym: raw_to_grid(r, lags[sym], grid) for sym, r in raws.items()}
     lag_desc = ", ".join(f"{sym} {lags[sym].describe()}" for sym in d.series)
@@ -514,84 +509,52 @@ def _fred_driver(
             raise ValueError(f"{d.id}: measure {d.measure} 는 시리즈 1개를 기대한다 ({d.series})")
         g = grids[d.series[0]]
         m = measure_from_series(d.measure, g)
-    res = _finish(d, m, g, f"fred:{'+'.join(d.series)}", lag_desc, raws[d.series[0]].note, asof)
-    return _store_result(d, res, measures, states)
+    return _finish(d, m, g, src, lag_desc, raws[d.series[0]].note, asof)
 
 
 def _derived_driver(
-    d: Driver,
-    store: SeriesStore,
-    grid: pd.DatetimeIndex,
-    asof: pd.Timestamp,
-    measures: dict[str, pd.Series],
-    states: dict[str, pd.Series],
-) -> DriverState:
+    d: Driver, store: SeriesStore, grid: pd.DatetimeIndex, asof: pd.Timestamp
+) -> DriverResult:
     if d.id != "usd_liquidity":
         raise ValueError(f"{d.id}: 알 수 없는 파생 드라이버 (formula={d.formula})")
     syms = ("WALCL", "WTREGEN", "RRPONTSYD")
+    src = f"derived:{'-'.join(syms)}"
     raws = {s: store.fred(s) for s in syms}
     missing = [s for s in syms if not raws[s].ok]
     if missing:
-        note = " · ".join(f"{s}: {raws[s].note}" for s in missing)
-        return _missing(d, f"derived:{'-'.join(syms)}", note, missing)
+        return _missing(d, src, " · ".join(f"{s}: {raws[s].note}" for s in missing), missing)
     unit_problems = [p for p in (_units_ok(raws[s], s) for s in syms) if p]
     if unit_problems:
-        return _missing(d, f"derived:{'-'.join(syms)}", " · ".join(unit_problems), [])
-    grids = {s: raw_to_grid(raws[s], _lag_for_fred(s), grid) for s in syms}
+        return _missing(d, src, " · ".join(unit_problems), [])
+    lags = {s: _lag_for_fred(s) for s in syms}
+    grids = {s: raw_to_grid(raws[s], lags[s], grid) for s in syms}
     lvl = usd_liquidity_level(grids["WALCL"], grids["WTREGEN"], grids["RRPONTSYD"])
     m = measure_from_series(d.measure, lvl)
     units_note = "단위 메타 대조: " + (
         "완료" if all(raws[s].units for s in syms) else "메타 없음(환산 선언값 사용)"
     )
-    res = _finish(
-        d,
-        m,
-        lvl,
-        f"derived:{'-'.join(syms)}",
-        ", ".join(f"{s} {_lag_for_fred(s).describe()}" for s in syms),
-        units_note,
-        asof,
-    )
-    return _store_result(d, res, measures, states)
+    lag_desc = ", ".join(f"{s} {lags[s].describe()}" for s in syms)
+    return _finish(d, m, lvl, src, lag_desc, units_note, asof)
 
 
 def _etf_driver(
-    d: Driver,
-    store: SeriesStore,
-    grid: pd.DatetimeIndex,
-    asof: pd.Timestamp,
-    measures: dict[str, pd.Series],
-    states: dict[str, pd.Series],
-) -> DriverState:
-    cands = [d.symbol or ""] + [str(a) for a in (d.raw.get("source", {}).get("alt") or [])]
+    d: Driver, store: SeriesStore, grid: pd.DatetimeIndex, asof: pd.Timestamp
+) -> DriverResult:
+    cands = [c for c in (d.symbol or "", *d.alt) if c]
     tried: list[str] = []
-    for sym in [c for c in cands if c]:
+    for sym in cands:
         raw = store.etf(sym)
         if raw.ok:
-            g = raw_to_grid(raw, DEFAULT_LAG["etf"], grid)
-            m = measure_from_series(d.measure, g)
-            res = _finish(
-                d,
-                m,
-                g,
-                f"etf:{sym}",
-                DEFAULT_LAG["etf"].describe(),
-                raw.note + (f" (대체: {tried} 없음)" if tried else ""),
-                asof,
-            )
-            return _store_result(d, res, measures, states)
+            g, m = _etf_measure(d, raw, grid)
+            note = raw.note + (f" (대체: {tried} 없음)" if tried else "")
+            return _finish(d, m, g, f"etf:{sym}", DEFAULT_LAG["etf"].describe(), note, asof)
         tried.append(f"{sym}: {raw.note}")
-    return _missing(d, f"etf:{d.symbol}", " · ".join(tried), [c for c in cands if c])
+    return _missing(d, f"etf:{d.symbol}", " · ".join(tried), cands)
 
 
 def _manual_driver(
-    d: Driver,
-    store: SeriesStore,
-    grid: pd.DatetimeIndex,
-    asof: pd.Timestamp,
-    measures: dict[str, pd.Series],
-    states: dict[str, pd.Series],
-) -> DriverState:
+    d: Driver, store: SeriesStore, grid: pd.DatetimeIndex, asof: pd.Timestamp
+) -> DriverResult:
     raw = store.manual(d.id)
     if not raw.ok:
         return _missing(d, raw.source, raw.note, [d.id])
@@ -599,23 +562,16 @@ def _manual_driver(
     g = raw_to_grid(raw, lag, grid)
     m = measure_from_series(d.measure, g)
     lag_desc = "available 열" if raw.available is not None else lag.describe()
-    res = _finish(d, m, g, raw.source, lag_desc, raw.note, asof)
-    return _store_result(d, res, measures, states)
+    return _finish(d, m, g, raw.source, lag_desc, raw.note, asof)
 
 
 def _sharadar_driver(
-    d: Driver,
-    store: SeriesStore,
-    grid: pd.DatetimeIndex,
-    asof: pd.Timestamp,
-    measures: dict[str, pd.Series],
-    states: dict[str, pd.Series],
-) -> DriverState:
+    d: Driver, store: SeriesStore, grid: pd.DatetimeIndex, asof: pd.Timestamp
+) -> DriverResult:
     raw = store.sharadar_capex_ttm(grid)
     if not raw.ok:
         return _missing(d, raw.source, raw.note, ["SF1 capex"])
     assert raw.values is not None
     g = raw.values.reindex(grid)
     m = measure_from_series(d.measure, g)
-    res = _finish(d, m, g, raw.source, "datekey as-of (PIT)", raw.note, asof)
-    return _store_result(d, res, measures, states)
+    return _finish(d, m, g, raw.source, "datekey as-of (PIT)", raw.note, asof)

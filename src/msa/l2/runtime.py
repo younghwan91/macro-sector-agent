@@ -15,6 +15,10 @@ DAG → 드라이버 상태 → tailwind → 4분면 → 모순 감사 → 부�
 | `sign_check.csv` · `sign_check.md` | 엣지 부호 일치율 (쌍 단위 · 엣지 단위 문서) |
 | `report.txt` · `meta.json` | 사람이 읽는 요약 · 실행 메타 |
 
+그리고 `state/macro/latest.json` — L3(`msa research`)의 거시 입력 계약
+(`msa.l3.contracts.load_macro_state`: `asof` · `regime` · `tailwind{theme: float}`). 기준일이 이미
+있는 `latest.json` 보다 **앞서면 덮어쓰지 않는다** — 과거 기준일 재실행이 최신을 지우지 않는다.
+
 없는 것은 **이름으로 적는다**: 결측 드라이버·결측 시리즈·계산 불가 테마·미지 테마 타깃·in-degree
 미달 테마. 빈 표를 조용히 내보내지 않는다 (`CLAUDE.md` §2).
 """
@@ -29,10 +33,12 @@ from typing import Any
 
 import pandas as pd
 
-from msa.config import paths
+from msa.config import paths, rel
+from msa.dates import last_month_end
+from msa.io import dump_json, write_snapshot
 from msa.l2 import audit
 from msa.l2.dag import DagValidation, MacroDag, load_dag, validate_dag
-from msa.l2.drivers import DriverStates, compute_driver_states, last_month_end
+from msa.l2.drivers import DriverStates, compute_driver_states
 from msa.l2.regime import RegimeResult, compute_regime, render_ascii
 from msa.l2.signcheck import (
     SignCheckResult,
@@ -44,6 +50,7 @@ from msa.l2.signcheck import (
 )
 from msa.l2.sources import SeriesStore
 from msa.l2.tailwind import TailwindResult, compute_tailwind
+from msa.status import CoverageStatus
 from msa.themes import load_themes
 
 log = logging.getLogger(__name__)
@@ -55,10 +62,13 @@ class MacroResult:
     dag: MacroDag
     validation: DagValidation
     drivers: DriverStates
+    snapshot: pd.DataFrame  # `drivers.snapshot()` — 리포트·`drivers.csv` 가 같은 표를 쓴다
     tailwind: TailwindResult
     regime: RegimeResult
+    regime_text: str  # `render_ascii(regime)`
     contradictions: pd.DataFrame
     sign_check: SignCheckResult
+    sign_check_md: str  # `render_markdown(sign_check, meta)`
     meta: dict[str, Any]
     out_dir: Path | None
 
@@ -71,77 +81,54 @@ def run_macro(
     allow_store: bool = True,
     write: bool = True,
     sign_check: bool = True,
-    out_root: Path | None = None,
-    dag_path: Path | None = None,
-    themes_path: Path | None = None,
-    cache_dir: Path | None = None,
-    manual_dir: Path | None = None,
     doc_out: Path | None = None,
 ) -> MacroResult:
+    """경로는 전부 `paths()` (`MSA_STATE`) 에서 온다 — 테스트는 환경변수로 갈아끼운다."""
     p = paths()
     asof_ts = last_month_end(pd.Timestamp(asof) if asof else pd.Timestamp.today().normalize())
-    themes = load_themes(themes_path)
-    theme_ids = themes.ids()
-    dag = load_dag(dag_path)
+    theme_ids = load_themes(p.themes_yaml).ids()
+    dag = load_dag(p.dag_yaml)
     validation = validate_dag(dag, theme_ids)
     log.info(validation.summary())
 
-    store = SeriesStore(
-        allow_fetch=allow_fetch, allow_etf=allow_etf, allow_store=allow_store, manual_dir=manual_dir
-    )
+    store = SeriesStore(allow_fetch=allow_fetch, allow_etf=allow_etf, allow_store=allow_store)
     ds = compute_driver_states(dag, store, asof_ts)
     log.info(
         "drivers: 가용 %d · 결측 %d (%s)", len(ds.available), len(ds.missing), ", ".join(ds.missing)
     )
-
+    state_row = ds.state_at()
     tw = compute_tailwind(
-        dag, theme_ids, ds.state_at(), asof=ds.asof, events=ds.events, validation=validation
+        dag, theme_ids, state_row, asof=ds.asof, events=ds.events, validation=validation
     )
     rg = compute_regime(ds)
-    contra = audit.evaluate_contradictions(dag, ds.state_at())
-
-    cdir = cache_dir if cache_dir is not None else p.cache
-    sc = _sign_check(dag, theme_ids, ds, cdir, enabled=sign_check)
-
-    meta = _meta(ds, validation, tw, rg, contra, sc, dag)
-    out_dir: Path | None = None
-    if write:
-        root = out_root if out_root is not None else p.macro
-        out_dir = root / str(ds.asof.date())
-        out_dir.mkdir(parents=True, exist_ok=True)
-        _write(out_dir, ds, tw, rg, contra, sc, meta, validation)
-        log.info("macro: 저장 %s", out_dir)
-    if doc_out is not None:
-        doc_out.parent.mkdir(parents=True, exist_ok=True)
-        doc_out.write_text(render_markdown(sc, meta), encoding="utf-8")
-        log.info("macro: 부호 실측 문서 → %s", doc_out)
+    contra = audit.evaluate_contradictions(dag, state_row)
+    sc = _sign_check(dag, theme_ids, ds, p.cache, enabled=sign_check)
+    snap = ds.snapshot()
+    meta = _meta(ds, snap, validation, tw, rg, contra, sc, dag)
     res = MacroResult(
         asof=ds.asof,
         dag=dag,
         validation=validation,
         drivers=ds,
+        snapshot=snap,
         tailwind=tw,
         regime=rg,
+        regime_text=render_ascii(rg),
         contradictions=contra,
         sign_check=sc,
+        sign_check_md=render_markdown(sc, meta),
         meta=meta,
-        out_dir=out_dir,
+        out_dir=None,
     )
-    if out_dir is not None:
-        (out_dir / "report.txt").write_text(render_report(res), encoding="utf-8")
+    if write:
+        res.out_dir = _write(res, p.macro)
+        _write_latest(res, p.macro_latest)
+        log.info("macro: 저장 %s", res.out_dir)
+    if doc_out is not None:
+        doc_out.parent.mkdir(parents=True, exist_ok=True)
+        doc_out.write_text(res.sign_check_md, encoding="utf-8")
+        log.info("macro: 부호 실측 문서 → %s", doc_out)
     return res
-
-
-def _rel_path(p: Path | None) -> str:
-    """리포트·문서용 — 저장소 루트 기준 상대 경로 (밖이면 절대 경로)."""
-    if p is None:
-        return "(none)"
-    from msa.config import REPO_ROOT
-
-    try:
-        return str(p.resolve().relative_to(REPO_ROOT))
-    except ValueError:
-        return str(p)
 
 
 def _sign_check(
@@ -171,6 +158,7 @@ def _sign_check(
 
 def _meta(
     ds: DriverStates,
+    snap: pd.DataFrame,
     v: DagValidation,
     tw: TailwindResult,
     rg: RegimeResult,
@@ -178,11 +166,10 @@ def _meta(
     sc: SignCheckResult,
     dag: MacroDag,
 ) -> dict[str, Any]:
-    snap = ds.snapshot()
     missing_series = sorted({s for r in ds.rows for s in r.missing_series if s})
     return {
         "asof": str(ds.asof.date()),
-        "dag": _rel_path(dag.path),
+        "dag": rel(dag.path) if dag.path is not None else "(none)",
         "dag_schema_version": dag.schema_version,
         "themes": v.n_themes,
         "dag_validation": {
@@ -216,32 +203,57 @@ def _meta(
     }
 
 
-def _write(
-    out: Path,
-    ds: DriverStates,
-    tw: TailwindResult,
-    rg: RegimeResult,
-    contra: pd.DataFrame,
-    sc: SignCheckResult,
-    meta: dict[str, Any],
-    v: DagValidation,
-) -> None:
-    ds.snapshot().to_csv(out / "drivers.csv")
-    ds.measures.to_csv(out / "driver_measures.csv")
-    ds.states.to_csv(out / "driver_states.csv")
-    tw.table.to_csv(out / "tailwind.csv")
+def _write(res: MacroResult, root: Path) -> Path:
+    """`state/macro/<asof>/` 에 전부 쓴다. 인덱스 없는 세 표(쌍·행 단위)는 따로 적는다."""
+    out = root / str(res.asof.date())
+    ds, tw = res.drivers, res.tailwind
+    write_snapshot(
+        out,
+        frames={
+            "drivers.csv": res.snapshot,
+            "driver_measures.csv": ds.measures,
+            "driver_states.csv": ds.states,
+            "tailwind.csv": tw.table,
+            "regime.csv": res.regime.axes,
+        },
+        texts={
+            "regime.txt": res.regime_text,
+            "sign_check.md": res.sign_check_md,
+            "report.txt": render_report(res),
+        },
+        jsons={"meta.json": res.meta},
+    )
     tw.contributions.to_csv(out / "edge_contributions.csv", index=False)
-    rg.axes.to_csv(out / "regime.csv")
-    (out / "regime.txt").write_text(render_ascii(rg), encoding="utf-8")
-    contra.to_csv(out / "contradictions.csv", index=False)
-    sc.pairs.to_csv(out / "sign_check.csv", index=False)
-    (out / "sign_check.md").write_text(render_markdown(sc, meta), encoding="utf-8")
-    (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1, default=str))
+    res.contradictions.to_csv(out / "contradictions.csv", index=False)
+    res.sign_check.pairs.to_csv(out / "sign_check.csv", index=False)
+    return out
+
+
+def _write_latest(res: MacroResult, path: Path) -> None:
+    """`state/macro/latest.json` — L3 계약 꼴. 더 최신 기준일의 파일이 있으면 건드리지 않는다."""
+    asof = str(res.asof.date())
+    if path.exists():
+        try:
+            prev = str(json.loads(path.read_text(encoding="utf-8")).get("asof") or "")
+        except (OSError, ValueError):
+            prev = ""
+        if prev > asof:
+            log.info("macro: latest.json (%s) 이 더 최신이라 유지한다 (이번 %s)", prev, asof)
+            return
+    tw = res.tailwind.table["tailwind"]
+    dump_json(
+        path,
+        {
+            "asof": asof,
+            "regime": res.regime.current.get("quadrant"),
+            "tailwind": {str(t): (None if pd.isna(v) else float(v)) for t, v in tw.items()},
+            "source": rel(res.out_dir) if res.out_dir is not None else None,
+        },
+    )
 
 
 def render_report(res: MacroResult) -> str:
-    ds, tw, rg, v = res.drivers, res.tailwind, res.regime, res.validation
-    snap = ds.snapshot()
+    ds, tw, v, snap = res.drivers, res.tailwind, res.validation, res.snapshot
     lines = [
         "=" * 78,
         f"L2 거시 DAG — 기준일 {res.asof.date()} (docs/03-macro-dag.md)",
@@ -273,14 +285,16 @@ def render_report(res: MacroResult) -> str:
             "→ FRED_API_KEY 를 넣고 `uv run msa data fred-fetch`, 수동 드라이버는 "
             "state/physical/manual/<id>.csv (docs/03 구현 노트)"
         )
-    lines += ["", "[국면 4분면] (docs/03 §5 — 설명 도구)", render_ascii(rg), ""]
+    lines += ["", "[국면 4분면] (docs/03 §5 — 설명 도구)", res.regime_text, ""]
     sc_ = tw.table["status"].value_counts()
     lines += [
         f"[tailwind] 테마 {len(tw.table)} · 쌍 {tw.n_pairs} (가용 {tw.n_pairs_available}) · "
-        f"상태 ok {int(sc_.get('ok', 0))} / partial {int(sc_.get('partial', 0))} / "
-        f"unavailable {int(sc_.get('unavailable', 0))} · 공통 인자 중앙값 {tw.cf_median:+.3f}",
+        f"상태 ok {int(sc_.get(CoverageStatus.OK, 0))} / "
+        f"partial {int(sc_.get(CoverageStatus.PARTIAL, 0))} / "
+        f"unavailable {int(sc_.get(CoverageStatus.UNAVAILABLE, 0))} · "
+        f"공통 인자 중앙값 {tw.cf_median:+.3f}",
     ]
-    avail = tw.table.loc[tw.table["status"] != "unavailable"]
+    avail = tw.table.loc[tw.table["status"] != CoverageStatus.UNAVAILABLE]
     if avail.empty:
         lines.append("  전 테마 계산 불가 — 가용 드라이버가 어느 엣지에도 닿지 않는다")
     else:
@@ -288,12 +302,12 @@ def render_report(res: MacroResult) -> str:
             f"{'theme':<26}{'tailwind':>9}{'raw':>8}{'edges':>8}{'cov':>6}  flags · top contrib"
         )
         lines.append("-" * 78)
-        shown = pd.concat([tw.top(10), tw.bottom(10)]).drop_duplicates()
+        shown = pd.concat([tw.ranked(10), tw.ranked(10, ascending=True)]).drop_duplicates()
         for t, r in shown.sort_values("tailwind", ascending=False).iterrows():
             flags = (
                 ("HARD " if r["hard_exclude"] else "")
                 + ("UNDER " if r["undercovered"] else "")
-                + ("PART " if r["status"] == "partial" else "")
+                + ("PART " if r["status"] == CoverageStatus.PARTIAL else "")
             )
             lines.append(
                 f"{t!s:<26}{r['tailwind']:>+9.3f}{r['tailwind_raw']:>+8.3f}"
@@ -306,7 +320,7 @@ def render_report(res: MacroResult) -> str:
             f"하드 규칙 (tailwind < −0.5) 해당 테마 {len(hard)}: "
             + (", ".join(hard) if hard else "없음")
         )
-    unav = tw.table.index[tw.table["status"] == "unavailable"].tolist()
+    unav = tw.table.index[tw.table["status"] == CoverageStatus.UNAVAILABLE].tolist()
     if unav:
         lines.append(
             f"계산 불가 테마 {len(unav)}: {', '.join(unav[:20])}{' …' if len(unav) > 20 else ''}"
