@@ -1,5 +1,5 @@
 # 테마 버킷 정의 — 스키마 예시
-# 실제 파일은 state/themes.yaml (M2 에서 85개 확정)
+# 실제 파일은 state/themes.yaml (M2 에서 109개 초안을 실측 대조해 확정)
 # 규약: id 는 영구 불변 (결정 저널이 이걸로 참조한다)
 
 schema_version: 1
