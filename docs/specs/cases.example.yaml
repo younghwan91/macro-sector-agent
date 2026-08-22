@@ -1,0 +1,163 @@
+# 케이스 스터디 표 — 예시 · 스키마 정본 (`state/cases/cases.yaml` 의 형식)
+#
+# 용도: `docs/07-portfolio.md` §2.4 C1-(ii) 의 시나리오 손실
+#       L_i = max(과거 유사 국면 최대 낙폭, 케이스 스터디 **사망 사례** 낙폭 × 0.5)
+#       의 둘째 항이 이 표에서 나온다. 로더: `src/msa/l5/inputs.py` `load_cases`.
+#
+# ⚠ 이 파일은 **예시**다. 아래 11행은 `docs/04-value-trap.md` §1 표의 사례를 자리표시자로 옮긴 것이며
+#   전부 `verified: false` · `sources: []` 다. 낙폭 숫자는 04 §1 표의 "이후" 열을 그대로 적은 것이지
+#   1차 출처로 대조한 값이 아니다. **L_i 에 쓰이려면 행이 다음을 전부 만족해야 한다:**
+#     type: death · verified: true · sources ≥ 1 (url 필수) · drawdown_peak_to_trough not null
+#   출처 없는 낙폭은 예산 제약의 숫자가 되지 않는다 (CLAUDE.md §3). 사례 6건(04 §5) 작성은 별도
+#   리서치 산출물이며, 작성되면 `state/cases/cases.yaml` 에 verified: true 로 들어간다.
+#
+# 필드
+#   id                        영구 불변 문자열
+#   name_ko                   표기용
+#   type                      cycle | death   — L_i 에는 death 만 쓴다. cycle 은 few-shot(M7)·감각 보정용
+#   theme_ids                 이 사례가 적용되는 state/themes.yaml 테마 id (0개 이상)
+#   clusters                  또는 correlation_cluster 로 넓게 적용 (0개 이상). 매칭은 theme_ids 우선
+#   drawdown_peak_to_trough   고점→저점 낙폭, 양수 비율 (0,1]. 모르면 null
+#   peak_date / trough_date   YYYY-MM 또는 YYYY-MM-DD (문자열)
+#   verified                  true 면 sources 가 비어 있을 수 없다 (로더가 거부)
+#   sources                   [{url, title, date}] — url 필수
+#   notes                     자유 서술 (판정 시점 5축 값은 docs/cases/<id>.md 로 간다)
+#
+# 여러 행이 한 테마에 맞으면 낙폭이 가장 큰 행(보수적)을 쓰고 그 id 를 계획서에 출처로 적는다.
+
+schema_version: 1
+
+cases:
+  # ── 사이클 (반등) ─────────────────────────────────────────────
+  - id: silver_miners_2015
+    name_ko: 은광 2015-2016
+    type: cycle
+    theme_ids: [silver_miners]
+    clusters: [precious_metals]
+    drawdown_peak_to_trough: null
+    peak_date: ""
+    trough_date: ""
+    verified: false
+    sources: []
+    notes: "04 §1: 이후 +300% (사이클). 판정 시점 2015 (04 §5 광업 쌍)"
+
+  - id: uranium_2020
+    name_ko: 우라늄 2020-2023
+    type: cycle
+    theme_ids: [uranium]
+    clusters: [nuclear]
+    drawdown_peak_to_trough: null
+    peak_date: ""
+    trough_date: ""
+    verified: false
+    sources: []
+    notes: "04 §1: 이후 +250% (사이클)"
+
+  - id: tankers_2021
+    name_ko: 탱커 2021-2022
+    type: cycle
+    theme_ids: [shipping_tanker]
+    clusters: [shipping]
+    drawdown_peak_to_trough: null
+    peak_date: ""
+    trough_date: ""
+    verified: false
+    sources: []
+    notes: "04 §1: 이후 +400% (사이클). 판정 시점 2021 (04 §5 부동산·인프라 쌍)"
+
+  - id: shale_ep_2020
+    name_ko: 셰일 E&P 2020-2022
+    type: cycle
+    theme_ids: [oil_gas_ep]
+    clusters: [fossil]
+    drawdown_peak_to_trough: null
+    peak_date: ""
+    trough_date: ""
+    verified: false
+    sources: []
+    notes: "04 §1: 이후 +300% (사이클). 판정 시점 2020 (04 §5 에너지 쌍)"
+
+  - id: rare_earth_lithium_2025
+    name_ko: 희토류·리튬 2025-2026
+    type: cycle
+    theme_ids: [rare_earth, lithium]
+    clusters: [strategic_materials, battery_materials]
+    drawdown_peak_to_trough: null
+    peak_date: ""
+    trough_date: ""
+    verified: false
+    sources: []
+    notes: "04 §1: +30% (본인 실현). 원형 사례 — 증거는 결정 저널"
+
+  # ── 사망 (회복 없음) ───────────────────────────────────────────
+  - id: thermal_coal_2012
+    name_ko: 석탄(연료탄) 2012-2016
+    type: death
+    theme_ids: [coal]
+    clusters: []
+    drawdown_peak_to_trough: 0.90      # 자리표시자 — 04 §1 "−90%, 대형 4사 중 3사 파산". 미검증
+    peak_date: ""
+    trough_date: ""
+    verified: false
+    sources: []
+    notes: "판정 시점 2013 (04 §5 광업 쌍). 2021-22 제철용 반등은 04 §1 † 참조"
+
+  - id: offshore_drilling_2015
+    name_ko: 오프쇼어 드릴링 2015-2020
+    type: death
+    theme_ids: [offshore_drilling]
+    clusters: []
+    drawdown_peak_to_trough: 0.95      # 자리표시자 — 04 §1 "−95%, 전원 챕터11". 미검증
+    peak_date: ""
+    trough_date: ""
+    verified: false
+    sources: []
+    notes: "판정 시점 2016 (04 §5 에너지 쌍)"
+
+  - id: mall_reit_2016
+    name_ko: 몰·백화점 REIT 2016-2020
+    type: death
+    theme_ids: [reit_retail, retail_department]
+    clusters: []
+    drawdown_peak_to_trough: 0.80      # 자리표시자 — 04 §1 "−80%, 회복 없음". 미검증
+    peak_date: ""
+    trough_date: ""
+    verified: false
+    sources: []
+    notes: "판정 시점 2018 (04 §5 부동산·인프라 쌍)"
+
+  - id: wireline_cable_2018
+    name_ko: 유선통신·케이블 2018-2026
+    type: death
+    theme_ids: [cable_broadband, telecom_carriers]
+    clusters: []
+    drawdown_peak_to_trough: null      # 04 §1 은 "배당 함정, 자본 잠식" 만 적고 낙폭 숫자가 없다
+    peak_date: ""
+    trough_date: ""
+    verified: false
+    sources: []
+    notes: ""
+
+  - id: land_drilling_2019
+    name_ko: 육상 시추 2019
+    type: death
+    theme_ids: [offshore_drilling]     # themes.yaml 은 오프쇼어·육상을 한 버킷으로 둔다
+    clusters: []
+    drawdown_peak_to_trough: 0.85      # 자리표시자 — 04 §1 "−85%". 미검증
+    peak_date: ""
+    trough_date: ""
+    verified: false
+    sources: []
+    notes: ""
+
+  - id: china_education_2021
+    name_ko: 중국 사교육 2021
+    type: death
+    theme_ids: []                      # 미국 유니버스 테마에 대응 없음 (education 버킷은 미국 교육). 규제 소멸 사례로만 보관
+    clusters: []
+    drawdown_peak_to_trough: 0.95      # 자리표시자 — 04 §1 "−95% 단일 규제로 소멸". 미검증
+    peak_date: ""
+    trough_date: ""
+    verified: false
+    sources: []
+    notes: "04 축 5 '규제 소멸 리스크' 의 원형"
