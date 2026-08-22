@@ -15,3 +15,6 @@ dist/
 build/
 state/cache/
 state/scans/
+state/checks/
+state/calibration/
+state/logs/

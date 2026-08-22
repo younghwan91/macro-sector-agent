@@ -134,6 +134,83 @@ append 되지만 `r_12m`·`r_24m` 열은 12·24개월 뒤에 기계가 채운다
 채울 수 있는 것은 사후 수익률 열뿐이며, 그 값으로 임계값을 조정하는 것은
 `CLAUDE.md` §1 위반이다 (`10-validation.md` §5 경계).
 
+### 구현 노트 (M8) — 상태 파일 스키마와 점검 규약
+
+구현은 `src/msa/ops/` (`journal` · `state_files` · `check` · `alerts` · `scheduler` · `calibration` ·
+`rejections` · `reproduce`). 아래는 문서 본문이 정하지 않은 것을 **구현이 선언**한 부분이다.
+L3·L4·L5 와의 연결은 전부 이 파일 계약으로 한다 — `msa.ops` 는 다른 계층 패키지를 import 하지 않는다.
+
+**`positions.yaml`** (`state_files.Position`, L5 매매계획 → 사람이 체결을 반영, `msa check` 는 읽기만):
+
+```yaml
+asof: 2026-09-01
+positions:
+  - ticker: CCJ
+    theme: uranium
+    role: anchor                      # anchor | torque (07 §1)
+    target_weight: 0.16
+    opened_at: 2026-09-01
+    entry_price: 50.00                # 1단 진입가 — 사다리·Tier-2 "초기가 대비 %" 의 기준
+    ladder:                           # 07 §3. trigger_pct 는 초기가 대비 하락률(양수)
+      - {step: 1, weight: 0.50, trigger_pct: 0.00, trigger_price: 50.00,
+         filled_date: 2026-09-01, filled_price: 50.00, filled_shares: 100}
+      - {step: 2, weight: 0.30, trigger_pct: 0.13, trigger_price: 43.50}
+      - {step: 3, weight: 0.20, trigger_pct: 0.23, trigger_price: 38.50}
+    tier2_stop_price: 32.50           # 평단 −35% (07 §4). TP1 체결 후 check 가 본전으로 읽는다
+    tier2_basis: avg_minus_35         # avg_minus_35 | breakeven
+    time_stop_date: 2028-03-01        # opened_at + horizon 상한
+    horizon_months: [6, 18]
+    tp:                               # 07 §5. price 가 있으면 기계가 본다, 없으면 manual
+      - {level: tp1, fraction: 0.333, condition: "밸류 P50 회복 또는 +2R", price: 85.00}
+      - {level: tp2, fraction: 0.333, condition: "P75 또는 직전 고점 50% 회복"}
+      - {level: runner, fraction: 0.334, condition: "10주선 이탈 또는 고점 −25%"}
+    runner_trail_pct: 0.25
+    runner_ma_weeks: 10
+    thesis_snapshot: journal/2026-09-01-uranium-entry.thesis.yaml
+    journal_entry: journal/2026-09-01-uranium-entry.md
+    status: open                      # open | closed
+```
+
+**`watchlist.yaml`** (`state_files.WatchItem`): `theme` · `added_at` · `reason`
+(`contested` | `axis1_unavailable` | `awaiting_condition` | `human`) · `waiting_condition`(비면 거부 —
+관찰이 아니라 방치다) · `scan` · `thesis_snapshot?` · `journal?` · `scoreboard_rank?`.
+
+**`rejections.yaml`**: 본문 §4 의 스키마 그대로 + 선택 `axis_verdicts`(5축 스냅샷, (a)(b) 집계용).
+`save_rejections()` 는 이전 파일과 대조해 **행 삭제 · 기각 시점 필드 변경 · 채워진 `r_*` 변경**을
+전부 예외로 막는다. 채울 수 있는 것은 `null → 값` 한 번뿐이다.
+
+**기계 판정 DSL** — thesis 의 `triggers[*]` · `invalidations[*]` 에 선택 `check:` 블록:
+
+```yaml
+check: {kind: price_below, ticker: URA, level: 70, days: 63}          # 종가 < level 이 days 거래일 연속
+check: {kind: price_above, ticker: CCJ, level: 60, days: 1}
+check: {kind: drawdown_from_high, ticker: CCJ, pct: 0.30, lookback_days: 252}
+```
+
+`check:` 가 없으면 `manual` 이고 리포트가 사람 몫으로 나열한다. 현재 상태의 출처는 **가장 최근 점검 저널
+항목의 `after`** (없으면 스냅샷의 `status`). 기계는 저널을 쓰지 않는다 — `state/checks/<date>/journal-draft-<theme>.yaml`
+초안을 남기고 사람이 `msa journal new --from` 으로 확정한다. 사다리 3단의 "트리거 진행 중" 은
+**충족 ≥1 AND 2단 체결** 로 읽는다 (선언).
+
+**`state/checks/<date>/`**: `report.txt` · `alerts.json`(항상) · `positions.json` · `journal-draft-*.yaml`.
+`state/checks/last_run.json` 은 마지막 성공 점검 시각 (벤더링한 `fin-checkup` 스케줄러의 "놓친 구간" 로직).
+`state/calibration/<date>.{txt,json}` · `state/rejections-summary.md` 도 생성물이다. 모두 `.gitignore`.
+
+**알림 종류**: §3 표의 6종 (`monthly_report` · `monthly_summary` · `invalidation_fired` ·
+`ladder_step_met` · `time_stop_warning` · `tp_met`) + `tier2_stop_hit` (07 §4 — 표에는 없지만 점검이
+평가하므로 알림도 낸다). 텔레그램은 `MSA_TELEGRAM_TOKEN` · `MSA_TELEGRAM_CHAT_ID` 가 **둘 다** 있을 때만
+보내고, 없으면 "not configured" 로 보고한다. 문구는 `alerts.FORBIDDEN_WORDING` 을 통과해야 하며 테스트가
+모든 템플릿을 그 목록에 통과시킨다.
+
+**케이던스**: `msa ops schedule --print-cron` 이 crontab 텍스트를 출력한다 (설치는 사람이). cron 이
+"1영업일" 을 못 쓰므로 1~3일에 깨우고 `msa ops due monthly` 가 그 달 첫 평일일 때만 0 을 돌려준다 —
+미국 공휴일은 보지 않는다 (1일이 공휴일이면 하루 늦게 돈다).
+
+**아직 연결되지 않은 것**: `positions.yaml` 은 L5(M6) 가, thesis 스냅샷은 L3(M7) 또는 사람(M6 구간)이,
+`rejections.yaml` 의 행 적재는 월간 스캔(L3/L4 게이트 결과)이 만든다. M8 은 그 파일들을 **읽는 쪽**과
+사람이 쓰는 쪽(`msa journal new`)만 구현했다. 월간 요약 알림(`monthly_summary`)의 "계획 변경분" 도 L5
+산출물이 생긴 뒤에 채운다.
+
 ## 5. 실패 시 동작
 
 | 상황 | 동작 |
