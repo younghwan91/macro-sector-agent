@@ -128,6 +128,8 @@ msa ops schedule --print-cron   # 케이던스 → crontab/systemd 텍스트 (�
 msa ops calibration   # cycle_confidence 캘리브레이션 (N<20 → 결론 없음)
 msa ops rejections-update       # 기각 대장 r_12m/r_24m 갱신 + 세 질문 → state/rejections-summary.md
 msa ops reproduce <date>        # state/scans/<date>/ 스냅샷만으로 리포트 재생성·대조
+msa backtest l1       # L1 백테스트 관문 0 (M3.5) — rank-IC·스프레드·breadth_lead·DSR/PBO.
+                      #   산출물 state/backtests/l1/<date>/ · 판정 docs/backtest-l1.md. 튜닝 루프가 아니다
 ```
 
 텔레그램 배달은 `MSA_TELEGRAM_TOKEN` · `MSA_TELEGRAM_CHAT_ID` 가 둘 다 있을 때만 — 없으면 "not configured".

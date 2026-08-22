@@ -3,9 +3,13 @@
 **거시 → 산업 사이클 → 테마 선정 → 종목 → 포트폴리오** 로 내려오는 하향식 리서치 파이프라인.
 "지금 무엇을 사야 하는가" 가 아니라 **"지금 어느 테마가 잊혀졌고, 그것이 사이클 저점인가 구조적 사망인가"** 를 먼저 답한다.
 
-> **상태: M3 까지 구현 + M7 L3 프레임워크 (2026-08-23).** L0 데이터 계층(M1) · 테마 유니버스 134 버킷(M2) · L1 사이클
-> 스캐너 `msa scan`(M3) · 거시 DAG 선언(M4 의 YAML) 이 있다. 다음은 M3.5(L1 백테스트 관문) 과
-> L2 런타임·L4·L5 다 — `docs/11-roadmap.md`. 데이터는 `~/data/us_micro.duckdb`(Sharadar) 이며
+> **상태: M1~M8 전 마일스톤 1차 구현 (2026-08-23).** L0 데이터(M1) · 테마 134 버킷(M2) · L1 스캐너 `msa scan`(M3) ·
+> L1 백테스트 관문 `msa backtest l1`(M3.5) · L2 거시 런타임 `msa macro`(M4) · L4 종목 선정 `msa picks`(M5) ·
+> L5 포트 구성기 `msa portfolio`(M6) · L3 에이전트 `msa research`(M7) · 운영 `msa check`/`journal`/`ops`(M8).
+> **M3.5 판정: 복합 `score` 의 12M rank-IC 는 2011 년 이후 0 과 구분되지 않는다 (FAIL, `docs/backtest-l1.md`).**
+> C(턴) 블록만 뚜렷이 일하고 A(망각)·D(밸류)는 반대 부호다. 그래서 **복합 스코어의 순위는 순위 산출 근거가 아니라
+> 관찰 지표다** — 가중치는 바꾸지 않았다 (`CLAUDE.md` §1). 실측 블로커: `FRED_API_KEY`(L2 드라이버·CPI) ·
+> `ANTHROPIC_API_KEY`(L3 실행) · manual 실물 시계열. 진행 상태는 `docs/11-roadmap.md`. 데이터는 `~/data/us_micro.duckdb`(Sharadar) 이며
 > 없으면 `docs/08-data-contract.md` §6 부트스트랩 절차를 먼저 밟는다.
 
 ---

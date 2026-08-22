@@ -74,3 +74,12 @@ def test_journal_template_and_new_refuses_incomplete(tmp_path) -> None:
     r2 = runner.invoke(app, ["journal", "new", "--from", str(f), "--journal", str(tmp_path / "j")])
     assert r2.exit_code == 1
     assert "작성 거부" in (r2.stdout + (r2.stderr or ""))
+
+
+def test_backtest_subgroup_registered() -> None:
+    r = runner.invoke(app, ["backtest", "--help"])
+    assert r.exit_code == 0
+    assert "l1" in r.stdout
+    r2 = runner.invoke(app, ["backtest", "l1", "--help"])
+    assert r2.exit_code == 0
+    assert "--no-write" in r2.stdout
