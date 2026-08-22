@@ -2,7 +2,7 @@
 
 ```
 inputs ─┬─ supply_analyst ──┐
-        ├─ catalyst_analyst ┤   (스코어 포함 컨텍스트)
+        ├─ catalyst_analyst ┤   (스코어 포함 컨텍스트)   ← 세 역할은 서로 독립 — 병렬 호출
         └─ bear ────────────┤   (BearInputs — 스코어 숨김, 독립 컨텍스트)
                             ▼
                          referee ──► 축2~5 판정 · claim/mechanism/triggers/invalidations
@@ -24,14 +24,17 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, field
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from msa.l3.contracts import ResearchInputs
+from msa.io import dump_yaml, write_snapshot
+from msa.l3.contracts import Axis1Inputs, ResearchInputs
 from msa.l3.gates import (
+    CONF_BASE,
     AxisVerdicts,
     ConfidenceInputs,
     ConfidenceResult,
@@ -41,12 +44,7 @@ from msa.l3.gates import (
     cycle_confidence,
     rejection_row,
 )
-from msa.l3.providers import (
-    CompletionRequest,
-    CostLedger,
-    LLMProvider,
-    SearchBudget,
-)
+from msa.l3.providers import CompletionRequest, CostLedger, LLMProvider
 from msa.l3.roles import (
     bear_request,
     catalyst_request,
@@ -55,6 +53,15 @@ from msa.l3.roles import (
     supply_request,
 )
 from msa.l3.schema import ThesisRejected, ValidationResult, validate_thesis
+from msa.thesis import (
+    dump_thesis_yaml,
+    gate_status,
+    read_thesis_yaml,
+    theme_of,
+    theses_in,
+    thesis_diff,
+    thesis_filename,
+)
 
 log = logging.getLogger(__name__)
 
@@ -67,7 +74,6 @@ class RoleOutputs:
     catalyst: dict[str, Any]
     bear: dict[str, Any]
     referee: dict[str, Any]
-    requests: dict[str, CompletionRequest] = field(default_factory=dict)
 
 
 @dataclass
@@ -82,10 +88,10 @@ class ResearchResult:
     contested: ContestedCount
     ledger: CostLedger
     report_md: str
-    out_dir: Path | None
-    thesis_path: Path | None
     roles: RoleOutputs
     warnings: list[str]
+    out_dir: Path | None = None
+    thesis_path: Path | None = None
 
 
 # ---------------------------------------------------------------- 증거 병합
@@ -127,33 +133,28 @@ def _remap_ids(obj: Any, m: dict[int, int]) -> Any:
 
 
 def run_roles(
-    inputs: ResearchInputs,
-    provider: LLMProvider,
-    ledger: CostLedger,
-    *,
-    budget: SearchBudget | None = None,
+    inputs: ResearchInputs, provider: LLMProvider, ledger: CostLedger
 ) -> tuple[RoleOutputs, list[dict[str, Any]]]:
-    reqs: dict[str, CompletionRequest] = {}
+    """supply · catalyst · bear 를 병렬로(서로 독립 컨텍스트), referee 는 그 셋을 받아 마지막에."""
 
     def call(req: CompletionRequest) -> dict[str, Any]:
-        reqs[req.role] = req
         res = provider.complete(req)
         ledger.record(req.role, res)
-        if budget is not None and res.usage.search_queries:
-            budget.charge(req.role, res.usage.search_queries)
         obj = res.json()
         check_role_output(req.role, obj)
         return obj
 
-    supply = call(supply_request(inputs))
-    catalyst = call(catalyst_request(inputs))
-    bear = call(bear_request(inputs.bear_view()))  # 독립 컨텍스트 — 스코어 없음
-    merged, remap = merge_evidence(
-        {"supply_analyst": supply, "catalyst_analyst": catalyst, "bear": bear}
-    )
-    supply_g = _remap_ids(supply, remap["supply_analyst"])
-    catalyst_g = _remap_ids(catalyst, remap["catalyst_analyst"])
-    bear_g = _remap_ids(bear, remap["bear"])
+    with ThreadPoolExecutor(max_workers=3) as ex:
+        futures = {
+            "supply_analyst": ex.submit(call, supply_request(inputs)),
+            "catalyst_analyst": ex.submit(call, catalyst_request(inputs)),
+            "bear": ex.submit(call, bear_request(inputs.bear_view())),  # 스코어 없음
+        }
+        outputs = {role: f.result() for role, f in futures.items()}
+    merged, remap = merge_evidence(outputs)
+    supply_g = _remap_ids(outputs["supply_analyst"], remap["supply_analyst"])
+    catalyst_g = _remap_ids(outputs["catalyst_analyst"], remap["catalyst_analyst"])
+    bear_g = _remap_ids(outputs["bear"], remap["bear"])
     referee = call(
         referee_request(
             inputs,
@@ -175,15 +176,13 @@ def run_roles(
             eid = max(known) + 1
         known.add(eid)
         merged.append({**e, "id": eid, "role": "referee"})
-    return RoleOutputs(
-        supply=supply_g, catalyst=catalyst_g, bear=bear_g, referee=referee, requests=reqs
-    ), merged
+    return RoleOutputs(supply=supply_g, catalyst=catalyst_g, bear=bear_g, referee=referee), merged
 
 
 # ---------------------------------------------------------------- thesis 조립
 
 
-def _axis_block(ax: dict[str, Any], extra_drop: tuple[str, ...] = ()) -> dict[str, Any]:
+def _axis_block(ax: dict[str, Any]) -> dict[str, Any]:
     out = {
         "verdict": ax.get("verdict"),
         "evidence_refs": [int(x) for x in ax.get("evidence_refs", [])],
@@ -191,53 +190,51 @@ def _axis_block(ax: dict[str, Any], extra_drop: tuple[str, ...] = ()) -> dict[st
     if ax.get("note"):
         out["note"] = ax["note"]
     for k, v in ax.items():
-        if k not in ("verdict", "evidence_refs", "note", *extra_drop):
+        if k not in ("verdict", "evidence_refs", "note"):
             out[k] = v
     return out
 
 
-def build_thesis(
-    inputs: ResearchInputs,
-    roles: RoleOutputs,
-    evidence: list[dict[str, Any]],
-    *,
-    generated_at: str,
-) -> tuple[dict[str, Any], GateResult, ConfidenceResult]:
-    """referee 산출 + L1 축1 + 게이트/확신도 → thesis dict. 검증은 호출자가 한다."""
-    ref = roles.referee
-    a1 = inputs.scorecard.axis1
-    axes_in = ref["axes"]
-    ev_ids = {int(e["id"]) for e in evidence}
+def _scan_evidence(inputs: ResearchInputs, a1: Axis1Inputs, eid: int) -> dict[str, Any]:
+    """가용한 축 1 은 스캔 자체를 증거로 명시한다 — `indicators.csv` 가 출처다."""
+    return {
+        "id": eid,
+        "claim": (
+            f"L1 축1 {a1.unit_series_source}: unit_cagr_10y={a1.unit_cagr_10y} · "
+            f"median={a1.unit_cagr_10y_median} · "
+            f"5y={a1.unit_cagr_5y} · ss_n={a1.ss_n} · ss_coverage={a1.ss_coverage} · "
+            f"ma_flag={a1.ma_flag} (unit_source={a1.unit_source})"
+        ),
+        "source_url": f"{inputs.scan_dir}/indicators.csv",
+        "date": inputs.scorecard.scan_date,
+        "reliability": "medium",
+        "role": "l1_scan",
+    }
 
-    # 축 1 — L1 값 그대로. 증거: referee 가 가리킨 것 + (가용하면) 스캔 자체를 증거로 명시
-    ud_refs = [int(x) for x in axes_in["unit_demand"].get("evidence_refs", [])]
+
+def _unit_demand_axis(
+    inputs: ResearchInputs,
+    ud_in: dict[str, Any],
+    evidence: list[dict[str, Any]],
+    ev_ids: set[int],
+) -> dict[str, Any]:
+    """축 1 블록 — L1 값 그대로. 증거: referee 가 가리킨 것 + (가용하면) 스캔 증거를 덧붙인다
+    (`evidence`·`ev_ids` 를 제자리에서 늘린다)."""
+    a1 = inputs.scorecard.axis1
+    refs = [int(x) for x in ud_in.get("evidence_refs", [])]
     if a1.available:
         scan_ev_id = max(ev_ids, default=0) + 1
-        evidence.append(
-            {
-                "id": scan_ev_id,
-                "claim": (
-                    f"L1 축1 {a1.unit_series_source}: unit_cagr_10y={a1.unit_cagr_10y} · "
-                    f"median={a1.unit_cagr_10y_median} · "
-                    f"5y={a1.unit_cagr_5y} · ss_n={a1.ss_n} · ss_coverage={a1.ss_coverage} · "
-                    f"ma_flag={a1.ma_flag} (unit_source={a1.unit_source})"
-                ),
-                "source_url": f"{inputs.scan_dir}/indicators.csv",
-                "date": inputs.scorecard.scan_date,
-                "reliability": "medium",
-                "role": "l1_scan",
-            }
-        )
+        evidence.append(_scan_evidence(inputs, a1, scan_ev_id))
         ev_ids.add(scan_ev_id)
-        ud_refs.append(scan_ev_id)
+        refs.append(scan_ev_id)
     unit_demand: dict[str, Any] = {
         "verdict": a1.verdict,
-        "evidence_refs": ud_refs,
+        "evidence_refs": refs,
         "axis1_available": a1.available,
         "unit_series_source": a1.unit_series_source,
     }
-    if axes_in["unit_demand"].get("note"):
-        unit_demand["note"] = axes_in["unit_demand"]["note"]
+    if ud_in.get("note"):
+        unit_demand["note"] = ud_in["note"]
     if a1.available:
         unit_demand.update(
             {
@@ -255,7 +252,15 @@ def build_thesis(
         )
     else:
         unit_demand["axis1_status"] = a1.axis1_status
+    return unit_demand
 
+
+def _judge(
+    inputs: ResearchInputs, axes_in: dict[str, Any], ev_ids: set[int]
+) -> tuple[AxisVerdicts, ConfidenceResult, GateResult]:
+    """referee 축 판정 + L1 축1 → 확신도(04 §4) → 게이트(04 §3). 전부 기계적."""
+    a1 = inputs.scorecard.axis1
+    card = inputs.scorecard
     cc = axes_in["cost_curve"]
     tr = axes_in["terminal_risk"]
     verdicts = AxisVerdicts(
@@ -265,7 +270,6 @@ def build_thesis(
         cost_curve=str(cc["verdict"]),
         terminal_risk=str(tr["verdict"]),
     )
-    card = inputs.scorecard
     conf = cycle_confidence(
         ConfidenceInputs(
             verdicts=verdicts,
@@ -289,6 +293,26 @@ def build_thesis(
         secular_risk=card.cycle_class == "secular_risk",
         debt_24m_over_half=bool(tr.get("debt_maturity_24m_over_half", False)),
     )
+    return verdicts, conf, gate
+
+
+def build_thesis(
+    inputs: ResearchInputs,
+    roles: RoleOutputs,
+    evidence: list[dict[str, Any]],
+    *,
+    generated_at: str,
+) -> tuple[dict[str, Any], GateResult, ConfidenceResult]:
+    """referee 산출 + L1 축1 + 게이트/확신도 → thesis dict. 검증은 호출자가 한다."""
+    ref = roles.referee
+    a1 = inputs.scorecard.axis1
+    card = inputs.scorecard
+    axes_in = ref["axes"]
+    ev_ids = {int(e["id"]) for e in evidence}
+
+    unit_demand = _unit_demand_axis(inputs, axes_in["unit_demand"], evidence, ev_ids)
+    _, conf, gate = _judge(inputs, axes_in, ev_ids)
+
     key_unc = [str(x) for x in ref.get("key_uncertainties", [])]
     if not a1.available and not any("axis1_available" in x for x in key_unc):
         key_unc.append(
@@ -316,18 +340,18 @@ def build_thesis(
             "unit_demand": unit_demand,
             "capital_cycle": _axis_block(axes_in["capital_cycle"]),
             "substitution": _axis_block(axes_in["substitution"]),
-            "cost_curve": _axis_block(cc),
-            "terminal_risk": _axis_block(tr),
+            "cost_curve": _axis_block(axes_in["cost_curve"]),
+            "terminal_risk": _axis_block(axes_in["terminal_risk"]),
         },
         "gate_result": gate.as_dict(),
         "cycle_confidence": conf.value,
         "cycle_confidence_terms": {
-            "base": 0.5,
+            "base": CONF_BASE,
             **conf.terms,
             **({"cap": conf.cap} if conf.cap is not None else {}),
         },
         "cycle_confidence_by": "referee-pipeline (04 §4 기계 적용; 09 §2 — 산출 주체 표기)",
-        "evidence": [{k: v for k, v in e.items()} for e in evidence],
+        "evidence": [dict(e) for e in evidence],
         "inputs": {
             "scan_dir": inputs.scan_dir,
             "scoreboard_rank": card.rank,
@@ -341,74 +365,20 @@ def build_thesis(
     return thesis, gate, conf
 
 
-# ---------------------------------------------------------------- 표류 diff
-
-
-DIFF_FIELDS = (
-    "claim",
-    "mechanism",
-    "horizon_months",
-    "triggers",
-    "invalidations",
-    "cycle_confidence",
-    "bear_case",
-)
-
-
-def thesis_diff(prior: dict[str, Any] | None, current: dict[str, Any]) -> dict[str, Any]:
-    """이전 thesis 와의 필드별 차이 — 논지 표류 추적 (`docs/05` §6, `docs/09` §2)."""
-    if prior is None:
-        return {"has_prior": False}
-    out: dict[str, Any] = {
-        "has_prior": True,
-        "prior_generated_at": str(prior.get("generated_at")),
-        "changed": [],
-        "unchanged": [],
-    }
-    for f in DIFF_FIELDS:
-        a, b = prior.get(f), current.get(f)
-        if f in ("triggers", "invalidations"):
-            a = [_obs(x) for x in (a or [])]
-            b = [_obs(x) for x in (b or [])]
-            added = [x for x in b if x not in a]
-            removed = [x for x in a if x not in b]
-            if added or removed:
-                out["changed"].append(f)
-                out[f] = {"added": added, "removed": removed}
-            else:
-                out["unchanged"].append(f)
-        elif a != b:
-            out["changed"].append(f)
-            out[f] = {"before": a, "after": b}
-        else:
-            out["unchanged"].append(f)
-    pa = (prior.get("gate_result") or {}).get("axis_verdicts") or {}
-    ca = (current.get("gate_result") or {}).get("axis_verdicts") or {}
-    ax_changed = {
-        k: {"before": pa.get(k), "after": ca.get(k)} for k in ca if pa.get(k) != ca.get(k)
-    }
-    if ax_changed:
-        out["changed"].append("axis_verdicts")
-        out["axis_verdicts"] = ax_changed
-    ps = (prior.get("gate_result") or {}).get("status")
-    cs = (current.get("gate_result") or {}).get("status")
-    if ps != cs:
-        out["changed"].append("gate_status")
-        out["gate_status"] = {"before": ps, "after": cs}
-    # 무효화 회피 의심: 이전 무효화 조건이 사라졌는데 논지는 유지
-    inv = out.get("invalidations", {})
-    if isinstance(inv, dict) and inv.get("removed") and "claim" not in out["changed"]:
-        out["drift_suspect"] = (
-            "이전 invalidations 가 제거됐는데 claim 은 그대로 — 무효화 회피 의심 (05 §6)"
-        )
-    return out
-
-
-def _obs(x: Any) -> str:
-    return str(x.get("observable", x)) if isinstance(x, dict) else str(x)
-
-
 # ---------------------------------------------------------------- contested 집계
+
+
+def _round_status(round_dir: Path) -> dict[str, str]:
+    """한 라운드 디렉터리의 테마 → `gate_result.status` (문자열화). 깨진 파일은 빼고 로그로."""
+    out: dict[str, str] = {}
+    for p in theses_in(round_dir):
+        try:
+            obj = read_thesis_yaml(p)
+        except Exception:  # 집계는 한 파일 때문에 멈추지 않는다
+            log.warning("contested 집계: %s 를 읽지 못함", p)
+            continue
+        out[theme_of(p)] = str(gate_status(obj))
+    return out
 
 
 def count_contested(
@@ -416,16 +386,7 @@ def count_contested(
 ) -> ContestedCount:
     """이번 라운드(`asof` 디렉터리)의 contested 수 + 직전 라운드에서 넘어온 미해소 건수."""
     cc = ContestedCount()
-    this_dir = theses_root / asof
-    round_status: dict[str, str] = {}
-    if this_dir.exists():
-        for p in this_dir.glob("*.thesis.yaml"):
-            t = p.name[: -len(".thesis.yaml")]
-            try:
-                obj = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-                round_status[t] = str((obj.get("gate_result") or {}).get("status"))
-            except Exception:  # 깨진 파일은 집계에서 빼되 로그로 남긴다
-                log.warning("contested 집계: %s 를 읽지 못함", p)
+    round_status = _round_status(theses_root / asof)
     round_status[current_theme] = current_status
     cc.round_themes = sorted(t for t, s in round_status.items() if s == "contested")
     cc.round_contested = len(cc.round_themes)
@@ -435,18 +396,12 @@ def count_contested(
         else []
     )
     if prev_dirs:
-        prev = prev_dirs[-1]
-        for p in prev.glob("*.thesis.yaml"):
-            t = p.name[: -len(".thesis.yaml")]
-            try:
-                obj = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-            except Exception:
-                continue
-            if str(
-                (obj.get("gate_result") or {}).get("status")
-            ) == "contested" and round_status.get(t) in (None, "contested"):
-                cc.carried_over_themes.append(t)
-        cc.carried_over_themes.sort()
+        prev_status = _round_status(prev_dirs[-1])
+        cc.carried_over_themes = sorted(
+            t
+            for t, s in prev_status.items()
+            if s == "contested" and round_status.get(t) in (None, "contested")
+        )
         cc.carried_over = len(cc.carried_over_themes)
     return cc
 
@@ -494,7 +449,7 @@ def render_report(
         )
     L.append("")
     L.append("### 확신도 산출 (04 §4 기계 적용 — 자유 조정 없음)")
-    L.append("| 항 | 값 |\n|---|---|\n| base | 0.5 |")
+    L.append(f"| 항 | 값 |\n|---|---|\n| base | {CONF_BASE} |")
     for k, v in conf.terms.items():
         L.append(f"| {k} | {v:+.2f} |")
     L.append(f"| 합 (클립 전) | {conf.raw} |")
@@ -607,55 +562,44 @@ def render_report(
 
 
 def write_outputs(
-    theses_root: Path,
-    asof: str,
-    theme_id: str,
-    thesis: dict[str, Any],
-    report: str,
-    gate: GateResult,
-    conf: ConfidenceResult,
-    cc: ContestedCount,
-    scan_dir: str,
-    rank: int | None,
+    theses_root: Path, inputs: ResearchInputs, res: ResearchResult
 ) -> tuple[Path, Path]:
-    out_dir = theses_root / asof
-    out_dir.mkdir(parents=True, exist_ok=True)
-    tp = out_dir / f"{theme_id}.thesis.yaml"
-    tp.write_text(
-        yaml.safe_dump(thesis, allow_unicode=True, sort_keys=False, width=110), encoding="utf-8"
-    )
-    (out_dir / f"{theme_id}.report.md").write_text(report, encoding="utf-8")
-    if gate.status == "rejected":
-        rp = out_dir / "rejections-pending.yaml"
-        rows: list[dict[str, Any]] = []
-        if rp.exists():
-            loaded = yaml.safe_load(rp.read_text(encoding="utf-8")) or []
-            rows = [r for r in loaded if r.get("theme") != theme_id]
-        rows.append(
-            rejection_row(
-                theme_id=theme_id,
-                rejected_at=asof,
-                gate=gate,
-                cycle_confidence=conf.value,
-                scoreboard_rank=rank,
-                scan_dir=scan_dir,
-            )
-        )
-        rp.write_text(yaml.safe_dump(rows, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    (out_dir / "contested.json").write_text(
-        json.dumps(
-            {
-                "asof": asof,
+    """`state/theses/<asof>/` 에 thesis · 리포트 · contested 집계, 기각이면
+    `rejections-pending.yaml` 행(테마당 한 줄 — 같은 테마 재실행은 덮어쓴다). 반환 (out_dir,
+    thesis_path)."""
+    out_dir = theses_root / res.asof
+    tp = dump_thesis_yaml(out_dir / thesis_filename(res.theme_id), res.thesis)
+    cc = res.contested
+    write_snapshot(
+        out_dir,
+        texts={f"{res.theme_id}.report.md": res.report_md},
+        jsons={
+            "contested.json": {
+                "asof": res.asof,
                 "round_contested": cc.round_contested,
                 "round_themes": cc.round_themes,
                 "carried_over": cc.carried_over,
                 "carried_over_themes": cc.carried_over_themes,
-            },
-            ensure_ascii=False,
-            indent=1,
-        ),
-        encoding="utf-8",
+            }
+        },
     )
+    if res.gate.status == "rejected":
+        rp = out_dir / "rejections-pending.yaml"
+        rows: list[dict[str, Any]] = []
+        if rp.exists():
+            loaded = yaml.safe_load(rp.read_text(encoding="utf-8")) or []
+            rows = [r for r in loaded if r.get("theme") != res.theme_id]
+        rows.append(
+            rejection_row(
+                theme_id=res.theme_id,
+                rejected_at=res.asof,
+                gate=res.gate,
+                cycle_confidence=res.confidence.value,
+                scoreboard_rank=inputs.scorecard.rank,
+                scan_dir=inputs.scan_dir,
+            )
+        )
+        dump_yaml(rp, rows)
     return out_dir, tp
 
 
@@ -669,12 +613,11 @@ def run_research(
     theses_root: Path,
     write: bool = True,
     generated_at: str | None = None,
-    budget: SearchBudget | None = None,
 ) -> ResearchResult:
     """전체 파이프라인. 스키마 미달이면 `ThesisRejected` — 저장하지 않는다. 게이트 기각은 "
     "저장한다."""
     ledger = CostLedger()
-    roles, evidence = run_roles(inputs, provider, ledger, budget=budget)
+    roles, evidence = run_roles(inputs, provider, ledger)
     gen = generated_at or inputs.asof
     thesis, gate, conf = build_thesis(inputs, roles, evidence, generated_at=gen)
     val = validate_thesis(
@@ -699,22 +642,7 @@ def run_research(
         ledger,
         getattr(provider, "name", type(provider).__name__),
     )
-    out_dir: Path | None = None
-    tp: Path | None = None
-    if write:
-        out_dir, tp = write_outputs(
-            theses_root,
-            gen,
-            inputs.theme_id,
-            thesis,
-            report,
-            gate,
-            conf,
-            cc,
-            inputs.scan_dir,
-            inputs.scorecard.rank,
-        )
-    return ResearchResult(
+    res = ResearchResult(
         theme_id=inputs.theme_id,
         asof=gen,
         thesis=thesis,
@@ -725,8 +653,9 @@ def run_research(
         contested=cc,
         ledger=ledger,
         report_md=report,
-        out_dir=out_dir,
-        thesis_path=tp,
         roles=roles,
         warnings=list(inputs.warnings) + list(val.warnings),
     )
+    if write:
+        res.out_dir, res.thesis_path = write_outputs(theses_root, inputs, res)
+    return res

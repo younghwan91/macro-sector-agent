@@ -230,8 +230,10 @@ def test_rejection_row_format() -> None:
         "scan",
         "r_12m",
         "r_24m",
+        "axis_verdicts",
     ]
     assert row["path"] == "hard_gate" and row["r_12m"] is None and row["journal"] is None
+    assert row["axis_verdicts"]["unit_demand"] == "death"  # 대장 (a)(b) 집계용 스냅샷
 
 
 def test_axis_verdict_enum_enforced() -> None:

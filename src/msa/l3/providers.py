@@ -29,6 +29,8 @@ import json
 import logging
 import os
 import re
+import threading
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,11 +48,11 @@ class ProviderError(errors.ProviderError, RuntimeError):
     """제공자가 쓸 수 있는 응답을 주지 못했다 (거부·절단·JSON 아님). 빈 응답으로 진행하지 않는다."""
 
 
-class NotConfigured(RuntimeError):
+class NotConfigured(errors.ProviderError, RuntimeError):
     """검색 도구가 연결되지 않았다. 조용히 검색 없이 진행하지 않고 호출자가 결정하게 한다."""
 
 
-class BudgetExceeded(RuntimeError):
+class BudgetExceeded(errors.ProviderError, RuntimeError):
     """역할별 검색 예산 초과."""
 
 
@@ -76,7 +78,6 @@ class CompletionRequest:
     messages: list[dict[str, Any]]
     json_schema: dict[str, Any] | None = None
     max_tokens: int = 16_000
-    effort: str = "high"
     allow_search: bool = True
 
     def as_text(self) -> str:
@@ -191,17 +192,17 @@ class SearchBudget:
 
     def __init__(self, per_role: int = SEARCH_BUDGET_PER_ROLE) -> None:
         self.per_role = per_role
-        self.used: dict[str, int] = dict.fromkeys(ROLES, 0)
+        self.used: Counter[str] = Counter()
 
     def remaining(self, role: str) -> int:
-        return max(0, self.per_role - self.used.get(role, 0))
+        return max(0, self.per_role - self.used[role])
 
     def charge(self, role: str, n: int = 1) -> None:
-        if self.used.get(role, 0) + n > self.per_role:
+        if self.used[role] + n > self.per_role:
             raise BudgetExceeded(
-                f"{role}: 검색 예산 {self.per_role} 초과 (사용 {self.used.get(role, 0)} + {n})"
+                f"{role}: 검색 예산 {self.per_role} 초과 (사용 {self.used[role]} + {n})"
             )
-        self.used[role] = self.used.get(role, 0) + n
+        self.used[role] += n
 
 
 # ---------------------------------------------------------------- 비용 장부
@@ -270,7 +271,6 @@ class ModelConfig:
     standard: str = "claude-sonnet-5"
     effort_top: str = "high"
     effort_standard: str = "medium"
-    max_tokens: int = 16_000
 
     @classmethod
     def from_env(cls) -> ModelConfig:
@@ -310,15 +310,17 @@ class AnthropicProvider:
         self.search = search or StubSearchTool()
         self.budget = budget or SearchBudget()
         self._client = client
+        self._lock = threading.Lock()  # 역할 병렬 호출 시 클라이언트를 한 번만 만든다
 
     def _get_client(self) -> Any:
-        if self._client is None:
-            try:
-                import anthropic
-            except ImportError as e:  # pragma: no cover
-                raise ProviderError("`anthropic` 패키지가 없다 — `uv add anthropic`") from e
-            self._client = anthropic.Anthropic()
-        return self._client
+        with self._lock:
+            if self._client is None:
+                try:
+                    import anthropic
+                except ImportError as e:  # pragma: no cover
+                    raise ProviderError("`anthropic` 패키지가 없다 — `uv add anthropic`") from e
+                self._client = anthropic.Anthropic()
+            return self._client
 
     def complete(self, request: CompletionRequest) -> CompletionResult:
         client = self._get_client()
@@ -354,7 +356,7 @@ class AnthropicProvider:
         st = getattr(resp.usage, "server_tool_use", None)
         queries = int(getattr(st, "web_search_requests", 0) or 0) if st is not None else 0
         if queries:
-            self.budget.used[request.role] = self.budget.used.get(request.role, 0) + queries
+            self.budget.used[request.role] += queries
         usage = Usage(
             input_tokens=int(resp.usage.input_tokens),
             output_tokens=int(resp.usage.output_tokens),

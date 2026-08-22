@@ -19,7 +19,7 @@ from msa.l3.contracts import (
     latest_scan_dir,
     load_scorecard,
 )
-from msa.l3.pipeline import count_contested, run_research, thesis_diff
+from msa.l3.pipeline import count_contested, run_research
 from msa.l3.providers import (
     BudgetExceeded,
     CompletionRequest,
@@ -32,6 +32,7 @@ from msa.l3.providers import (
 )
 from msa.l3.roles import default_mock_output
 from msa.l3.schema import ThesisRejected, validate_thesis
+from msa.thesis import thesis_diff
 
 FIXTURES = REPO_ROOT / "tests" / "fixtures" / "l3"
 
@@ -68,13 +69,11 @@ def test_mock_full_run_writes_outputs(tmp_path: Path) -> None:
     assert saved["value_trap_axes"]["unit_demand"]["verdict"] == "cycle"
     assert saved["value_trap_axes"]["unit_demand"]["axis1_contested"] is False
     assert saved["cycle_confidence_terms"]["base"] == 0.5
-    # 4역할 각 1회
-    assert [r.role for r in prov.requests] == [
-        "supply_analyst",
-        "catalyst_analyst",
-        "bear",
-        "referee",
-    ]
+    # 4역할 각 1회 — supply·catalyst·bear 는 병렬이라 순서가 없고, referee 는 반드시 마지막
+    assert sorted(r.role for r in prov.requests) == sorted(
+        ["supply_analyst", "catalyst_analyst", "bear", "referee"]
+    )
+    assert prov.requests[-1].role == "referee"
     assert all(res.ledger.calls[r] == 1 for r in res.ledger.calls)
     assert "## bear_case (원문 보존" in res.report_md
 
