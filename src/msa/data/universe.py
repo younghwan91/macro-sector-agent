@@ -17,6 +17,16 @@ from msa.data.store import Store
 
 log = logging.getLogger(__name__)
 
+
+def count_by(values: pd.Series, *, na_label: str = "(category 없음)") -> dict[str, int]:
+    """`value_counts()` → `{라벨: 건수}` (키는 str, 값은 int, 결측은 `na_label`).
+
+    "제외한 것은 세어서 돌려준다" 규약(`CLAUDE.md` §2)의 공용 꼴 — `common_stock`·
+    `drop_secondary_class`·`assign_members` 가 같은 딕셔너리를 만든다.
+    """
+    return {str(k): int(v) for k, v in values.fillna(na_label).value_counts().items()}
+
+
 #: 보통주로 인정하는 `tickers.category` 값.
 #:
 #: `docs/08` §2 는 `Domestic Common Stock`·`ADR Common Stock` 둘만 적었다. 그러나 실측
@@ -98,11 +108,10 @@ def common_stock(
     if include_canadian:
         allowed |= set(CANADIAN_COMMON_CATEGORIES)
     mask = meta["category"].isin(allowed)
-    dropped = meta.loc[~mask, "category"].fillna("(category 없음)")
     result = UniverseResult(
         frame=meta.loc[mask].reset_index(drop=True),
         total_in=len(meta),
-        excluded_by_category={str(k): int(v) for k, v in dropped.value_counts().items()},
+        excluded_by_category=count_by(meta.loc[~mask, "category"]),
     )
     log.info("common_stock: %s", result.report())
     return result
@@ -112,10 +121,9 @@ def drop_secondary_class(universe: UniverseResult) -> UniverseResult:
     """2종주 제외 — 테마 시총 집계에서 같은 기업이 두 번 세어지는 것을 막는다."""
     meta = universe.frame
     mask = ~meta["category"].isin(SECONDARY_CLASS_CATEGORIES)
-    dropped = meta.loc[~mask, "category"]
     merged = dict(universe.excluded_by_category)
-    for k, v in dropped.value_counts().items():
-        merged[str(k)] = merged.get(str(k), 0) + int(v)
+    for k, v in count_by(meta.loc[~mask, "category"]).items():
+        merged[k] = merged.get(k, 0) + v
     return UniverseResult(
         frame=meta.loc[mask].reset_index(drop=True),
         total_in=universe.total_in,
@@ -158,8 +166,12 @@ def audit_delisted_included(
     end: str,
     *,
     categories: Sequence[str] = COMMON_STOCK_CATEGORIES,
+    meta: pd.DataFrame | None = None,
 ) -> DelistedCoverage:
     """구간 안에 폐지된 종목이 가격 이력에 남아 있는지 확인한다. **전수 검사한다.**
+
+    `meta` 를 주면(이미 읽은 `tickers_meta`) 다시 읽지 않는다. 가격은 행을 끌어오지 않고
+    `Store.tickers_with_prices`(`select distinct ticker`)로 존재 여부만 묻는다.
 
     빠지면 자기이력 백분위가 낙관 방향으로 왜곡된다 — 오늘 살아 있는 은광만으로
     은광의 10년 밸류 백분위를 계산하면 "역사적으로 싸다" 가 자동으로 나온다
@@ -176,7 +188,8 @@ def audit_delisted_included(
     """
     acts = store.actions(kinds=["delisted"], start=start, end=end, min_rows=1)
     cands = sorted(acts["ticker"].unique())
-    meta = store.tickers_meta(min_rows=1)
+    if meta is None:
+        meta = store.tickers_meta(min_rows=1)
     cat_of = dict(zip(meta["ticker"], meta["category"].fillna("(category 없음)"), strict=True))
     allowed = set(categories)
     checked = [t for t in cands if cat_of.get(t, "(category 없음)") in allowed]
@@ -186,8 +199,7 @@ def audit_delisted_included(
         if c not in allowed:
             excluded[c] = excluded.get(c, 0) + 1
 
-    px = store.prices(tickers=checked, start=start, end=end, min_rows=0)
-    have = set(px["ticker"].unique()) if len(px) else set()
+    have = store.tickers_with_prices(checked, start, end)
     missing = [t for t in checked if t not in have]
     cov = DelistedCoverage(
         delisted_total=len(checked),

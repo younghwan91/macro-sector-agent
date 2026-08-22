@@ -986,20 +986,19 @@ def load_inputs(
 ) -> tuple[ThemePanel, Indicators, ThemeSet, dict[str, Any]]:
     """`msa scan` 과 같은 경로로 패널·지표를 (캐시에서) 가져온다. 스토어는 지문 계산에만 연다."""
     from msa.config import paths
-    from msa.data.store import Store, StoreError, etf_prices
+    from msa.data.store import Store, etf_prices_or_empty
     from msa.l1.blocks import compute_indicators
     from msa.l1.panel import build_panel
     from msa.l1.physical import load_physical
     from msa.l1.scan import _cache_paths, load_or_build_fund
-    from msa.themes import assign_members, load_themes
+    from msa.themes import load_themes, membership_from_store
 
     p = paths()
-    cache_dir = p.state / "cache"
+    cache_dir = p.cache
     cache_dir.mkdir(parents=True, exist_ok=True)
     themes = load_themes()
     with Store(p.duckdb) as store:
-        meta = store.tickers_meta(min_rows=10_000)
-        membership = assign_members(themes, meta)
+        membership = membership_from_store(store, themes)
         panel = build_panel(store, membership, cache_dir=cache_dir, force=force)
         fp = panel.built_from["fingerprint"]
         fund = load_or_build_fund(store, membership, fp, cache_dir, force=force)
@@ -1019,11 +1018,7 @@ def load_inputs(
                 if t.physical_ref and t.physical_ref.source == "etf"
             }
         )
-        try:
-            etf = etf_prices(etf_syms, min_rows=0)
-        except StoreError as e:
-            log.warning("ETF 벌크를 읽지 못했다: %s", e)
-            etf = pd.DataFrame(columns=["ticker", "date", "close", "closeadj", "volume"])
+        etf = etf_prices_or_empty(etf_syms)
         physical = load_physical(
             themes, allow_fetch=False, etf_prefetched=etf if not etf.empty else None
         )
@@ -1052,7 +1047,7 @@ def run_backtest(
     res.meta.update(info)
     out_dir: Path | None = None
     if write:
-        root = out_root if out_root is not None else paths().state / "backtests" / "l1"
+        root = out_root if out_root is not None else paths().backtests_l1
         out_dir = root / str(info["store_end"])
         write_outputs(res, out_dir)
     return BacktestResult(**{**res.__dict__, "out_dir": out_dir})

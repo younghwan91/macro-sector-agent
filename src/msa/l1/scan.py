@@ -42,7 +42,7 @@ from msa.l1.fundamentals import FundPanel, build_fund_panel
 from msa.l1.panel import ThemePanel, build_panel
 from msa.l1.physical import load_physical
 from msa.l1.scoreboard import Scoreboard, build_scoreboard
-from msa.themes import Membership, ThemeSet, assign_members, load_themes
+from msa.themes import Membership, ThemeSet, load_themes, membership_from_store
 
 log = logging.getLogger(__name__)
 
@@ -63,13 +63,8 @@ def unclassified_mcap_share(
     store: Store, membership: Membership, meta: pd.DataFrame
 ) -> dict[str, float]:
     """생존 종목 최신 시총 기준 미분류 비율 (Shell 제외). `audit_themes.py` §1 과 같은 정의."""
-    con = store._con
-    mcap = con.execute(
-        "select ticker, mcap from (select ticker, mcap, row_number() over "
-        "(partition by ticker order by date desc) rn from prices where mcap is not null) "
-        "where rn = 1"
-    ).fetch_df()
-    mcap_of: dict[str, float] = dict(zip(mcap["ticker"], mcap["mcap"], strict=True))
+    mcap = store.latest_mcap()
+    mcap_of: dict[str, float] = dict(zip(mcap.index, mcap.to_numpy(), strict=True))
     from msa.themes import EXCLUDED_LABELS, MEMBER_CATEGORIES
 
     uni = meta.loc[meta["category"].isin(MEMBER_CATEGORIES)].copy()
@@ -153,12 +148,12 @@ def run_scan(
     compute_vcp: bool = True,
 ) -> ScanResult:
     p = paths()
-    cache_dir = p.state / "cache"
+    cache_dir = p.cache
     cache_dir.mkdir(parents=True, exist_ok=True)
     themes = load_themes(themes_path)
     with Store(p.duckdb) as store:
-        meta = store.tickers_meta(min_rows=10_000)
-        membership = assign_members(themes, meta)
+        membership = membership_from_store(store, themes)
+        meta = membership.meta
         if len(membership.frame) == 0:
             raise StoreError("배정된 구성원이 0개다.")
         uncls = unclassified_mcap_share(store, membership, meta)
@@ -256,7 +251,7 @@ def run_scan(
 
     out_dir: Path | None = None
     if write:
-        root = out_root if out_root is not None else p.state / "scans"
+        root = out_root if out_root is not None else p.scans
         out_dir = root / str(data_date.date())
         out_dir.mkdir(parents=True, exist_ok=True)
         sb.table.to_csv(out_dir / "scoreboard.csv")

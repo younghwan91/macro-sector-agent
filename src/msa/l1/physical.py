@@ -26,7 +26,8 @@ from pathlib import Path
 import pandas as pd
 
 from msa.config import paths
-from msa.data.store import StoreError, etf_prices
+from msa.data.store import StoreError, etf_prices, etf_series
+from msa.dates import to_month_end
 from msa.themes import PhysicalRef, ThemeSet
 
 log = logging.getLogger(__name__)
@@ -45,10 +46,15 @@ class PhysicalSeries:
 
 
 def _physical_dir() -> Path:
-    return paths().state / "physical"
+    return paths().physical
 
 
-def _read_csv_series(path: Path) -> pd.Series:
+def read_date_value_csv(path: Path) -> pd.Series:
+    """`date,value` CSV → 값 시리즈 (`DatetimeIndex`, 결측 제거, 오름차순). 컬럼명은 대소문자 무관.
+
+    컬럼이 없거나 값이 전부 결측이면 `StoreError` — 빈 시리즈를 돌려주지 않는다 (`CLAUDE.md` §2).
+    FRED 캐시·수동 CSV 가 같은 꼴이라 L1·L2 가 함께 쓴다.
+    """
     df = pd.read_csv(path)
     cols = {c.lower(): c for c in df.columns}
     if "date" not in cols or "value" not in cols:
@@ -63,15 +69,13 @@ def _read_csv_series(path: Path) -> pd.Series:
     return s
 
 
-def to_month_end(s: pd.Series) -> pd.Series:
-    """임의 주기 → 월말 마지막 관측. 월 안에 관측이 없으면 NaN 으로 남긴다 (앞으로 채우지
-    않는다)."""
-    return s.resample("ME").last()
+#: 이전 이름 — L2·L4 가 옮겨 갈 때까지 남겨 둔다. `to_month_end` 도 `msa.dates` 의 것을 재노출한다.
+_read_csv_series = read_date_value_csv
 
 
 def fred_cache_path(symbol: str) -> Path:
     """`state/physical/fred/<SYMBOL>.csv` — L1(실물 참조·CPI)과 L2(드라이버)가 같은 캐시를 쓴다."""
-    return _physical_dir() / "fred" / f"{symbol}.csv"
+    return paths().fred_cache / f"{symbol}.csv"
 
 
 def read_fred_cache(symbol: str) -> pd.Series | None:
@@ -132,7 +136,7 @@ def load_fred_series(symbol: str, *, allow_fetch: bool = True) -> PhysicalSeries
 
 
 def load_manual_series(symbol: str) -> PhysicalSeries:
-    path = _physical_dir() / "manual" / f"{symbol}.csv"
+    path = paths().manual_dir / f"{symbol}.csv"
     if not path.exists():
         return PhysicalSeries(symbol, "manual", "?", "missing", None, f"파일 없음 {path}")
     return PhysicalSeries(
@@ -158,11 +162,10 @@ def load_etf_series(
         except StoreError as e:
             return {s: PhysicalSeries(s, "etf", "?", "missing", None, str(e)) for s in symbols}
     for sym in symbols:
-        sub = df.loc[df["ticker"] == sym.upper()]
-        if sub.empty:
+        s = etf_series(df, sym)
+        if s is None:
             out[sym] = PhysicalSeries(sym, "etf", "?", "missing", None, "벌크에 없음")
             continue
-        s = pd.Series(sub["closeadj"].to_numpy(), index=pd.to_datetime(sub["date"])).dropna()
         out[sym] = PhysicalSeries(sym, "etf", "?", "ok", to_month_end(s), f"{len(s)}행")
     return out
 

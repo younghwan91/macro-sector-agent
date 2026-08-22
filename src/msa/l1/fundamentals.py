@@ -34,7 +34,14 @@ from typing import Any
 
 import pandas as pd
 
+from msa.data.pit import (
+    L1_TTM_FIELDS,
+    first_reported_quarterly_sql,
+    ttm_valid_replace_sql,
+    ttm_window_sql,
+)
 from msa.data.store import ENTRY_ACTIONS, EXIT_ACTIONS, Store, StoreError
+from msa.dates import month_ends
 from msa.themes import Membership
 
 log = logging.getLogger(__name__)
@@ -97,25 +104,17 @@ class FundPanel:
 _QUARTERLY_SQL = f"""
 create or replace temp table q_ttm as
 with m as (select ticker, theme from members),
-q0 as (
-    select f.ticker, m.theme, f.calendardate, f.datekey,
-           f.revenue, f.capex, f.depamor, f.assets, f.ebitda, f.ebit, f.netinc, f.taxexp,
-           f.debt, f.cashneq, f.sharesbas, f.equity, f.intangibles, f.invcap, f.fcf,
-           row_number() over (partition by f.ticker, f.calendardate order by f.datekey) as rn
-    from fundamentals f join m using (ticker)
-    where f.dimension = 'ARQ' and f.datekey is not null and f.calendardate is not null
-),
-q as (select * exclude (rn) from q0 where rn = 1),
+{
+    first_reported_quarterly_sql(
+        "f.ticker, m.theme, f.calendardate, f.datekey, "
+        "f.revenue, f.capex, f.depamor, f.assets, f.ebitda, f.ebit, f.netinc, f.taxexp, "
+        "f.debt, f.cashneq, f.sharesbas, f.equity, f.intangibles, f.invcap, f.fcf",
+        from_clause="fundamentals f join m using (ticker)",
+    )
+},
 ttm as (
     select *,
-        sum(revenue) over w4 as revenue_ttm, count(revenue) over w4 as n_rev4,
-        sum(abs(capex)) over w4 as capex_ttm, count(capex) over w4 as n_capex4,
-        sum(depamor) over w4 as da_ttm, count(depamor) over w4 as n_da4,
-        sum(ebitda) over w4 as ebitda_ttm, count(ebitda) over w4 as n_ebitda4,
-        sum(ebit) over w4 as ebit_ttm, count(ebit) over w4 as n_ebit4,
-        sum(netinc) over w4 as netinc_ttm, count(netinc) over w4 as n_netinc4,
-        sum(taxexp) over w4 as taxexp_ttm, count(taxexp) over w4 as n_tax4,
-        sum(fcf) over w4 as fcf_ttm, count(fcf) over w4 as n_fcf4,
+{ttm_window_sql(L1_TTM_FIELDS)},
         lag(calendardate, 3) over wt as cd_3back
     from q
     window w4 as (partition by ticker order by calendardate
@@ -124,22 +123,7 @@ ttm as (
 ),
 valid as (
     select * replace (
-        case when n_rev4 = 4 and cd_3back >= calendardate - interval {TTM_MAX_SPAN_DAYS} day
-             then revenue_ttm end as revenue_ttm,
-        case when n_capex4 = 4 and cd_3back >= calendardate - interval {TTM_MAX_SPAN_DAYS} day
-             then capex_ttm end as capex_ttm,
-        case when n_da4 = 4 and cd_3back >= calendardate - interval {TTM_MAX_SPAN_DAYS} day
-             then da_ttm end as da_ttm,
-        case when n_ebitda4 = 4 and cd_3back >= calendardate - interval {TTM_MAX_SPAN_DAYS} day
-             then ebitda_ttm end as ebitda_ttm,
-        case when n_ebit4 = 4 and cd_3back >= calendardate - interval {TTM_MAX_SPAN_DAYS} day
-             then ebit_ttm end as ebit_ttm,
-        case when n_netinc4 = 4 and cd_3back >= calendardate - interval {TTM_MAX_SPAN_DAYS} day
-             then netinc_ttm end as netinc_ttm,
-        case when n_tax4 = 4 and cd_3back >= calendardate - interval {TTM_MAX_SPAN_DAYS} day
-             then taxexp_ttm end as taxexp_ttm,
-        case when n_fcf4 = 4 and cd_3back >= calendardate - interval {TTM_MAX_SPAN_DAYS} day
-             then fcf_ttm end as fcf_ttm
+        {ttm_valid_replace_sql(L1_TTM_FIELDS, TTM_MAX_SPAN_DAYS)}
     ) from ttm
 )
 select *,
@@ -283,10 +267,6 @@ order by 1, 2
 """
 
 
-def month_ends(start: str | pd.Timestamp, end: str | pd.Timestamp) -> pd.DatetimeIndex:
-    return pd.date_range(pd.Timestamp(start), pd.Timestamp(end), freq="ME")
-
-
 def grid_dates(start: str | pd.Timestamp, end: str | pd.Timestamp) -> pd.DataFrame:
     """asof 날짜(`me`)와 월 버킷 라벨(`bucket` = 그 달 월말). `end` 가 월말이 아니면 **부분 월**을
     `me=end, bucket=end 의 월말` 로 한 행 더 둔다 — 오늘의 스캔이 지난 월말이 아니라 최신
@@ -313,31 +293,27 @@ def build_fund_panel(
     members = membership.frame[["ticker", "theme"]].drop_duplicates()
     if members.empty:
         raise StoreError("구성원이 0개다.")
-    con = store._con
     if end is None:
-        row = con.execute("select max(date) from prices").fetchone()
-        end = str(row[0]) if row and row[0] else pd.Timestamp.today().strftime("%Y-%m-%d")
+        se = store.store_end()
+        end = str(se) if se else pd.Timestamp.today().strftime("%Y-%m-%d")
     mes = grid_dates(start, end)
-    con.register("members", members)
-    con.register("month_ends", mes)
     try:
-        log.info("fund: 분기 TTM 테이블 생성")
-        con.execute(_QUARTERLY_SQL)
-        log.info("fund: 월말 × 구성원 asof 그리드 생성")
-        con.execute(_GRID_SQL)
-        n_grid = con.execute("select count(*) from grid").fetchone()[0]  # type: ignore[index]
-        log.info("fund: 그리드 %s행 → 테마 집계", f"{n_grid:,}")
-        agg = con.execute(_AGG_SQL).fetch_df()
-        ss10 = con.execute(_ss_sql(10)).fetch_df()
-        ss5 = con.execute(_ss_sql(5)).fetch_df()
-        exits = ",".join(f"'{a}'" for a in EXIT_ACTIONS)
-        entries = ",".join(f"'{a}'" for a in ENTRY_ACTIONS)
-        acts = con.execute(_ACTIONS_SQL.format(exits=exits, entries=entries)).fetch_df()
+        with store.temp_tables(members=members, month_ends=mes):
+            log.info("fund: 분기 TTM 테이블 생성")
+            store.execute(_QUARTERLY_SQL)
+            log.info("fund: 월말 × 구성원 asof 그리드 생성")
+            store.execute(_GRID_SQL)
+            n_grid = int(store.scalar("select count(*) from grid"))
+            log.info("fund: 그리드 %s행 → 테마 집계", f"{n_grid:,}")
+            agg = store.query(_AGG_SQL)
+            ss10 = store.query(_ss_sql(10))
+            ss5 = store.query(_ss_sql(5))
+            exits = ",".join(f"'{a}'" for a in EXIT_ACTIONS)
+            entries = ",".join(f"'{a}'" for a in ENTRY_ACTIONS)
+            acts = store.query(_ACTIONS_SQL.format(exits=exits, entries=entries))
     finally:
-        con.unregister("members")
-        con.unregister("month_ends")
-        con.execute("drop table if exists grid")
-        con.execute("drop table if exists q_ttm")
+        store.execute("drop table if exists grid")
+        store.execute("drop table if exists q_ttm")
     if agg.empty:
         raise StoreError("재무 집계 결과가 0행이다 — fundamentals 와 구성원이 만나지 않는다.")
 

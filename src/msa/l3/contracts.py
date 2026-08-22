@@ -30,6 +30,8 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from msa.errors import RefusedInput
+
 log = logging.getLogger(__name__)
 
 SCORE_BLOCKS = ("A", "B", "C", "D", "E", "F")
@@ -54,7 +56,7 @@ L1_SCORE_FIELDS: tuple[str, ...] = (
 )
 
 
-class InputsError(RuntimeError):
+class InputsError(RefusedInput, RuntimeError):
     """입력이 없거나 모자랄 때 던진다 — 빈 값으로 진행하지 않는다 (`CLAUDE.md` §2)."""
 
 
@@ -394,15 +396,14 @@ def members_from_store(
     `themes` 는 `msa.themes.ThemeSet` — 타입을 `Any` 로 둔 것은 이 모듈이 스토어 없이도 임포트되게
     하려는 것.
     """
-    from msa.themes import assign_members
+    from msa.data.pit import L3_TTM_FIELDS, first_reported_quarterly_sql, ttm_window_sql
+    from msa.themes import membership_from_store
 
-    meta = store.tickers_meta(min_rows=10_000)
-    membership = assign_members(themes, meta)
+    membership = membership_from_store(store, themes)
     tickers = membership.members(theme_id)
     if not tickers:
         raise InputsError(f"테마 `{theme_id}` 의 구성원이 0명이다")
-    con = store._con
-    con.execute(
+    store.execute(
         "create or replace temp table l3_members as select * from (values "
         + ",".join(f"('{t}')" for t in tickers)
         + ") t(ticker)"
@@ -416,21 +417,18 @@ def members_from_store(
               and ticker in (select ticker from l3_members)
         ) where rn = 1
     ),
-    q0 as (
-        select f.ticker, f.calendardate, f.datekey, f.revenue, f.capex, f.depamor, f.ebitda,
-               f.debt, f.debtc, f.cashneq,
-               row_number() over (partition by f.ticker, f.calendardate order by f.datekey) rn
-        from fundamentals f
-        where f.dimension = 'ARQ' and f.datekey is not null and f.calendardate is not null
-          and f.datekey <= '{asof}' and f.ticker in (select ticker from l3_members)
-    ),
-    q as (select * exclude (rn) from q0 where rn = 1),
+    {
+        first_reported_quarterly_sql(
+            "f.ticker, f.calendardate, f.datekey, f.revenue, f.capex, f.depamor, f.ebitda, "
+            "f.debt, f.debtc, f.cashneq",
+            where_extra=(
+                f" and f.datekey <= '{asof}' and f.ticker in (select ticker from l3_members)"
+            ),
+        )
+    },
     ttm as (
         select *,
-            sum(revenue) over w4 as revenue_ttm, count(revenue) over w4 as n_rev4,
-            sum(abs(capex)) over w4 as capex_ttm, count(capex) over w4 as n_capex4,
-            sum(depamor) over w4 as da_ttm, count(depamor) over w4 as n_da4,
-            sum(ebitda) over w4 as ebitda_ttm, count(ebitda) over w4 as n_ebitda4,
+{ttm_window_sql(L3_TTM_FIELDS)},
             lag(calendardate, 3) over (partition by ticker order by calendardate) as cd_3back,
             row_number() over (partition by ticker order by calendardate desc) as rn_last
         from q
@@ -453,7 +451,7 @@ def members_from_store(
     order by p.mcap desc nulls last
     limit {int(top_n)}
     """
-    df = con.execute(sql).fetch_df()
+    df = store.query(sql)
     out: list[MemberSummary] = []
     for _, r in df.iterrows():
         out.append(

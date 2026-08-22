@@ -100,13 +100,13 @@ def run_macro(
     rg = compute_regime(ds)
     contra = audit.evaluate_contradictions(dag, ds.state_at())
 
-    cdir = cache_dir if cache_dir is not None else p.state / "cache"
+    cdir = cache_dir if cache_dir is not None else p.cache
     sc = _sign_check(dag, theme_ids, ds, cdir, enabled=sign_check)
 
     meta = _meta(ds, validation, tw, rg, contra, sc, dag)
     out_dir: Path | None = None
     if write:
-        root = out_root if out_root is not None else p.state / "macro"
+        root = out_root if out_root is not None else p.macro
         out_dir = root / str(ds.asof.date())
         out_dir.mkdir(parents=True, exist_ok=True)
         _write(out_dir, ds, tw, rg, contra, sc, meta, validation)

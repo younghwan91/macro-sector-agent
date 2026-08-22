@@ -209,9 +209,9 @@ def build_panel(
     members = membership.frame[["ticker", "theme"]].drop_duplicates()
     if members.empty:
         raise StoreError("구성원이 0개다 — 테마 배정이 비었다.")
-    store_end = _store_end(store)
+    store_end = store.store_end()
     fp = _fingerprint(members, store_end)
-    cdir = cache_dir if cache_dir is not None else paths().state / "cache"
+    cdir = cache_dir if cache_dir is not None else paths().cache
     cdir.mkdir(parents=True, exist_ok=True)
     panel_path = cdir / f"l1_panel_{fp}.parquet"
     spy_path = cdir / f"l1_spy_{fp}.parquet"
@@ -223,17 +223,13 @@ def build_panel(
         built = json.loads(meta_path.read_text())
         return ThemePanel(frame=frame, spy=spy, built_from=built)
 
-    con = store._con
-    con.execute(f"set threads = {int(threads)}")
-    con.execute(f"set memory_limit = '{memory_limit}'")
-    con.register("members", members)
+    store.configure(threads=threads, memory_limit=memory_limit)
     log.info(
         "panel: 구성원 %d 종목 · 테마 %d — DuckDB 집계 시작",
         len(members),
         members["theme"].nunique(),
     )
-    frame = con.execute(_PANEL_SQL).fetch_df()
-    con.unregister("members")
+    frame = store.query(_PANEL_SQL, frames={"members": members})
     if frame.empty:
         raise StoreError("패널 집계 결과가 0행이다 — prices 와 구성원 티커가 만나지 않는다.")
     frame["date"] = pd.to_datetime(frame["date"])
@@ -249,7 +245,7 @@ def build_panel(
         "n_capped",
     ):
         frame[c] = frame[c].fillna(0).astype("int64")
-    spy = con.execute(_SPY_SQL).fetch_df()
+    spy = store.query(_SPY_SQL)
     if spy.empty:
         raise StoreError("SPY 가 prices 에 없다 — 상대지표를 계산할 수 없다.")
     spy["date"] = pd.to_datetime(spy["date"])
@@ -276,11 +272,6 @@ def build_panel(
     meta_path.write_text(json.dumps(built, ensure_ascii=False, indent=1))
     log.info("panel: 저장 %s (%d행)", panel_path.name, len(frame))
     return ThemePanel(frame=frame, spy=spy, built_from=built)
-
-
-def _store_end(store: Store) -> date | None:
-    row = store._con.execute("select max(date) from prices").fetchone()
-    return row[0] if row else None
 
 
 def panel_from_frames(frame: pd.DataFrame, spy: pd.DataFrame) -> ThemePanel:
