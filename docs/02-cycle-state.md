@@ -209,3 +209,32 @@ rank  theme              class              score   A     B     C     D     E   
 | ETF 프록시 공백 | PGM·알루미늄 등 ETF 없음 | 자체 구성 지수만 사용, `ew_vs_cw` 검증 불가 표시 |
 | 지수 소급 구성 | 과거 구간 구성원이 오늘 기준 | **폐지 종목 포함이 유일한 해법** (`01-theme-universe.md` §5) |
 | 전 시장 동반 하락 | 2020-03, 2022 처럼 전부가 A 블록 만점 | 횡단면 정규화가 자동으로 흡수하나, 절대 낙폭도 병기 |
+
+
+## 10. 구현 노트 (M3 · 2026-08-23)
+
+구현은 `src/msa/l1/` 이다 — `panel.py`(테마 지수·브레드스 재료, DuckDB 1패스) → `fundamentals.py`
+(월말 × 테마 재무 집계, PIT=`datekey` 최초 보고분) → `physical.py`(실물·가격 참조) → `blocks.py`
+(지표) → `scoreboard.py`(방향·블록 점수·가중합·플래그) → `scan.py`(`msa scan`, `state/scans/<date>/`).
+**문서가 정하지 않아 구현이 정해야 했던 자리**를 여기 모아 둔다. 전부 선언이며 데이터에 맞춰 고르지 않았다.
+자세한 이유는 각 모듈 머리말에 있다.
+
+| 자리 | 결정 |
+|---|---|
+| 지수 위생 | 전일 `closeunadj ≥ $1` 인 종목만 수익률에 포함 · 일별 수익률 [−95%, +300%] 상·하한 (걸린 수 `n_capped` 로 보고) |
+| 구성원 소급 | 오늘의 분류를 전 구간에 소급, 폐지 종목 포함 (§9) |
+| 기울기 | `log(P)` OLS (일당). `rs_slope` 도 `log(P/S)` |
+| `breadth_lead` | 지수 SMA200 상향 전환 시점(없으면 오늘) 기준으로 그때 활성이던 `breadth_200 ≥ 0.5` 런의 시작까지 개월 수, 12 상한 |
+| `vcp_index` | 252일 창 · 피벗 ±5일 · 마지막 수축 ≤4개 · 점수 = 수축폭 감소 단계 수 / (수축 수 − 1) — `momentum` VCP 를 벤더링해 지수 레벨의 정도로 바꿈 |
+| 건수 → 비율 | `exit_count`·`entry_count` 는 그대로 내되 점수에는 `exit_rate_3y`·`entry_rate_3y`(= 건수 / 3년 전 상장 구성원 수)를 쓴다 — 건수는 큰 버킷이 항상 이긴다 |
+| `roic` | Σebit_ttm × (1 − t_eff) / Σinvcap(기말) — `invcapavg` 전부 null |
+| `capex_to_da` | 월별 TTM 비율의 36개월 이동평균(최소 24) · `_qtrs_below1` 은 평활 전 비율 기준 연속 개월/3 |
+| 자기이력 백분위 | 120개월 창·최소 84. 36~83개월이면 z-score→Φ 대체 + `short_hist` 플래그 |
+| 블록 점수 방향 | `scoreboard.py` `ORIENTATION`·`SCORED` 표 — A 는 문서의 세 지표, E 는 문서의 네 지표, 나머지는 블록 전 지표(D 는 `*_pct` 5종, F 는 `rev_yoy_d2`·`ebitda_margin_d4`·`unit_cagr_5y`) |
+| 블록 결측 | 한 블록의 지표가 전부 없으면 남은 가중치로 재정규화하고 `blocks_missing` 플래그 |
+| `physical_ref.kind` | `price`/`volume`/`nominal` 을 요구 (`01` §2). `volume` 은 1순위 경로(그 자체가 `unit_series`), `price` 는 폴백(동일 구성원 매출 ÷ 가격), `nominal` 은 CPI 실질화 |
+| 축 1 판정 공백 | 10y CAGR < −2% 인데 감소가 감속 중이면 `warning` |
+| 없는 데이터 | `surprise_dir`·`guidance_rev` 는 계산하지 않는다(`estimates` 0행). `dd_real` 은 CPI 가 있을 때만 |
+
+> **오늘의 스캔도 PIT 규칙을 쓴다.** `CLAUDE.md` 의 PIT 표는 스냅샷 지표에 정정치를 허용하지만,
+> 한 모듈 안에서 두 규칙을 섞으면 몇 달 뒤 조용히 섞인다고 판단해 **더 엄격한 쪽으로 통일**했다.

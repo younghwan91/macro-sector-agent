@@ -1,7 +1,7 @@
 """`msa` CLI.
 
-M1 에서 실제로 도는 것은 `data status` 와 `data audit` 둘뿐이다.
-나머지(`scan`·`macro`·`picks`·`portfolio`·`check`)는 `--help` 에는 나오되
+도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3).
+나머지(`macro`·`research`·`picks`·`portfolio`·`check`)는 `--help` 에는 나오되
 호출하면 `NotImplementedError` 를 던진다 — 있는 척하는 스텁이 조용히 빈 결과를
 내는 것보다 낫다 (`CLAUDE.md` §2).
 """
@@ -18,7 +18,10 @@ from msa import __version__
 app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
-    help="macro-sector-agent — 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 (M1: 데이터 계층)",
+    help=(
+        "macro-sector-agent — 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 "
+        "(M1~M3: 데이터·L1 스캐너)"
+    ),
 )
 data_app = typer.Typer(no_args_is_help=True, help="L0 데이터 — 스토어 상태와 커버리지 감사")
 app.add_typer(data_app, name="data")
@@ -189,14 +192,49 @@ def data_fred_lag(
 
 def _todo(name: str, doc: str) -> None:
     raise NotImplementedError(
-        f"`msa {name}` 는 아직 없다. 현재 구현 범위는 M1(데이터 계층)이다. 설계: {doc}"
+        f"`msa {name}` 는 아직 없다. 현재 구현 범위는 M1~M3 (데이터 계층 · L1 스캐너)이다. "
+        f"설계: {doc}"
     )
 
 
 @app.command()
-def scan() -> None:
-    """L1 사이클 스캐너 → 테마 스코어보드. (미구현 — M2/M3)"""
-    _todo("scan", "docs/02-cycle-state.md")
+def scan(
+    asof: str = typer.Option(
+        "", help="기준일 YYYY-MM-DD (그 이전 마지막 월말). 기본 = 스토어 최종일"
+    ),
+    top: int = typer.Option(0, help="표에 보일 상위 N (0 = 전부)"),
+    force: bool = typer.Option(False, "--force", help="패널·재무·지표 캐시를 무시하고 다시 만든다"),
+    no_write: bool = typer.Option(False, "--no-write", help="state/scans/ 에 저장하지 않는다"),
+    no_fetch: bool = typer.Option(False, "--no-fetch", help="FRED 를 받지 않는다 (캐시만)"),
+    no_vcp: bool = typer.Option(False, "--no-vcp", help="vcp_index 계산 생략 (빠른 확인용)"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """L1 사이클 스캐너 → 테마 스코어보드 (docs/02). 산출물: state/scans/<date>/"""
+    from msa.l1.scan import run_scan
+
+    _setup_logging(verbose)
+    res = run_scan(
+        asof=asof or None,
+        force=force,
+        write=not no_write,
+        allow_fetch=not no_fetch,
+        compute_vcp=not no_vcp,
+    )
+    typer.echo(res.scoreboard.render(top or None))
+    typer.echo("")
+    m = res.meta
+    typer.echo(f"구성원: {m['membership']}")
+    typer.echo(
+        f"미분류 시총 비율: {m['unclassified_mcap']['share']:.3%} · "
+        f"소표본 {len(m['small_sample_buckets'])}개"
+    )
+    ph = m["physical"]
+    typer.echo(
+        f"축 1: 선언 {ph['declared']} · 데이터 있음 {ph['data_ok']} · "
+        f"없음 {ph['data_missing']} · CPI {ph['cpi']}"
+    )
+    if res.out_dir:
+        typer.echo(f"저장: {res.out_dir}")
 
 
 @app.command()

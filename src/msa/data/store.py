@@ -118,9 +118,7 @@ class Store:
     # ------------------------------------------------------------------ 내부
 
     def _verify_schema(self) -> None:
-        rows = self._con.execute(
-            "select table_name from information_schema.tables"
-        ).fetchall()
+        rows = self._con.execute("select table_name from information_schema.tables").fetchall()
         present = {r[0] for r in rows}
         missing = [t for t in KNOWN_TABLES if t not in present]
         if missing:
