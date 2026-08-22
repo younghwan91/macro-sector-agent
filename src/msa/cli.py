@@ -1,7 +1,7 @@
 """`msa` CLI.
 
-도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3).
-나머지(`macro`·`research`·`picks`·`portfolio`·`check`)는 `--help` 에는 나오되
+도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3) · `portfolio`(M6).
+나머지(`macro`·`research`·`picks`·`check`)는 `--help` 에는 나오되
 호출하면 `NotImplementedError` 를 던진다 — 있는 척하는 스텁이 조용히 빈 결과를
 내는 것보다 낫다 (`CLAUDE.md` §2).
 """
@@ -256,9 +256,41 @@ def picks(theme: str) -> None:
 
 
 @app.command()
-def portfolio() -> None:
-    """L5 포트 구성 + 매매계획. (미구현 — M7)"""
-    _todo("portfolio", "docs/07-portfolio.md")
+def portfolio(
+    inputs: str = typer.Option(
+        ..., "--inputs", help="입력 디렉터리: picks.csv · theses/*.yaml (· returns.csv 선택)"
+    ),
+    asof: str = typer.Option("", help="기준일 YYYY-MM-DD. 기본 = 오늘"),
+    cases: str = typer.Option(
+        "",
+        "--cases",
+        help="케이스 스터디 표. 기본 = state/cases/cases.yaml (없으면 L_i 형성 불가로 표기)",
+    ),
+    capital: float = typer.Option(
+        0.0, "--capital", help="총자본(USD). 주면 C4 유동성 상한(ADV20 의 10%)을 건다"
+    ),
+    cluster_cap: list[str] = typer.Option(  # noqa: B008 — typer 의 옵션 선언 관용구
+        [], "--cluster-cap", help="선택적 클러스터 상한 name=cap (docs/07 §2.5 — 요구했을 때만)"
+    ),
+    no_write: bool = typer.Option(False, "--no-write", help="state/portfolio/ 에 저장하지 않는다"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """L5 포트 구성 + 매매계획서 (docs/07). 산출물: state/portfolio/<date>/"""
+    from msa.l5.plan import render_plan
+    from msa.l5.run import cluster_caps_from_args, run_portfolio
+
+    _setup_logging(verbose)
+    res = run_portfolio(
+        asof=asof or None,
+        inputs_dir=inputs,
+        cases_path=cases or None,
+        capital_usd=capital if capital > 0 else None,
+        cluster_caps=cluster_caps_from_args(cluster_cap),
+        write=not no_write,
+    )
+    typer.echo(render_plan(res))
+    if res.out_dir:
+        typer.echo(f"저장: {res.out_dir}")
 
 
 @app.command()
