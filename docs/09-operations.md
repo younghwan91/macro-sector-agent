@@ -9,7 +9,7 @@
 | **월간** (1영업일) | L0 적재 → L1 전수 스캔 → L2 국면 갱신 → 상위 K L3 → L4 → L5 | 사람 30~60분 검토 | 테마 스코어보드 + 매매계획서 |
 | **주간** (월요일) | 보유 포지션의 **트리거·무효화 점검** + L1 경량 갱신 (가격 블록만) | 사람 5~10분 | 점검 리포트 |
 | **일간** | 무효화 트리거 발동 여부만 자동 확인 | 0분 (알림 시에만) | 알림 |
-| **분기** | 모순 감사(`03-macro-dag.md` §6) + 캘리브레이션 갱신(`10-validation.md` §3) + **기각 대장의 12·24M 수익률 갱신**(`10-validation.md` §4) | 사람 1시간 | 감사 리포트 |
+| **분기** | 모순 감사(`03-macro-dag.md` §6) + 캘리브레이션 갱신(`10-validation.md` §4) + **기각 대장의 12·24M 수익률 갱신**(`10-validation.md` §5) | 사람 1시간 | 감사 리포트 |
 | **수시** | 신규 테마 진입 검토 (사용자 발의) | | |
 
 **월간 스캔이 만드는 것 vs 사람이 하는 것**
@@ -43,7 +43,7 @@ journal/
 - thesis 객체 전문 (claim · mechanism · triggers · invalidations · evidence · `cycle_confidence`)
   — `cycle_confidence` 는 **누가 산출했는지**(사람 / `referee`)를 함께 적는다. M6 구간에는
   사람이 `04-value-trap.md` §4 규칙을 적용해 산출하며(`11-roadmap.md` "M6 구간에 `c` 를
-  누가 만드는가"), 그 표본도 `10-validation.md` §3 캘리브레이션에 들어간다
+  누가 만드는가"), 그 표본도 `10-validation.md` §4 캘리브레이션에 들어간다
 - `bear_case` 원문
 - L1 블록 6개 값 + L2 tailwind + 가치함정 5축 판정
 - 종목 · 비중 · 사다리 3단 가격 · Tier1/2 스탑 · 시간 스탑 날짜 · TP 3단
@@ -54,8 +54,8 @@ journal/
 - 각 invalidation 의 상태
 - thesis 재실행 시 **이전 버전과의 diff** (논지 표류 추적 — `05-agent-research.md` §6)
 
-**기각 항목이 담는 것** (편입하지 않은 것도 결정이다 — `10-validation.md` §4 기각 대장의 입력):
-- 기각 경로 — **분류 목록은 여기서 다시 적지 않는다.** 정본은 `10-validation.md` §4 의
+**기각 항목이 담는 것** (편입하지 않은 것도 결정이다 — `10-validation.md` §5 기각 대장의 입력):
+- 기각 경로 — **분류 목록은 여기서 다시 적지 않는다.** 정본은 `10-validation.md` §5 의
   기각 대장 표이고, 기계 판독용 값은 `specs/thesis.schema.yaml` `gate_result.path` 의 enum 이다
   (§4 `rejections.yaml` 의 `path` 열과 같은 값). 저널 항목에는 그중 **어느 경로였는지**를 적는다
 - thesis 의 `value_trap_axes` 전문 (`05-agent-research.md` §3) — 5축 판정과 그 근거 `evidence_refs`
@@ -110,7 +110,7 @@ state/
 
 `scans/` 는 재현성을 위해 보존한다. **몇 달 뒤 "그때 왜 이 테마가 3위였나" 를
 답할 수 없으면 캘리브레이션이 불가능하다.** 같은 이유로 기각 대장의
-"상위 K 컷오프 바로 아래" 질문(`10-validation.md` §4 (c))도 `scans/` 의 순위 스냅샷에 의존한다.
+"상위 K 컷오프 바로 아래" 질문(`10-validation.md` §5 (c))도 `scans/` 의 순위 스냅샷에 의존한다.
 
 **`rejections.yaml` 이 `journal/` 이 아니라 `state/` 에 있는 이유.** 각 행은 기각 시점에
 append 되지만 `r_12m`·`r_24m` 열은 12·24개월 뒤에 기계가 채운다. 저널은 append-only 이고
@@ -132,7 +132,7 @@ append 되지만 `r_12m`·`r_24m` 열은 12·24개월 뒤에 기계가 채운다
 
 행 추가는 자유롭되 **기존 행의 기각 시점 필드(`path` 이하 `scan` 까지)는 수정하지 않는다.**
 채울 수 있는 것은 사후 수익률 열뿐이며, 그 값으로 임계값을 조정하는 것은
-`CLAUDE.md` §1 위반이다 (`10-validation.md` §4 경계).
+`CLAUDE.md` §1 위반이다 (`10-validation.md` §5 경계).
 
 ## 5. 실패 시 동작
 

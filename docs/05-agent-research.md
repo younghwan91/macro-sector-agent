@@ -196,7 +196,7 @@ evidence:                         # 비면 스키마 검증 실패 (CLAUDE.md §
 | 규약 | 근거 |
 |---|---|
 | `evidence` 배열이 비면 저장 거부 | `CLAUDE.md` §3. LLM 의 기억은 증거가 아니다 |
-| **게이트 기각된 thesis 는 저장한다** | 스키마 미달과 게이트 기각은 다르다. 스키마 미달은 **산출물이 불완전한 것**이라 저장을 거부하지만, 게이트 기각은 **완전한 산출물에 대한 판정**이므로 감사 대상이다. `gate_result.status: rejected` 로 저장하고 기각 대장에 적재한다 (`10-validation.md` §4, `09-operations.md` §4) |
+| **게이트 기각된 thesis 는 저장한다** | 스키마 미달과 게이트 기각은 다르다. 스키마 미달은 **산출물이 불완전한 것**이라 저장을 거부하지만, 게이트 기각은 **완전한 산출물에 대한 판정**이므로 감사 대상이다. `gate_result.status: rejected` 로 저장하고 기각 대장에 적재한다 (`10-validation.md` §5, `09-operations.md` §4) |
 | `gate_result.status: contested` 는 포트 편입 불가 | `04-value-trap.md` §3.1. 관찰 목록에만 올린다. `referee_ruling` 과 `referee_evidence_refs` 없이 contested 를 유지할 수 없다 |
 | `invalidations` 가 비면 저장 거부 | `CLAUDE.md` §5. 무효화 조건이 곧 스탑의 근거 |
 | `mechanism` 에 상관 서술 금지 | "역사적으로 함께 움직였다" 는 메커니즘이 아니다 |

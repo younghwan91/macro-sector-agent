@@ -32,10 +32,16 @@ AG(은) · SBSW(PGM) · MP(희토류) · ALM(리튬) 로 구성해 단기에 30%
 
 ## 이 저장소의 지배적 규약
 
-**백테스트를 하지 않는다.** 테마 사이클은 표본이 20~30개뿐이라 통계적 검증이 성립하지 않는다.
+**백테스트는 절반만 한다.** 결정론 계층(L1 스코어보드 · L2 거시 DAG · L4 종목 선정)은
+입력이 가격과 재무제표뿐이라 1998년까지 소급 검정된다 — 폐지 종목 18,169개를 포함한
+20,931 종목이 있다. 재는 것은 전략 수익률이 아니라 **스코어의 예측력**(rank-IC)이고,
+관문은 `portfolio-research` 의 walk-forward · Deflated Sharpe · PBO 를 그대로 쓴다.
+
+**나머지 절반은 불가능하다.** L3(에이전트 리서치)·가치함정 축 3(대체 위협)·`cycle_confidence` 는
+2015년의 정책과 광산 폐쇄를 오늘의 지식 없이 재구성할 수 없다.
 대신 관문을 **사전 반증가능성(ex-ante falsifiability)** 으로 옮긴다 —
 모든 테마 논지는 *관측 가능한 트리거* 와 *무효화 조건* 없이는 저장될 수 없고,
-검증은 백테스트가 아니라 **전향적 기록** 과 **확신도 캘리브레이션(Brier score)** 이 한다.
+그 절반의 검증은 **전향적 기록** 과 **확신도 캘리브레이션(Brier score)** 이 한다.
 자세히는 `docs/10-validation.md`.
 
 ## 문서
@@ -52,7 +58,7 @@ AG(은) · SBSW(PGM) · MP(희토류) · ALM(리튬) 로 구성해 단기에 30%
 | [07-portfolio](docs/07-portfolio.md) | L5 리스크 예산 최적화 정식화 · 물타기 사다리 · 2단 스탑 · TP 사다리 |
 | [08-data-contract](docs/08-data-contract.md) | 데이터 계약 · 재사용 경계 · **부트스트랩 절차** |
 | [09-operations](docs/09-operations.md) | 케이던스 · 결정 저널 · 배달 |
-| [10-validation](docs/10-validation.md) | 백테스트 없는 관문 |
+| [10-validation](docs/10-validation.md) | 무엇을 재고 무엇을 못 재는가 — 결정론 계층의 백테스트 관문 + 캘리브레이션 |
 | [11-roadmap](docs/11-roadmap.md) | 구현 순서와 마일스톤 완료 판정 기준 |
 | [specs/](docs/specs/) | `themes.example.yaml` · `macro-dag.example.yaml` · `thesis.schema.yaml` |
 

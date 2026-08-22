@@ -214,14 +214,14 @@ properties:
         enum: [hard_gate, conf_floor, secular_risk, rank_cutoff, human]
         note: >
           기각 대장의 경로 분류. 값은 state/rejections.yaml 의 path 열과 동일해야 한다
-          (09-operations.md §4, 10-validation.md §4). 대장 쪽 형식은 그쪽이 정하며 여기서 바꾸지 않는다.
+          (09-operations.md §4, 10-validation.md §5). 대장 쪽 형식은 그쪽이 정하며 여기서 바꾸지 않는다.
 
       axis_verdicts:
         type: object
         note: >
           **기각 시점의 축별 판정 스냅샷.** value_trap_axes 의 5축 verdict 를 그대로 복사한다.
           thesis 가 나중에 재실행돼 축 판정이 바뀌어도, 그때 무엇을 보고 닫았는지가 남아야
-          기각 대장이 게이트의 위양성률을 집계할 수 있다 (10-validation.md §4 (a)(b)).
+          기각 대장이 게이트의 위양성률을 집계할 수 있다 (10-validation.md §5 (a)(b)).
         properties:
           unit_demand:   {enum: [cycle, warning, death, contested, not_applicable]}
           capital_cycle: {enum: [cycle, warning, death, contested, not_applicable]}
@@ -247,6 +247,6 @@ properties:
 
     note: >
       04-value-trap.md §3 하드 게이트 적용 결과. **기각도 저널에 남고 기각 대장에 적재된다**
-      (10-validation.md §4, 09-operations.md §4). 스키마 검증 실패로 저장이 거부되는 것과
+      (10-validation.md §5, 09-operations.md §4). 스키마 검증 실패로 저장이 거부되는 것과
       게이트 기각은 다르다 — 앞은 산출물이 불완전한 것이고, 뒤는 완전한 산출물에 대한 판정이다
       (05-agent-research.md §4).
