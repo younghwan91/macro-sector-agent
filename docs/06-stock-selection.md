@@ -118,3 +118,64 @@ MP · rare_earth · TORQUE
 
 **`S` 의 하위 항목을 접지 않는다.** 종합 점수만 보면 4분기 런웨이와 12분기 런웨이가
 같은 0.42 로 보인다. 사이클 저점 투자에서 그 차이가 전부다.
+
+## 8. 구현 노트 (M5) — 문서가 비워 둔 곳을 어떻게 채웠는가
+
+`src/msa/l4/` (`features`·`axes`·`barbell`·`picks`), 명령 `msa picks <theme> [--asof --top --no-write
+--no-physical]`, 산출물 `state/picks/<date>/<theme>/{ranking,excluded}.csv · report.txt · meta.json`.
+아래 값은 전부 **선언**이며 데이터에 맞춰 고르지 않았다 (`CLAUDE.md` §1). 바꾸려면 근거를 여기와
+커밋 메시지에 남긴다. 사후 대조 결과는 `docs/picks-m5-check.md`.
+
+### 8.1 입력이 없어 적용하지 못한 것 — 리포트·`meta.json` 에 매번 적힌다
+
+| 문서의 입력 | 실측 | 처리 |
+|---|---|---|
+| `going_concern` | 감사의견은 스토어에 없다 (에이전트/SEC 파싱 영역) | 하드 제외 **미적용**. `inputs_unavailable` 에 표기 |
+| `maturity_wall_24m` | SF1 에 만기 스케줄이 없다. 유동부채 `debtc`(12개월 내)만 있다 | `maturity_wall_12m = debtc / 시총` 으로 대용. 12m ⊂ 24m 이라 0.5 초과 제외는 오제외가 없고, 13~24개월 벽은 놓친다 |
+| `price_beta_hist` 의 상품가 | 테마 `physical_ref` 가 있고 데이터가 있을 때만 (ETF 는 벌크 zip, manual 은 `state/physical/manual/`) | 없으면 NaN + 사유. `rare_earth` 는 `physical_ref` 미선언, `lithium` 은 manual 파일 없음 |
+| 레드플래그 `partial_capital_impairment` | SF1 에 자본금(`capital_stock`) 없음 | 계산 불가로 표기 (`vendor/redflags.NOT_COMPUTABLE`) |
+| 20-F 해외발행사 재무 | SBSW·SQM·BVN 은 `fundamentals` 에 **행이 0개** | `fund_status=none` → 생존 필터 판정 불가로 제외, 사유 구분 |
+| `short_interest` · 컨센서스 · `insiders`/`institutions` | 각각 100% null · 0행 · 있음 | 이 문서가 요구하지 않아 **미사용**. `meta.json` `inputs_unused` 에 기록만 |
+
+### 8.2 계산식 — 문서가 이름만 준 곳
+
+| 항목 | 구현 | 근거 |
+|---|---|---|
+| PIT | 전부 `datekey ≤ asof` · 같은 `calendardate` 는 최초 보고분 (L1 과 동일). 스냅샷 지표도 예외 없음 | 한 모듈에 두 규칙을 섞지 않는다. 백테스트·오늘의 스캔이 같은 함수를 `asof` 만 바꿔 부른다 |
+| TTM | 직전 4분기, 4개 전부 있고 4번째가 **300일 이내** | L1 은 400일 — 4개 분기말 정상 간격 273일, 한 분기 빠지면 365일이라 400일은 한 분기 결측을 통과시킨다. 테마 합산에선 희석되지만 종목 런웨이에선 25% 오차 |
+| `cash_runway_q` | 현금 / (TTM FCF 의 분기 평균 소진). FCF ≥ 0 → ∞. `fcf` null 이면 `ncfo + capex`. 현금흐름표 자체가 없으면 NaN → **판정 불가로 하드 제외** | 광업 capex 는 분기 덩어리라 단일 분기 FCF 는 4분기 제외를 한 분기 착시로 발동시킨다. 판정 불가를 통과로 두면 생존 축 1차 항목이 빈 종목이 상위에 온다 (실측: 반기 보고 해외발행사 GMTL·IPX·CRML 이 그렇게 1위에 올랐었다) |
+| `net_debt_ebitda` | (부채 − 현금)/EBITDA_ttm, EBITDA ≤ 0 이면 /시총 (`nd_basis` 에 표기) | 문서 그대로 |
+| `dilution_3y` | 최신 `sharesbas` 대비 36개월(±60일) 전 행의 CAGR — 날짜로 찾는다 | 행 위치(lag 12)는 결측 분기가 있으면 기간이 틀어진다 |
+| `opleverage` | 12분기 QoQ ΔEBITDA_ttm ~ Δ매출_ttm 회귀 기울기(`incremental_margin`) ÷ max(\|현재 마진\|, 0.05). 최소 8쌍. 차분이 상수(완전 선형)면 NaN | "ΔEBITDA%/Δ매출%" 는 EBITDA≈0 에서 발산. 분모 5pp 바닥은 순위가 분모 잡음에 지배되지 않게 하는 값 |
+| `fixed_cost_ratio` | (매출_ttm − `cor`_ttm)/매출_ttm | 문서의 "(매출 − 변동비 추정)/매출" 에서 변동비 = 매출원가 |
+| `margin_headroom` | 테마 Σebitda_ttm/Σrevenue_ttm 분기 시계열(최근 40분기, 분기당 ≥ 2 구성원)의 P75 − 현재 마진. 시계열 < 12분기면 NaN | "섹터 자기이력 P75" 의 섹터 = 테마 |
+| `marginal_producer` | 현재 마진이 상장 구성원(매출 > 0) 하위 25%. 그런 구성원이 4개 미만이면 NA | 사분위는 관측 4개 미만에서 정의되지 않는다 (실측: `silver_miners` 는 2개) |
+| `price_beta_hist` | 참조가격 10년 저점 → 그 후 고점(≥ 12개월) 구간의 (EBITDA_ttm 변화 / 저점 시 매출_ttm) ÷ log(P₁/P₀) | "EBITDA %변화" 는 적자에서 정의되지 않아 매출로 정규화(마진 pp / 가격 100%). 표본 1 사이클 — 문서의 경고 그대로 |
+| `equity_leverage` | (순부채 + 시총)/시총 | 문서 그대로 |
+| `rs_rating` | 0.4·r3m + 0.2·r6m + 0.2·r9m + 0.2·r12m 의 **전체 유니버스**(그날 가격 있는 전 종목, 5개 거래일 슬라이스만 읽음) 백분위 1~99 | IBD 공표 방식 |
+| `stage2` | `close > SMA150 > SMA200`, SMA200 이 21거래일 전보다 위, 52주 저점 +30% 이상, 고점 −25% 이내 | 문서 그대로 (Minervini) |
+| `vcp_base` | 252일 창 · 피벗 좌우 5일 · 마지막 수축 ≤ 4개 중 2개 이상이 단조 감소 · 10일 거래량 < 50일 | L1 `vcp_index_score` 와 같은 피벗 파라미터 + dry-up |
+| `rvol_expansion` | 20일 평균 거래량 / 50일 평균 거래량 | 1 초과 = 확장 |
+| 상장 판정 | asof 이전 10거래일(SPY 달력) 안에 가격 행 | 폐지·거래정지 제외 수를 보고 |
+| 최신 분기 신선도 | `calendardate ≥ asof − 15개월` (L1 과 동일) | 그보다 오래되면 `fund_status=stale` → 제외 |
+
+### 8.3 축 점수 — 문서가 가중치를 비워 둔 곳
+
+| 항목 | 선언 | 근거 |
+|---|---|---|
+| S 원점수 | `0.40·runway_score + 0.30·leverage_score + 0.30·penalty_score` | 런웨이는 §2 가 "1차 사망 원인" 이라 부른 항목 → 최대. 레버리지는 두 번째 하드 항목. 감점 5종 + 레드플래그 4종은 등가의 보조 신호 |
+| `runway_score` | `clip(runway_q / 8, 0, 1)`, FCF ≥ 0 → 1 | 논지 horizon 6~18개월(`05` `horizon_months`) 상한 + 자금조달 6개월 = 8분기. 그 너머는 논지 창 안의 생존을 더 늘리지 않는다 |
+| `leverage_score` | `1 − clip(ND/EBITDA / 6, 0, 1)`, 순현금 → 1 | 하드 제외 임계 6× 를 0 점으로 두는 선형 감점 |
+| `penalty_score` | `1 − 발동 수 / 평가 가능 수` (ND/EBITDA > 4 · 이자보상 < 1 · 희석 > 15%/y · ADV < $2M · 종가 < $2 · 레드플래그 4종) | 감점 항목끼리 우열 근거가 없어 등가. 입력 없는 항목은 분모에서 뺀다 — 없는 것을 통과로 세지 않는다 |
+| T 원점수 | 6개 구성 요소(`margin_headroom`·`opleverage`·`fixed_cost_ratio`·`price_beta_hist`·`equity_leverage`·`marginal_producer`)의 테마 내 백분위 평균, 불리언은 0/1, 전부 높을수록 ↑ | 문서가 순서를 주지 않았다. `price_beta_hist` 는 "가장 직접적" 이지만 "표본 1~2 사이클" 이라 가중하지 않는다 |
+| M 원점수 | `stage2`·`rs_rating/100`·`vcp_base`·`above_50d`·pct(`from_52w_low`)·pct(`rvol_expansion`) 의 평균 | §4 의 6개 등가. M 은 종합 가중 0.20 으로 이미 낮다 |
+| 축 최소 입력 | T·M 모두 6개 중 **3개 이상**, 아니면 NaN | 소수 구성 요소의 평균은 그 축이 아니라 다른 것을 잰다 (실측: `above_50d` 하나로 M=1.0 이 나왔었다) |
+| 종합 | `0.40·S̃ + 0.40·T̃ + 0.20·M̃` (§6). 축이 NaN 이면 가용 축 가중치를 재정규화하고 `composite_partial` 표시 | 빈 축을 0 으로 두면 순위가 결측에 지배되고, 표시 없이 재정규화하면 조용한 절단 |
+| 순위 동률 | 종합 ↓ → S̃ ↓ → 티커 ↑ | 결정론 |
+| 바벨 "S̃ 상위" | `S̃ ≥ 0.5` 이고 `marginal_producer` 가 True 가 아닌 것 중 T̃ 최고 | 중앙값은 표본 크기에 무관. "저비용 생산자" — 한계생산자는 정의상 아니다 |
+| 바벨 수 배분 | `n_anchor = max(1, top // 2)`, 나머지 토크(`S̃ ≤ 0.25` 제외, **T̃ 가 계산된 종목만**). 후보가 모자라면 자리는 비고 비율에 드러난다 | §5 비중 55~70/30~45 를 수로 옮기면 절반 전후. T̃ NaN 은 "T̃ 상위" 일 수 없다. 비중 자체는 L5 |
+
+### 8.4 아직 없는 것
+- 로열티/스트리밍·미드스트림 옵션 그룹 태깅 (§5) — Sharadar 에 라벨이 없다. 실측에서 MTA·ELE·VOXR·TFPM 같은 로열티사가 일반 생산자와 섞여 랭킹된다
+- 에이전트 thesis 입력 (§7 의 `주의:` 줄 재료) — M7 뒤
+- L4 축별 rank-IC 백테스트 — `10-validation.md` §2. 특성 함수는 PIT 라 `asof` 만 바꾸면 된다

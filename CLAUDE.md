@@ -1,8 +1,8 @@
 # macro-sector-agent — 작업 규약
 
 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 하향식 리서치 파이프라인.
-**현재 M3 까지 구현** (`src/msa/` — L0 데이터 · 테마 유니버스 · L1 스캐너 `msa scan`). 이후 단계는
-`docs/11-roadmap.md`. 어느 계층이든 손대기 전에 해당 `docs/` 를 먼저 읽는다.
+**현재 M3 + M5 구현** (`src/msa/` — L0 데이터 · 테마 유니버스 · L1 스캐너 `msa scan` ·
+L4 종목 선정 `msa picks`). 이후 단계는 `docs/11-roadmap.md`. 어느 계층이든 손대기 전에 해당 `docs/` 를 먼저 읽는다.
 
 ## 절대 규칙
 
@@ -104,10 +104,11 @@ msa data status       # 스토어 상태·결측률 (M1)
 msa data audit        # 커버리지 감사 — 데이터 부분 (M1)
 msa scan              # L1 사이클 스캐너 → 테마 스코어보드 (M3). --asof --force --no-vcp
                       #   산출물 state/scans/<date>/ (scoreboard·indicators·coverage·report·meta)
+msa picks <theme>     # L4 종목 선정 — S·T·M 3축 · 하드 필터 · 바벨 (M5). --asof --top --no-write
+                      #   --no-physical. 산출물 state/picks/<date>/<theme>/ (ranking·excluded·report·meta)
 # 아래는 미구현 — 호출하면 NotImplementedError
 msa macro             # L2 거시 국면 + 드라이버 상태
 msa research <theme>  # L3 에이전트 (베어 포함) → thesis 객체
-msa picks <theme>     # L4 종목 랭킹
 msa portfolio         # L5 포트 구성 + 매매계획
 msa check             # 주간 트리거/무효화 점검
 ```
