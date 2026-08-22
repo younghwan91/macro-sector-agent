@@ -14,27 +14,34 @@ from typing import Any
 
 from msa.errors import RefusedInput
 
-# TODO(rf-d): 아래 enum 들은 `msa.thesis` 가 단일 소유자가 되면 거기서 import 로 바꾼다 (값은 같다).
-#: `gate_result.path` / `rejections.yaml` 의 `path` 열 — 두 곳이 같은 값을 쓴다 (docs/09 §4).
-REJECTION_PATHS: tuple[str, ...] = (
-    "hard_gate",
-    "conf_floor",
-    "secular_risk",
-    "rank_cutoff",
-    "human",
+#: thesis 열거형의 단일 소유자는 `msa.thesis` 다 (docs/specs/thesis.schema.yaml 기준). 여기서는
+#: 기존 임포터(`ops.journal`·`ops.state_files`·테스트)를 위해 같은 이름으로 재수출한다.
+#: `REJECTION_PATHS` 는 `gate_result.path` / `rejections.yaml` 의 `path` 열 — 두 곳이 같은 값을
+#: 쓴다 (docs/09 §4).
+from msa.thesis import (
+    AXES,
+    AXIS_VERDICTS,
+    CONFIDENCE_PROVENANCE,
+    INVALIDATION_ACTIONS,
+    INVALIDATION_STATUS,
+    REJECTION_PATHS,
+    TRIGGER_STATUS,
 )
-AXES: tuple[str, ...] = (
-    "unit_demand",
-    "capital_cycle",
-    "substitution",
-    "cost_curve",
-    "terminal_risk",
-)
-AXIS_VERDICTS: tuple[str, ...] = ("cycle", "warning", "death", "contested", "not_applicable")
-TRIGGER_STATUS: tuple[str, ...] = ("pending", "met", "missed")
-INVALIDATION_STATUS: tuple[str, ...] = ("pending", "fired")
-INVALIDATION_ACTIONS: tuple[str, ...] = ("exit", "halve", "freeze_ladder")
-CONFIDENCE_PROVENANCE: tuple[str, ...] = ("human", "referee")
+
+__all__ = [
+    "AXES",
+    "AXIS_VERDICTS",
+    "CONFIDENCE_PROVENANCE",
+    "INVALIDATION_ACTIONS",
+    "INVALIDATION_STATUS",
+    "REJECTION_PATHS",
+    "TRIGGER_STATUS",
+    "ThesisInvalid",
+    "diff_thesis",
+    "flatten",
+    "render_diff",
+    "validate_thesis",
+]
 
 _REQUIRED_TOP = (
     "theme_id",
@@ -118,7 +125,8 @@ def validate_thesis(t: dict[str, Any]) -> None:
 
 # ---------------------------------------------------------------------------
 # 필드 단위 diff — 논지 표류 추적 (docs/05 §6, docs/09 §2)
-# TODO(rf-d): `msa.thesis.thesis_diff` 가 생기면 flatten/diff/render 를 그쪽 재-export 로 바꾼다.
+# `msa.thesis.thesis_diff` (L3 의 필드 단위 표류 diff) 와는 의도적으로 별개다 — 이쪽은 저널용
+# 평탄(flatten) diff 이며 `msa journal diff` 출력 형식이 여기에 걸려 있다.
 # ---------------------------------------------------------------------------
 
 

@@ -43,7 +43,7 @@ from msa.ops.thesis import (
 BLOCKS = ("A", "B", "C", "D", "E", "F")
 ENTRY_TYPES = ("entry", "check", "add", "tp", "exit", "reject")
 # 열거형은 `Literal` 에 한 번 적고 런타임 검사는 `get_args` 로 같은 값을 본다 (역할·TP 단계는
-# `state_files` 의 것을 쓴다). TODO(rf-d): `msa.thesis` 가 생기면 그쪽 enum 으로 바꾼다.
+# `state_files` 의 것을 쓴다; thesis 열거형은 `msa.thesis` 가 소유하고 `ops.thesis` 가 재수출한다).
 ExitVia = Literal["tier1", "tier2", "time_stop", "tp_complete", "human"]
 CheckCadence = Literal["weekly", "monthly", "daily"]
 LadderStepNo = Literal[2, 3]
