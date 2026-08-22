@@ -1,0 +1,1236 @@
+# 거시 인과 DAG (L2) — 드라이버 26개 · 선언된 인과 엣지
+#
+# 규약 (CLAUDE.md §1, docs/03-macro-dag.md §1):
+#   엣지의 부호·시차·강도를 데이터로 학습하지 않는다. 사람이 선언하고 근거를 쓴다.
+#   데이터는 반박(§6 모순 감사)에만 쓰이며, 가중치를 조정하는 데 쓰지 않는다.
+#   `channel` 이 비면 스키마 검증 실패 — 메커니즘 없는 상관은 엣지가 아니다.
+#
+# 테마 id 는 `state/themes.yaml` 이 정본이다. 이 파일은 `docs/01-theme-universe.md` §3
+# 초안(109개) 기준으로 작성됐으며, M2 에서 Sharadar industry 실측으로 테마가 확정되면
+# 반드시 대조해야 한다 (`scripts/audit_dag.py` 가 `state/themes.yaml` 존재 시 그걸 정본으로 읽는다).
+#
+# FRED 시리즈 ID 는 `docs/08-data-contract.md` §3 표를 정본으로 썼다.
+# docs/03 §2 와 docs/08 §3 의 불일치는 없었다 — 03 이 소스를 서술로만 적은 항목
+# (`gold_price`, `copper_price`, `defense_outlays`)에 대해 08 의 판정(프록시/확인 필요)을 그대로 반영했다.
+
+schema_version: 1
+
+drivers:
+
+  # ── 금리·통화 ──────────────────────────────────────────────────────────
+  - id: real_rate_10y
+    source: {provider: fred, series: DFII10}
+    measure: change_6m_bp
+    state_rule:
+      favorable_when: "change_6m_bp < -25"
+      neutral_band: [-25, 25]
+    common_factor: false
+
+  - id: term_spread
+    source: {provider: fred, series: T10Y2Y}
+    measure: change_6m_bp
+    state_rule:
+      favorable_when: "change_6m_bp > 25"      # 가팔라짐 = 역전 해소
+      neutral_band: [-25, 25]
+    common_factor: false
+
+  - id: breakeven_10y
+    source: {provider: fred, series: T10YIE}
+    measure: change_6m_bp
+    state_rule:
+      favorable_when: "change_6m_bp > 15"
+      neutral_band: [-15, 15]
+    common_factor: false
+
+  - id: dollar_broad
+    source: {provider: fred, series: DTWEXBGS}
+    measure: change_6m
+    state_rule:
+      favorable_when: "change_6m < -0.02"
+      neutral_band: [-0.02, 0.02]
+    common_factor: false
+
+  - id: fed_policy_path
+    source:
+      provider: fred
+      series: DFEDTARU
+      note: >
+        선물 곡선(시장 기대 경로)은 FRED 에 없다 (docs/08 §3). 정책 경로의 기대 부분은
+        외부 소스 또는 에이전트가 채우며, state 판정은 실현된 DFEDTARU 변화로만 한다.
+    measure: change_6m_bp
+    state_rule:
+      favorable_when: "change_6m_bp < 0"
+      neutral_band: [-12.5, 12.5]
+    common_factor: true          # 정책 방향은 전 테마에 같은 부호 → 횡단면 중앙값 차감
+
+  - id: usd_liquidity
+    source:
+      provider: derived
+      formula: "WALCL - WTREGEN - RRPONTSYD"
+      note: "주기 불일치(주간/주간/일간) — 주간으로 정렬 후 계산"
+    measure: change_3m
+    state_rule: {favorable_when: "change_3m > 0"}
+    common_factor: true
+
+  - id: m2_growth
+    source: {provider: fred, series: M2SL}
+    measure: yoy
+    state_rule:
+      favorable_when: "yoy > 0.03"
+      neutral_band: [0.0, 0.03]
+    common_factor: true
+
+  # ── 성장·산업 ──────────────────────────────────────────────────────────
+  - id: industrial_production
+    source: {provider: fred, series: INDPRO}
+    measure: yoy_second_derivative
+    state_rule:
+      favorable_when: "yoy_second_derivative > 0"    # 감속의 감속
+    common_factor: false
+    pit_note: "개정이 크다 (docs/08 §3). 국면 판정은 개정 전 값 권장"
+
+  - id: new_orders_mfg
+    source: {provider: fred, series: AMTMNO}
+    measure: change_6m
+    state_rule: {favorable_when: "change_6m > 0"}
+    common_factor: false
+
+  - id: capex_orders_core
+    source:
+      provider: fred
+      series: NEWORDER
+      note: "비국방 자본재 신규수주 ex 항공. 기업 투자 사이클의 선행"
+    measure: change_6m
+    state_rule: {favorable_when: "change_6m > 0"}
+    common_factor: false
+
+  - id: inventory_sales
+    source: {provider: fred, series: ISRATIO}
+    measure: change_6m
+    state_rule:
+      favorable_when: "change_6m < 0"          # 재고 소진 → 재주문
+    common_factor: false
+
+  - id: housing_starts
+    source: {provider: fred, series: HOUST}
+    measure: change_6m
+    state_rule: {favorable_when: "change_6m > 0"}
+    common_factor: false
+
+  - id: employment
+    source:
+      provider: fred
+      series: [PAYEMS, UNRATE]
+      note: "PAYEMS 3개월 평균 증가분과 UNRATE 6개월 변화의 z-score 평균"
+    measure: composite_z
+    state_rule:
+      favorable_when: "composite_z > 0.25"
+      neutral_band: [-0.25, 0.25]
+    common_factor: false
+    pit_note: "개정이 크다 (docs/08 §3)"
+
+  # ── 신용·리스크 ────────────────────────────────────────────────────────
+  - id: hy_spread
+    source: {provider: fred, series: BAMLH0A0HYM2}
+    measure: change_3m_bp
+    state_rule:
+      favorable_when: "change_3m_bp < -50"     # 축소 = 우호
+      neutral_band: [-50, 50]
+    common_factor: false
+    note: >
+      docs/03 §5 는 hy_spread 를 국면 4분면의 3차원 축으로도 쓴다 (확대 시 전체 스코어에
+      곱셈 페널티). 그 용도와 별개로 여기서는 레버리지가 높은 테마에 개별 엣지를 갖는다.
+
+  - id: ig_spread
+    source: {provider: fred, series: BAMLC0A0CM}
+    measure: change_3m_bp
+    state_rule:
+      favorable_when: "change_3m_bp < -25"
+      neutral_band: [-25, 25]
+    common_factor: false
+
+  # ── 물가·원자재 ────────────────────────────────────────────────────────
+  - id: cpi_yoy
+    source: {provider: fred, series: CPIAUCSL}
+    measure: yoy
+    state_rule:
+      favorable_when: "yoy > 0.025"            # '우호' 는 인플레 방향이라는 뜻이지 좋다는 뜻이 아니다
+      neutral_band: [0.015, 0.025]
+    common_factor: false
+    note: "실질화 계산에도 사용. 엣지 부호가 −1 인 테마가 많다 (실질 가처분소득·투입비)"
+
+  - id: ppi_yoy
+    source: {provider: fred, series: PPIACO}
+    measure: yoy
+    state_rule:
+      favorable_when: "yoy > 0.02"
+      neutral_band: [0.0, 0.02]
+    common_factor: false
+
+  - id: oil_wti
+    source: {provider: fred, series: DCOILWTICO}
+    measure: change_6m
+    state_rule:
+      favorable_when: "change_6m > 0.10"
+      neutral_band: [-0.10, 0.10]
+    common_factor: false
+
+  - id: copper_price
+    source:
+      provider: fred
+      series: PCOPPUSDM
+      fallback: {provider: etf, symbol: CPER}
+      note: "docs/08 §3 — M1 에서 가용성 실측 확인 필요. 실패 시 CPER 로 폴백"
+    measure: change_6m
+    state_rule:
+      favorable_when: "change_6m > 0.05"
+      neutral_band: [-0.05, 0.05]
+    common_factor: false
+
+  - id: gold_price
+    source:
+      provider: etf
+      symbol: GLD
+      alt: [IAU]
+      note: "FRED 직접 시리즈가 불안정해 ETF 프록시를 정본으로 쓴다 (docs/08 §3)"
+    measure: change_6m
+    state_rule:
+      favorable_when: "change_6m > 0.05"
+      neutral_band: [-0.05, 0.05]
+    common_factor: false
+
+  - id: nat_gas
+    source: {provider: fred, series: DHHNGSP}
+    measure: change_6m
+    state_rule:
+      favorable_when: "change_6m > 0.15"
+      neutral_band: [-0.15, 0.15]
+    common_factor: false
+    note: >
+      가격 상승이 어떤 테마엔 매출(생산자·석탄 대체·머천트 발전), 어떤 테마엔 원가
+      (화학·알루미늄·비료·액화)다. 그래서 부호가 테마마다 갈린다 — 엣지별 channel 이 정본.
+
+  # ── 외부·수동 (FRED 밖) ────────────────────────────────────────────────
+  - id: china_credit_impulse
+    source:
+      provider: manual
+      note: "PBoC 사회융자총량(TSF) 12개월 변화 / GDP. 월 1회 수동/에이전트 갱신"
+    measure: level
+    state_rule:
+      favorable_when: "level > 0"
+      neutral_band: [-0.005, 0.005]
+    common_factor: false
+
+  - id: china_property
+    source:
+      provider: manual
+      note: "중국 주택 착공·판매 면적 YoY. 월 1회 갱신 (docs/08 §3 — FRED 에 없음)"
+    measure: yoy
+    state_rule:
+      favorable_when: "yoy > 0"
+      neutral_band: [-0.03, 0.03]
+    common_factor: false
+
+  - id: defense_outlays
+    source:
+      provider: fred
+      series: FDEFX
+      note: >
+        분기 시리즈. docs/08 §3 — M1 에서 실측 확인 필요. 예산안(NDAA·보충예산)은
+        에이전트가 이벤트로 보태되 state 판정은 집행 실적(FDEFX)으로 한다
+    measure: yoy
+    state_rule:
+      favorable_when: "yoy > 0.03"
+      neutral_band: [0.0, 0.03]
+    common_factor: false
+
+  - id: hyperscaler_capex
+    source:
+      provider: sharadar_derived
+      formula: "sum(capex) over [MSFT, GOOGL, AMZN, META, ORCL], TTM"
+      note: >
+        SF1 ARQ 에서 직접 합산한다. 재무제표라 늦고(분기말 +4~8주) 정확하다.
+        시점은 발주처 가이던스(catalyst_analyst)가 주되, state 는 재무제표로만 판정한다
+        (docs/03 §2). 가이던스와 재무제표가 어긋나면 리포트에 표시한다
+    measure: yoy
+    state_rule:
+      favorable_when: "yoy > 0.10"
+      neutral_band: [0.0, 0.10]
+    common_factor: false
+
+  - id: policy_events
+    source:
+      provider: agent
+      note: >
+        IRA·CHIPS·IIJA·관세·수출통제·원전 승인·약가 규제 등의 이벤트 캘린더.
+        시계열이 아니라 날짜 목록이라 state_rule 이 다른 드라이버와 다르다 (docs/08 §3)
+    measure: event_window
+    state_rule:
+      favorable_when: "직전 12개월 안에 해당 테마에 유리한 확정 이벤트가 있고, 불리한 확정 이벤트가 없다"
+      note: >
+        테마별로 판정이 갈리는 유일한 드라이버다. 다른 드라이버는 state 가 스칼라 하나지만
+        policy_events 는 (테마, 이벤트) 쌍으로 판정된다. 엣지의 sign 은 '해당 테마에
+        유리한 정책이 나왔을 때의 방향'을 뜻하며, 규제 리스크 테마는 sign = −1 로 적는다
+    common_factor: false
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 엣지
+#
+# 완료 기준은 개수가 아니라 조건이다 (docs/11-roadmap.md M4):
+#   모든 테마가 최소 2개의 입력 엣지를 갖는다. 공통 인자(common_factor: true)
+#   엣지는 이 하한에 세지 않는다 — 전 테마에 같은 부호라 상대 순위를 만들지 않기 때문이다.
+#
+# 부호 규약: sign = +1 은 '드라이버 값 상승 → 테마 우호', −1 은 '상승 → 역풍'.
+#   드라이버의 state_rule(favorable_when)이 어느 방향을 +1 로 놓는지와는 독립이다.
+#   tailwind 계산(docs/03 §4)은 state(from) ∈ {−1,0,+1} 에 sign 을 곱한다.
+# ═══════════════════════════════════════════════════════════════════════════
+
+edges:
+
+  # ───────────────────────────────────────────────────────────────────────
+  # dollar_broad — 달러
+  # ───────────────────────────────────────────────────────────────────────
+  - from: dollar_broad
+    to: [gold_miners, silver_miners, pgm_miners, copper_miners, steel_iron, aluminum,
+         nickel_cobalt, diversified_miners, lithium, uranium, coal, fertilizer_potash]
+    sign: -1
+    lag_months: [0, 3]
+    strength: strong
+    channel: >
+      달러 표시 원자재 가격의 역수 관계에 더해, 비미국 생산자의 원가가 현지통화이므로
+      달러 약세 시 매출은 달러·원가는 현지통화로 마진이 이중 확대된다.
+      광업은 고정비 비중이 커서 가격 변화가 마진에 레버리지로 증폭된다.
+    evidence: "1971-1980, 2001-2011, 2019-2020, 2024-2026 국면에서 일관"
+    observable: "DTWEXBGS 6개월 변화 < -2%"
+    contradicts_when: >
+      달러와 금이 동반 강세면 통화체계 신뢰 훼손(안전자산 동반 매수) 국면이다.
+      이 엣지로 설명되지 않으므로 별도 논지가 필요 — 자동 점수에서 제외 플래그.
+
+  - from: dollar_broad
+    to: [oil_gas_ep, intl_majors, oil_services, lumber_paper]
+    sign: -1
+    lag_months: [0, 3]
+    strength: moderate
+    channel: >
+      달러 표시 가격 경로는 금속과 같으나, 이들은 원가도 상당 부분 달러(미국 내 조업·
+      미국 임금)라 이중 확대가 약하다. 국제 메이저는 비달러 원가 비중이 높아 더 민감하다.
+    evidence: "2014-2016 달러 급등 + 유가 붕괴 동반, 2020-2021 반대 국면"
+    observable: "DTWEXBGS 6개월 변화 < -2%"
+
+  - from: dollar_broad
+    to: [agribusiness, ag_machinery]
+    sign: -1
+    lag_months: [3, 9]
+    strength: moderate
+    channel: >
+      달러 약세는 미국 곡물의 수출 가격 경쟁력을 높여 수출 물량과 농가 소득을 올린다.
+      농가 소득이 장비 교체 주기의 자금원이므로 농기계는 한 분기 더 늦게 반응한다.
+    evidence: "2007-2008, 2010-2012 곡물 수출 호황기의 농가 소득·장비 수요"
+    observable: "DTWEXBGS 6개월 변화 < -2% 이고 곡물 수출 검사량이 전년 대비 증가"
+
+  - from: dollar_broad
+    to: [pharma_large, food_beverage, household_products, alcohol]
+    sign: -1
+    lag_months: [0, 6]
+    strength: weak
+    channel: >
+      해외 매출 비중이 40~60% 대인 미국 상장 대형주라, 달러 약세는 환산 매출과
+      보고 이익을 직접 밀어올린다. 실물 수요 경로가 아니라 순수 환산 경로다.
+    evidence: "2017, 2020-2021 달러 약세 구간의 다국적 소비재 EPS 환산 기여"
+    observable: "DTWEXBGS 6개월 변화 < -2%"
+    contradicts_when: >
+      환헤지 비중이 높은 기업은 1~2년 지연되어 나타난다. 환산 기여는 일회성이라
+      추세가 아니라 레벨 시프트로 봐야 한다.
+
+  - from: dollar_broad
+    to: [apparel_footwear]
+    sign: +1
+    lag_months: [3, 9]
+    strength: weak
+    channel: >
+      매출은 거의 전부 미국 내 달러인데 소싱 원가는 아시아 생산이라, 달러 강세는
+      매입원가(달러 환산)를 낮춰 총마진을 넓힌다. 다른 소비재와 부호가 반대인 이유가 이것이다.
+    evidence: "2014-2015 달러 강세 구간의 소싱 마진 확대"
+    observable: "DTWEXBGS 6개월 변화 > +2%"
+    contradicts_when: >
+      달러 강세가 신흥국 수요 위축이나 관세와 동반하면 매출 경로가 마진 경로를 압도한다.
+
+  # ───────────────────────────────────────────────────────────────────────
+  # real_rate_10y — 실질금리
+  # ───────────────────────────────────────────────────────────────────────
+  - from: real_rate_10y
+    to: [gold_miners, silver_miners, pgm_miners]
+    sign: -1
+    lag_months: [0, 2]
+    strength: strong
+    channel: "무이자 자산 보유의 기회비용. 실질금리가 곧 금의 캐리 코스트이며, 광업주는 금가격에 레버리지된다"
+    evidence: "2003-2011, 2019-2020, 2024-2026"
+    observable: "DFII10 6개월 변화 < -25bp"
+    contradicts_when: >
+      2022년 이후 중앙은행 매수와 지정학 수요로 실질금리 상승 국면에서도 금이 오른 구간이 있다.
+      모순 감사에서 36개월 창을 특히 주시할 엣지.
+
+  - from: real_rate_10y
+    to: [biotech_clinical]
+    sign: -1
+    lag_months: [0, 3]
+    strength: strong
+    channel: >
+      임상단계 기업은 현금흐름이 전부 원거리라 할인율 민감도가 극단적이고,
+      동시에 자금조달(2차 발행) 창구가 금리에 직접 좌우된다. 두 경로가 같은 방향.
+    evidence: "2021-2022 XBI -60%, 2023Q4 금리 피크아웃 직후 급반등"
+    observable: "DFII10 6개월 변화 < -25bp"
+
+  - from: real_rate_10y
+    to: [homebuilders, home_improvement, lumber_paper]
+    sign: -1
+    lag_months: [3, 9]
+    strength: strong
+    channel: >
+      30년 모기지 금리가 10년 실질금리에 연동되고, 월 상환액이 곧 주택 구매력이다.
+      계약 → 착공 → 자재 인도의 순서로 전달되므로 주택개량·목재가 건설사보다 늦다.
+    evidence: "2020-2021 저금리 착공 붐, 2022-2023 금리 급등 후 거래량 붕괴"
+    observable: "DFII10 6개월 변화 < -25bp"
+
+  - from: real_rate_10y
+    to: [reit_office, reit_retail, reit_industrial, reit_residential, reit_datacenter,
+         reit_towers, reit_healthcare]
+    sign: -1
+    lag_months: [0, 6]
+    strength: strong
+    channel: >
+      리츠 밸류에이션은 캡레이트로 결정되고 캡레이트는 무위험 실질금리 + 리스크 프리미엄이다.
+      동시에 리츠는 구조적 고레버리지라 조달비용이 FFO 에 직접 들어간다.
+    evidence: "2022 금리 급등기 리츠 섹터 일제 디레이팅, 2019 금리 인하기 반대"
+    observable: "DFII10 6개월 변화 < -25bp"
+
+  - from: real_rate_10y
+    to: [utility_regulated, water_utility, gas_utility, telecom_carriers, cable_broadband,
+         midstream, tobacco, household_products]
+    sign: -1
+    lag_months: [0, 6]
+    strength: moderate
+    channel: >
+      배당수익률로 보유되는 본드 프록시라 장기금리와 직접 경쟁한다. 규제 유틸리티는
+      요금 재산정 주기가 길어 조달비용 상승을 즉시 전가하지 못하는 경로가 추가된다.
+    evidence: "2013 테이퍼 탠트럼, 2022 금리 급등기 유틸·통신 동반 디레이팅"
+    observable: "DFII10 6개월 변화 < -25bp"
+
+  - from: real_rate_10y
+    to: [software_infra, software_vertical, cybersecurity, semi_eda_ip, internet_platform,
+         media_streaming, gaming_interactive, space_satellite]
+    sign: -1
+    lag_months: [0, 3]
+    strength: moderate
+    channel: >
+      이익의 대부분이 5년 이후에 있는 장기 듀레이션 자산이라 할인율 변화가 밸류에이션을
+      직접 움직인다. 실물 수요 경로가 아니라 순수 할인율 경로다.
+    evidence: "2021-2022 고성장 SaaS 멀티플 반토막, 2023Q4 반등"
+    observable: "DFII10 6개월 변화 < -25bp"
+    contradicts_when: >
+      2023-2026 처럼 AI 실적 개선이 할인율을 압도하는 구간에서는 부호가 뒤집혀 보인다.
+      이 엣지는 이익 추정이 정체된 구간에서만 지배적이다.
+
+  - from: real_rate_10y
+    to: [solar, wind, hydrogen_fuelcell, energy_storage, ev_charging, nuclear_smr,
+         infra_construction, offshore_drilling, lng]
+    sign: -1
+    lag_months: [3, 12]
+    strength: strong
+    channel: >
+      프로젝트 파이낸싱으로 지어지는 자산이라 자본비용이 곧 LCOE 이고, PPA 가격 대비
+      IRR 이 금리에서 결정된다. 금리가 오르면 발주 자체가 취소·연기된다 — 밸류에이션이
+      아니라 수주 물량이 줄어드는 경로다.
+    evidence: "2022-2023 금리 급등기 해상풍력 프로젝트 대량 취소·상각"
+    observable: "DFII10 6개월 변화 < -25bp"
+
+  - from: real_rate_10y
+    to: [auto_oem, auto_parts, consumer_finance, hotels_resorts, ag_machinery,
+         construction_machinery, hvac_building]
+    sign: -1
+    lag_months: [3, 9]
+    strength: moderate
+    channel: >
+      할부·리스로 팔리는 고가 내구재라 소비자·사업자가 보는 것은 가격이 아니라 월 상환액이다.
+      금리가 월 상환액을 통해 판매 대수를 직접 좌우하고, 캡티브 금융의 조달비용도 같은 방향이다.
+    evidence: "2022-2023 자동차 할부금리 급등 후 판매 믹스 하향, 2020-2021 반대"
+    observable: "DFII10 6개월 변화 < -25bp"
+
+  - from: real_rate_10y
+    to: [banks_regional]
+    sign: -1
+    lag_months: [0, 3]
+    strength: moderate
+    channel: >
+      매도가능증권(AFS) 포트폴리오의 평가손이 자본비율을 깎고, 예금 이탈 시 손실이
+      실현된다. 대형은행보다 채권 비중이 크고 헤지가 얕아 노출이 크다.
+    evidence: "2023년 3월 지역은행 사태 — 금리 상승이 자본이 아니라 유동성 사건으로 전이"
+    observable: "DFII10 6개월 변화 < -25bp"
+    contradicts_when: >
+      순이자마진 경로(term_spread 엣지)와 부호가 반대다. 어느 쪽이 지배하는지는
+      곡선 형태에 달렸다 — 단기금리만 오르는 역전 국면에서는 이 엣지가, 곡선이
+      평행 이동하는 국면에서는 term_spread 엣지가 지배한다.
+
+  - from: real_rate_10y
+    to: [insurance_pc, insurance_life, reinsurance]
+    sign: +1
+    lag_months: [6, 24]
+    strength: moderate
+    channel: >
+      보험 플로트와 준비금을 채권으로 굴리므로 금리 상승이 재투자 수익률을 올린다.
+      다른 금융과 부호가 반대인 이유는 이들이 차입자가 아니라 대여자이기 때문이다.
+      만기 도래분이 순차 재투자되므로 전달이 느리고 오래 간다.
+    evidence: "2022-2025 금리 상승기 손보·재보험의 투자이익 확대"
+    observable: "DFII10 6개월 변화 > +25bp"
+    contradicts_when: >
+      급격한 금리 상승은 보유 채권의 미실현 손실을 키운다. 자본이 얇은 생보사는
+      해약 급증과 겹치면 단기적으로 부호가 뒤집힌다.
+
+  - from: real_rate_10y
+    to: [life_science_tools]
+    sign: -1
+    lag_months: [6, 12]
+    strength: moderate
+    channel: >
+      매출의 상당 부분이 바이오텍의 R&D 지출이고, 바이오텍의 R&D 예산은 자본시장
+      조달액에서 나온다. 금리 → 바이오텍 자금조달 → 장비·시약 발주의 2단 경로라 시차가 길다.
+    evidence: "2022-2023 바이오텍 자금난이 6~12개월 뒤 툴·CRO 수주 감소로 전이"
+    observable: "DFII10 6개월 변화 < -25bp 이고 바이오텍 follow-on 발행액 회복"
+
+  - from: real_rate_10y
+    to: [datacenter_hw, utility_ipp, grid_equipment]
+    sign: -1
+    lag_months: [6, 12]
+    strength: weak
+    channel: >
+      데이터센터·발전 자산은 자본집약적이라 금리가 프로젝트 승인 문턱을 올린다.
+      다만 현 국면에서는 발주처(하이퍼스케일러)가 현금흐름으로 조달해 금리 민감도가 낮다 —
+      그래서 weak 다. 금리가 아니라 hyperscaler_capex 가 지배 드라이버다.
+    evidence: "2022-2023 금리 급등에도 AI capex 는 감속하지 않았다 — 이 엣지가 약하다는 증거"
+    observable: "DFII10 6개월 변화 < -25bp"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # term_spread — 수익률 곡선
+  # ───────────────────────────────────────────────────────────────────────
+  - from: term_spread
+    to: [banks_large, banks_regional]
+    sign: +1
+    lag_months: [3, 12]
+    strength: strong
+    channel: >
+      단기로 조달해 장기로 대출하는 만기 변환이 은행의 사업 모델이라, 곡선 기울기가
+      곧 신규 대출의 순이자마진이다. 기존 자산의 재가격은 순차적이라 전달이 느리다.
+    evidence: "2022-2023 역전 구간의 NIM 압축, 1993-1994·2010-2011 가팔라짐 구간의 확대"
+    observable: "T10Y2Y 6개월 변화 > +25bp"
+
+  - from: term_spread
+    to: [insurance_life, asset_managers_exchanges]
+    sign: +1
+    lag_months: [3, 12]
+    strength: moderate
+    channel: >
+      생보사의 스프레드 상품(연금·GIC)은 장단기 차를 마진으로 삼고, 자산운용·거래소는
+      곡선 정상화가 신용 발행과 거래 활동을 되살리는 데서 수익을 얻는다.
+    evidence: "2010-2013 곡선 가팔라짐 구간의 연금 판매·회사채 발행 회복"
+    observable: "T10Y2Y 6개월 변화 > +25bp"
+
+
+  # ───────────────────────────────────────────────────────────────────────
+  # breakeven_10y — 기대 인플레
+  # ───────────────────────────────────────────────────────────────────────
+  - from: breakeven_10y
+    to: [gold_miners, silver_miners, oil_gas_ep, copper_miners, diversified_miners,
+         agribusiness, midstream]
+    sign: +1
+    lag_months: [0, 6]
+    strength: moderate
+    channel: >
+      기대 인플레 상승은 실물자산의 대체 수요를 만들고, 미드스트림처럼 요금이 PPI 에
+      연동되는 계약 구조에서는 매출에 직접 들어간다. 명목 원자재 가격의 하한이 올라간다.
+    evidence: "2003-2008, 2020-2022 리플레이션 국면"
+    observable: "T10YIE 6개월 변화 > +15bp"
+
+  - from: breakeven_10y
+    to: [reit_residential, reit_industrial]
+    sign: +1
+    lag_months: [6, 18]
+    strength: weak
+    channel: >
+      임대료는 명목 계약이고 주거·물류는 계약 기간이 짧아(1년·3~5년) 인플레를 비교적
+      빨리 재가격한다. 오피스처럼 10년 장기 계약인 유형에는 이 경로가 없다.
+    evidence: "2021-2022 주거·물류 임대료의 두 자릿수 갱신"
+    observable: "T10YIE 6개월 변화 > +15bp"
+    contradicts_when: "실질금리 상승이 동반되면 캡레이트 경로가 임대료 경로를 압도한다"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # hy_spread — 하이일드 스프레드 (부호는 −1: 확대 = 역풍)
+  # ───────────────────────────────────────────────────────────────────────
+  - from: hy_spread
+    to: [oil_gas_ep, offshore_drilling, oil_services, shipping_tanker, shipping_drybulk,
+         shipping_container, cruise_lines, airlines, biotech_clinical]
+    sign: -1
+    lag_months: [0, 3]
+    strength: strong
+    channel: >
+      자산집약·고레버리지 사업이라 만기 도래분의 리파이낸싱 가능 여부가 생존 조건이다.
+      스프레드 확대는 이익이 아니라 자본구조를 통해 즉시 주가에 들어온다.
+    evidence: "2015-2016 셰일·해운 디폴트 파동, 2020년 3월 크루즈·항공의 조달 경색"
+    observable: "BAMLH0A0HYM2 3개월 변화 > +100bp"
+
+  - from: hy_spread
+    to: [reit_office, cable_broadband, telecom_carriers, consumer_finance, casinos_gaming,
+         hydrogen_fuelcell, energy_storage, reit_healthcare, reit_retail]
+    sign: -1
+    lag_months: [0, 6]
+    strength: moderate
+    channel: >
+      구조적 고부채 또는 상시 외부 조달에 의존하는 사업이다. 소비자금융은 조달비용과
+      대손이 동시에 움직여 스프레드가 손익 양쪽에 들어온다.
+    evidence: "2020년 3월, 2022-2023 오피스 리파이낸싱 벽"
+    observable: "BAMLH0A0HYM2 3개월 변화 > +100bp"
+
+  - from: hy_spread
+    to: [banks_large, banks_regional, insurance_life, reinsurance, asset_managers_exchanges,
+         reit_datacenter, midstream, utility_regulated, water_utility]
+    sign: -1
+    lag_months: [0, 6]
+    strength: weak
+    channel: >
+      대출·채권 포트폴리오의 신용비용 경로다. 은행은 대손충당금, 보험은 보유 회사채
+      평가손, 인프라 리츠·유틸은 조달 스프레드로 각각 들어온다. 직접 디폴트 리스크가
+      아니라 손익 항목이라 강도는 약하다.
+    evidence: "2016 에너지 대출 충당금, 2020 상반기 신용비용 급증"
+    observable: "BAMLH0A0HYM2 3개월 변화 > +100bp"
+
+  - from: ig_spread
+    to: [utility_regulated, gas_utility, water_utility, midstream, reit_towers,
+         reit_datacenter, telecom_carriers, pharma_large, defense]
+    sign: -1
+    lag_months: [0, 6]
+    strength: moderate
+    channel: >
+      투자등급 회사채로 자본지출을 조달하는 대형·규제 사업이라 IG 스프레드가 곧
+      요금기저 투자의 자본비용이다. 하이일드가 아니라 IG 가 이들의 조달 시장이다.
+    evidence: "2022 IG 스프레드 확대기 유틸리티 자본지출 계획 축소"
+    observable: "BAMLC0A0CM 3개월 변화 > +25bp"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # inventory_sales — 재고/출하 비율 (부호 −1: 비율 하락 = 재주문 재개)
+  # ───────────────────────────────────────────────────────────────────────
+  - from: inventory_sales
+    to: [semi_memory, semi_analog_power, semi_equipment, semi_foundry_logic,
+         industrial_automation, trucking_logistics, ems_pcb, railroads]
+    sign: -1
+    lag_months: [0, 6]
+    strength: strong
+    channel: "재고/출하 비율 하락 = 소진 완료 → 재주문 재개. 재고 사이클의 정의이며 이들의 매출은 재주문 그 자체다"
+    evidence: "2016, 2019, 2023 반도체·산업재 재고 사이클"
+    observable: "ISRATIO 6개월 변화 < 0"
+
+  - from: inventory_sales
+    to: [retail_specialty, retail_department, ecommerce, apparel_footwear,
+         shipping_container, specialty_chem, medtech_devices, life_science_tools]
+    sign: -1
+    lag_months: [0, 6]
+    strength: moderate
+    channel: >
+      유통 단계의 재고 소진은 마진 회복(할인 축소)과 재발주(수입 물동량)를 동시에 만든다.
+      의료기기·툴은 병원·연구소의 소모품 재고 사이클이 같은 형태로 나타난다.
+    evidence: "2022 유통 과잉재고 → 2023 할인 국면 → 2024 정상화"
+    observable: "ISRATIO 6개월 변화 < 0"
+
+  - from: inventory_sales
+    to: [reit_industrial]
+    sign: -1
+    lag_months: [6, 12]
+    strength: weak
+    channel: >
+      재고 소진 후 재보충 국면에서 물동량이 회복되고 3PL 의 임차 수요가 뒤따른다.
+      재고 절대량이 아니라 회전의 함수라, 재고가 쌓여 있는 국면에서는 창고 수요가
+      일시적으로 높아 부호가 뒤집혀 보인다 — 그래서 weak 다.
+    evidence: "2021 물류 리츠 임대료 급등, 2023 재고 조정기 임차 둔화"
+    observable: "ISRATIO 6개월 변화 < 0 이고 컨테이너 수입량 회복"
+    contradicts_when: "과잉재고 축적 국면 자체가 창고 수요를 만들어 단기 부호가 반대로 나온다"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # new_orders_mfg · capex_orders_core · industrial_production
+  # ───────────────────────────────────────────────────────────────────────
+  - from: new_orders_mfg
+    to: [semi_analog_power, semi_memory, semi_equipment, ems_pcb, industrial_automation,
+         specialty_chem, coatings_adhesives]
+    sign: +1
+    lag_months: [0, 6]
+    strength: moderate
+    channel: >
+      제조업 신규수주는 생산 계획의 직접 입력이고, 이들은 그 생산 계획의 부품·소재를 판다.
+      수주 → 생산 → 부품 발주 순서라 시차가 짧다.
+    evidence: "2016, 2020-2021, 2023-2024 제조업 수주 회복 구간"
+    observable: "AMTMNO 6개월 변화 > 0"
+
+  - from: capex_orders_core
+    to: [construction_machinery, epc_engineering, industrial_automation, hvac_building,
+         industrial_gas, infra_construction, cement_aggregates, networking_optical,
+         grid_equipment, wind, ag_machinery]
+    sign: +1
+    lag_months: [3, 12]
+    strength: moderate
+    channel: >
+      비국방 자본재 수주는 기업 투자 결정의 가장 이른 관측치이고, 이들은 그 투자가
+      실제로 집행될 때 매출을 인식한다. 수주 → 설계 → 인도의 순서로 시차가 생긴다.
+    evidence: "2017-2018, 2021 자본재 사이클"
+    observable: "NEWORDER 6개월 변화 > 0"
+
+  - from: capex_orders_core
+    to: [aerospace_commercial, reit_towers]
+    sign: +1
+    lag_months: [6, 18]
+    strength: weak
+    channel: >
+      항공기·통신 인프라는 자본재 사이클의 가장 긴 꼬리다. 발주 결정에서 인도까지
+      수년이 걸려 매크로 수주와의 연결이 느슨하다 — 그래서 weak 이고 시차가 길다.
+    evidence: "2017-2019 항공기 수주잔고 확대"
+    observable: "NEWORDER 6개월 변화 > 0"
+
+  - from: industrial_production
+    to: [copper_miners, steel_iron, aluminum, nickel_cobalt, diversified_miners,
+         pgm_miners, silver_miners, specialty_chem, commodity_chem, industrial_gas,
+         railroads, auto_parts, coatings_adhesives, waste_services, semi_analog_power]
+    sign: +1
+    lag_months: [0, 6]
+    strength: moderate
+    channel: >
+      산업생산은 이들 소재·부품의 최종 소비량 그 자체다. 2계도함수를 쓰는 이유는
+      수준이 아니라 감속의 전환이 가격에 먼저 반영되기 때문이다 (docs/03 §2).
+    evidence: "2016, 2020-2021, 2024 산업생산 저점 통과 구간"
+    observable: "INDPRO YoY 2계도함수 > 0"
+
+  - from: industrial_production
+    to: [shipping_drybulk, refiners]
+    sign: +1
+    lag_months: [0, 6]
+    strength: weak
+    channel: >
+      벌크 물동량과 중간유(디젤) 수요는 산업 활동의 함수지만, 운임은 선복 공급이,
+      크랙 스프레드는 정제 능력이 지배해 수요 경로가 묻힌다.
+    evidence: "2021 산업 회복 + 선복 부족 동시 발생 구간"
+    observable: "INDPRO YoY 2계도함수 > 0"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # housing_starts — 주택 착공
+  # ───────────────────────────────────────────────────────────────────────
+  - from: housing_starts
+    to: [lumber_paper, home_improvement, cement_aggregates, coatings_adhesives,
+         hvac_building, steel_iron, waste_services, homebuilders]
+    sign: +1
+    lag_months: [0, 6]
+    strength: strong
+    channel: >
+      착공은 이들 건축 자재의 물량 수요를 직접 정의한다. 골조(목재·철강) → 외장·도료 →
+      설비(HVAC) 순으로 공정 순서만큼 시차가 벌어지고, 폐기물은 건설 폐기물 물량으로 붙는다.
+    evidence: "2020-2021 착공 급증 후 목재·시멘트 가격 스파이크"
+    observable: "HOUST 6개월 변화 > 0"
+
+  - from: housing_starts
+    to: [cable_broadband, gas_utility]
+    sign: +1
+    lag_months: [6, 18]
+    strength: weak
+    channel: "신규 주택은 신규 홈패스와 신규 가스 연결이다. 유틸리티의 물량 성장은 사실상 주택 완공 수의 함수다"
+    evidence: "2005-2007 주택 붐 구간의 신규 연결 수"
+    observable: "HOUST 6개월 변화 > 0"
+
+  - from: housing_starts
+    to: [reit_residential]
+    sign: -1
+    lag_months: [12, 24]
+    strength: moderate
+    channel: >
+      다른 주택 관련 테마와 부호가 반대다. 착공은 임대 시장의 신규 공급이고, 완공되어
+      입주가 시작되면 임대료 인상 여력을 깎는다. 이 테마는 수요가 아니라 공급 곡선의 반대편에 있다.
+    evidence: "2023-2025 선벨트 다세대 공급 물결과 임대료 둔화"
+    observable: "HOUST 6개월 변화 > 0 이고 다세대 착공 비중 상승"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # employment — 고용
+  # ───────────────────────────────────────────────────────────────────────
+  - from: employment
+    to: [restaurants, retail_specialty, retail_department, ecommerce, apparel_footwear,
+         hotels_resorts, cruise_lines, casinos_gaming, airlines, auto_oem, auto_parts,
+         gaming_interactive, media_streaming, alcohol, fintech_payments, consumer_finance,
+         homebuilders, home_improvement, internet_platform, advertising]
+    sign: +1
+    lag_months: [0, 6]
+    strength: strong
+    channel: >
+      가계의 재량 지출 능력은 임금 소득 총액이고, 임금 소득 총액은 고용자 수 × 임금이다.
+      실업률 상승은 소비 지출뿐 아니라 소비자 신용의 대손율에도 동시에 들어온다.
+      광고비는 이 소비 지출을 좇는 후행 예산이다.
+    evidence: "2008-2009, 2020년 2분기 고용 붕괴와 재량 소비의 동반 급락"
+    observable: "PAYEMS 3개월 평균 증가분 z-score > 0.25 이고 UNRATE 6개월 변화 <= 0"
+
+  - from: employment
+    to: [hospitals_providers, managed_care, medtech_devices]
+    sign: +1
+    lag_months: [3, 12]
+    strength: moderate
+    channel: >
+      미국 의료보험은 고용주 기반이다. 고용 증가는 피보험자 수를 늘려 병원의 지불능력 있는
+      환자와 관리의료의 상업보험 가입자를 동시에 늘리고, 보험 있는 환자가 선택 시술을 받는다.
+    evidence: "2010-2019 고용 확장기 상업보험 가입자 증가, 2020 실직 후 메디케이드 이동"
+    observable: "PAYEMS 3개월 평균 증가분 z-score > 0.25"
+
+  - from: employment
+    to: [software_infra, software_vertical, cybersecurity, reit_office, banks_large,
+         aerospace_commercial, railroads, ev_charging]
+    sign: +1
+    lag_months: [3, 12]
+    strength: weak
+    channel: >
+      좌석 기반 소프트웨어의 과금 단위가 고용이고, 오피스 임차 면적도 사무직 고용의 함수다.
+      은행의 대출 수요와 항공 여객도 고용을 좇는다. 계약·리스 갱신 주기를 거치므로 느리다.
+    evidence: "2022-2023 테크 감원기 좌석 기반 SaaS 의 순확장률 둔화"
+    observable: "PAYEMS 3개월 평균 증가분 z-score > 0.25"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # oil_wti — 원유
+  # ───────────────────────────────────────────────────────────────────────
+  - from: oil_wti
+    to: [oil_gas_ep, oil_services, offshore_drilling, intl_majors, shipbuilding, epc_engineering]
+    sign: +1
+    lag_months: [0, 6]
+    strength: strong
+    channel: >
+      E&P 의 매출이 곧 유가이고, 서비스·드릴링·조선·EPC 의 매출은 그 E&P 의 자본예산이다.
+      상류는 즉시, 발주 의존 하류는 예산 재편성 주기(1~2분기)만큼 늦게 반영된다.
+    evidence: "2014-2016 유가 붕괴 후 서비스 발주 절벽, 2021-2022 반대 국면"
+    observable: "DCOILWTICO 6개월 변화 > +10%"
+
+  - from: oil_wti
+    to: [airlines, trucking_logistics, cruise_lines, shipping_tanker, shipping_container,
+         shipping_drybulk, ecommerce]
+    sign: -1
+    lag_months: [0, 3]
+    strength: moderate
+    channel: >
+      연료가 영업비용의 20~35% 를 차지하는 사업이라 유가는 마진에 직접 들어간다.
+      전가는 운임 계약 갱신 주기만큼 늦고, 계약이 긴 사업일수록 단기 마진 훼손이 크다.
+    evidence: "2008 상반기, 2022 상반기 연료비 급등기의 항공·트럭 마진 압축"
+    observable: "DCOILWTICO 6개월 변화 > +10%"
+    contradicts_when: >
+      탱커는 예외 구간이 있다. 유가 급락이 콘탱고를 만들면 부유식 저장 수요로 운임이
+      오히려 뛴다 (2020년 4월). 이 국면에서는 부호가 반대다.
+
+  - from: oil_wti
+    to: [refiners]
+    sign: -1
+    lag_months: [0, 3]
+    strength: weak
+    channel: >
+      정유의 손익은 유가 수준이 아니라 크랙 스프레드다. 원유가 상승은 투입원가이자
+      재고평가익이라 부호가 단순하지 않다 — 방향성 엣지로는 약하게만 선언한다.
+    evidence: "2022 유가·크랙 동반 급등(부호 반대), 2018 4분기 유가 급락 + 크랙 유지"
+    observable: "DCOILWTICO 6개월 변화 > +10%"
+    contradicts_when: >
+      정제 능력 부족 국면에서는 유가와 크랙이 같이 오른다. 이 엣지는 크랙 스프레드
+      데이터가 확보되면 대체되어야 한다 — 현재는 대리 변수다.
+
+  - from: oil_wti
+    to: [commodity_chem, specialty_chem, coatings_adhesives, fertilizer_potash]
+    sign: -1
+    lag_months: [0, 6]
+    strength: moderate
+    channel: >
+      납사·수지·암모니아 원료비가 유가에 연동된다. 계약 판가는 분기 단위로 조정되므로
+      급등 국면에서 마진이 먼저 눌리고 전가가 뒤따른다.
+    evidence: "2021-2022 원료비 급등기 화학 스프레드 압축"
+    observable: "DCOILWTICO 6개월 변화 > +10%"
+    contradicts_when: >
+      미국 화학은 납사가 아니라 에탄 기반이라 유가 상승이 오히려 대(對)아시아 원가
+      경쟁력을 키운다. 이 경우 부호가 반대이며 nat_gas 엣지가 지배한다.
+
+  - from: oil_wti
+    to: [ev_charging, solar]
+    sign: +1
+    lag_months: [6, 18]
+    strength: weak
+    channel: "휘발유 가격은 전기차 총소유비용 비교의 분모다. 대체재 경제성 경로라 소비자 구매 결정 주기만큼 느리다"
+    evidence: "2022 유가 급등기 EV 신규 수요 증가"
+    observable: "DCOILWTICO 6개월 변화 > +10% 가 6개월 이상 지속"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # nat_gas — 천연가스 (부호가 테마마다 갈린다: 매출이냐 원가냐)
+  # ───────────────────────────────────────────────────────────────────────
+  - from: nat_gas
+    to: [oil_gas_ep, midstream, utility_ipp, coal]
+    sign: +1
+    lag_months: [0, 6]
+    strength: strong
+    channel: >
+      가스 생산자에겐 판가, 미드스트림엔 처리량과 스프레드, 머천트 발전엔 도매 전력가격의
+      한계 결정자다. 석탄은 발전 급전 순위에서 가스의 직접 대체재라 가스가 오르면 물량을 되찾는다.
+    evidence: "2021-2022 유럽 가스 위기 구간의 미국 가스 생산자·석탄 동반 강세"
+    observable: "DHHNGSP 6개월 변화 > +15%"
+
+  - from: nat_gas
+    to: [fertilizer_potash, commodity_chem, aluminum, industrial_gas, lng, gas_utility]
+    sign: -1
+    lag_months: [0, 6]
+    strength: moderate
+    channel: >
+      가스가 원료(암모니아·에탄) 또는 전력 원가(제련·공기분리)인 사업이다. LNG 액화업체는
+      헨리허브를 사서 국제가에 팔므로 조달원가가 오르면 스프레드가 줄고, 가스 유틸리티는
+      요금 저항과 수요 파괴를 겪는다.
+    evidence: "2021-2022 유럽 암모니아·알루미늄 제련 감산"
+    observable: "DHHNGSP 6개월 변화 > +15%"
+    contradicts_when: >
+      LNG 는 국제 가스가가 헨리허브보다 더 크게 오르면 스프레드가 오히려 확대된다.
+      2022년이 그 사례이며, 이 엣지는 국내외 스프레드 데이터가 있으면 대체되어야 한다.
+
+  - from: nat_gas
+    to: [uranium, nuclear_smr]
+    sign: +1
+    lag_months: [6, 24]
+    strength: weak
+    channel: >
+      가스 화력의 연료비가 원자력 대비 경제성 비교의 기준선이다. 가스가 구조적으로
+      비싸지면 기존 원전 폐쇄가 철회되고 신규 검토가 진행된다. 규제 절차 때문에 매우 느리다.
+    evidence: "2021-2023 유럽 가스 위기 이후 원전 수명 연장 결정들"
+    observable: "DHHNGSP 6개월 변화 > +15% 가 12개월 이상 지속"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # copper_price · gold_price — 원자재 가격 (테마 매출의 직접 입력)
+  # ───────────────────────────────────────────────────────────────────────
+  - from: copper_price
+    to: [copper_miners, diversified_miners, nickel_cobalt, aluminum]
+    sign: +1
+    lag_months: [0, 3]
+    strength: strong
+    channel: >
+      구리 가격이 이들의 매출 단가이며, 현금원가가 고정된 구간에서는 가격 변화가
+      마진에 그대로 레버리지된다. 종합광업·니켈은 구리 병산 비중과 기저금속 동조로 붙는다.
+    evidence: "2003-2007, 2020-2021 구리 상승기 광업주의 초과 수익"
+    observable: "PCOPPUSDM 6개월 변화 > +5% (폴백 시 CPER 총수익 기준)"
+
+  - from: copper_price
+    to: [grid_equipment, epc_engineering, ev_charging, energy_storage]
+    sign: -1
+    lag_months: [3, 12]
+    strength: weak
+    channel: >
+      구리는 이들의 자재비다. 고정가 EPC 계약과 장기 납기 전력기기는 원자재 급등을
+      전가하지 못한 채 원가만 올라간다 — 광업과 정확히 반대편에 서 있다.
+    evidence: "2021 구리·자재비 급등기 EPC 고정가 계약의 원가 초과 상각"
+    observable: "PCOPPUSDM 6개월 변화 > +5%"
+
+  - from: gold_price
+    to: [gold_miners, silver_miners, pgm_miners]
+    sign: +1
+    lag_months: [0, 3]
+    strength: strong
+    channel: >
+      금 가격이 매출 단가이고 현금원가는 단기적으로 고정이라, 가격 변화가 마진에
+      2~3배로 증폭된다. 은·백금은 귀금속 복합체로 함께 움직이되 산업 수요 비중만큼 이탈한다.
+    evidence: "2005-2011, 2019-2020, 2024-2026 금 상승 국면"
+    observable: "GLD 6개월 변화 > +5%"
+    contradicts_when: >
+      원가 인플레(연료·인건비·광석 품위 저하)가 금 가격보다 빨리 오르면 금이 올라도
+      마진이 줄어 광업주가 금을 따라가지 못한다. 2011-2013 이 그 사례다.
+
+  # ───────────────────────────────────────────────────────────────────────
+  # cpi_yoy · ppi_yoy — 물가
+  # ───────────────────────────────────────────────────────────────────────
+  - from: cpi_yoy
+    to: [retail_specialty, retail_department, restaurants, apparel_footwear,
+         internet_platform, gaming_interactive, media_streaming, ecommerce]
+    sign: -1
+    lag_months: [3, 12]
+    strength: moderate
+    channel: >
+      필수 지출(식품·주거·에너지)의 물가 상승은 실질 가처분소득을 깎아 재량 지출의
+      잔여분을 줄인다. 저소득 구간에서 먼저 나타나 객단가 하향(다운트레이딩)으로 관측된다.
+    evidence: "2022 실질임금 마이너스 구간의 저소득 소비 둔화와 유통 믹스 하향"
+    observable: "CPIAUCSL YoY > 2.5% 이고 실질 평균시급 YoY < 0"
+
+  - from: cpi_yoy
+    to: [restaurants, hospitals_providers, managed_care, reit_healthcare]
+    sign: -1
+    lag_months: [6, 18]
+    strength: moderate
+    channel: >
+      인건비가 원가의 최대 항목인데 판가는 규제(수가)나 계약(보험료 갱신)으로 1년 단위
+      고정이다. 비용은 즉시, 판가는 갱신 주기에 반영되어 그 사이 마진이 눌린다.
+    evidence: "2021-2023 간호 인건비 급등기 병원 마진 악화, 2022-2023 의료비 트렌드와 MLR 상승"
+    observable: "CPIAUCSL YoY > 2.5% 이고 서비스 CPI 가 헤드라인을 상회"
+
+  - from: cpi_yoy
+    to: [waste_services, fintech_payments, advertising, tobacco]
+    sign: +1
+    lag_months: [0, 6]
+    strength: weak
+    channel: >
+      매출이 명목 금액에 연동되는 사업이다. 결제는 거래 금액의 정률 과금이고, 폐기물은
+      CPI 연동 조항이 계약에 들어 있으며, 광고 단가와 담배 판가도 명목으로 재가격된다.
+    evidence: "2021-2023 인플레 구간의 결제·폐기물 매출 성장"
+    observable: "CPIAUCSL YoY > 2.5%"
+    contradicts_when: "담배는 판가 인상이 물량 감소를 가속하면 순효과가 뒤집힌다"
+
+  - from: ppi_yoy
+    to: [agribusiness, fertilizer_potash, ag_machinery]
+    sign: +1
+    lag_months: [0, 9]
+    strength: moderate
+    channel: >
+      농산물 가격 상승은 농가 소득을 늘리고, 농가 소득이 비료 투입과 장비 교체의
+      지불 능력을 결정한다. 곡물 → 투입재 → 장비 순으로 시차가 벌어진다.
+    evidence: "2007-2008, 2010-2012, 2021-2022 곡물 가격 상승기"
+    observable: "PPIACO YoY > 2% 이고 곡물 부문 PPI 가 상회"
+
+  - from: ppi_yoy
+    to: [food_beverage, alcohol, household_products, restaurants]
+    sign: -1
+    lag_months: [3, 12]
+    strength: moderate
+    channel: >
+      원재료·포장·물류가 도매물가 그 자체다. 소매 채널과의 판가 협상은 연 1~2회라
+      투입비 상승이 마진을 먼저 깎고 전가는 두세 분기 뒤에 온다.
+    evidence: "2021-2022 투입비 급등기 필수소비재 총마진 압축, 2023 전가 후 회복"
+    observable: "PPIACO YoY > 2%"
+
+  - from: ppi_yoy
+    to: [insurance_pc, reinsurance]
+    sign: -1
+    lag_months: [6, 24]
+    strength: moderate
+    channel: >
+      손해보험의 원가는 수리·재건축 비용이다. 자재·인건비 인플레는 이미 인수한 계약의
+      지급준비금을 부족하게 만들고(적립 부족), 보험료 재산정은 갱신 시점에야 가능하다.
+    evidence: "2021-2023 자동차 수리비·건축비 인플레와 손해율 악화"
+    observable: "PPIACO YoY > 2% 이고 건설자재·자동차부품 PPI 가 상회"
+    contradicts_when: >
+      손해액 인플레가 요율 인상 사이클을 촉발하면 2~3년 뒤에는 오히려 이익이 확대된다
+      (하드 마켓). 시차가 긴 만큼 국면 판정이 중요한 엣지다.
+
+  # ───────────────────────────────────────────────────────────────────────
+  # china_credit_impulse · china_property
+  # ───────────────────────────────────────────────────────────────────────
+  - from: china_credit_impulse
+    to: [copper_miners, steel_iron, aluminum, nickel_cobalt, diversified_miners,
+         shipping_drybulk, cement_aggregates, construction_machinery, commodity_chem, coal]
+    sign: +1
+    lag_months: [3, 9]
+    strength: strong
+    channel: >
+      중국 고정자산투자가 이들 원자재의 한계 수요를 결정한다. 신용이 먼저 풀리고
+      착공이 뒤따르며 실물 소비는 그 다음이라, 신용임펄스가 3~9개월 선행한다.
+    evidence: "2009, 2016, 2020 신용 확장 국면마다 3~9개월 시차로 반영"
+    observable: "TSF 12개월 변화/GDP 가 양수 전환"
+    contradicts_when: >
+      2021년 이후 부동산 부문 축소로 신용임펄스와 원자재 수요의 연결이 약화되었다는
+      견해가 있다. 모순 감사에서 60개월 창의 상관을 특히 주시할 엣지.
+
+  - from: china_credit_impulse
+    to: [lithium, rare_earth, casinos_gaming, semi_equipment, agribusiness, shipping_tanker]
+    sign: +1
+    lag_months: [3, 12]
+    strength: weak
+    channel: >
+      중국의 신용 여건이 EV 보조·전략광물 비축·마카오 소비·설비 수입·대두 수입의
+      공통 자금 조건이다. 정책 우선순위에 따라 배분이 갈려 원자재만큼 신뢰도가 높지 않다.
+    evidence: "2016, 2020 완화 국면의 중국 EV 판매·마카오 GGR 회복"
+    observable: "TSF 12개월 변화/GDP 가 양수 전환"
+    contradicts_when: "수출통제 대상(반도체 장비)은 신용 여건과 무관하게 정책이 물량을 정한다"
+
+  - from: china_property
+    to: [steel_iron, copper_miners, shipping_drybulk, cement_aggregates, diversified_miners]
+    sign: +1
+    lag_months: [0, 6]
+    strength: strong
+    channel: >
+      중국 주택 착공 면적이 세계 철강·구리·철광석 수요의 한계 물량을 만든다.
+      신용임펄스가 자금 조건이라면 착공은 실제 물량이라, 신용 → 착공 → 소비의 마지막 단계다.
+    evidence: "2016-2017 판자촌 개조 부양, 2021-2024 부동산 축소기의 철강 수요 감소"
+    observable: "중국 주택 착공 면적 YoY > 0"
+
+  - from: china_property
+    to: [coatings_adhesives, home_improvement, aluminum, household_products]
+    sign: +1
+    lag_months: [6, 18]
+    strength: weak
+    channel: >
+      착공에서 준공·인테리어까지 1~2년이 걸리고, 도료·가전·알루미늄 새시는 그 마감
+      단계에서 소비된다. 미국 상장 기업의 중국 노출 비중이 작아 강도는 약하다.
+    evidence: "2021-2023 준공 지연이 마감재 수요를 앞단과 어긋나게 만든 구간"
+    observable: "중국 주택 준공 면적 YoY > 0"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # defense_outlays — 국방 지출
+  # ───────────────────────────────────────────────────────────────────────
+  - from: defense_outlays
+    to: [defense, shipbuilding, space_satellite, aerospace_commercial]
+    sign: +1
+    lag_months: [6, 24]
+    strength: strong
+    channel: >
+      예산 승인 → 계약 체결 → 수주잔고 → 매출 인식의 다년 파이프라인이다. 함정·위성은
+      인도 주기가 길어 뒤쪽에 있고, 상용항공기 업체도 방산 부문을 통해 같은 예산을 받는다.
+    evidence: "2017-2020, 2022-2026 국방예산 증액 구간의 수주잔고 확대"
+    observable: "FDEFX YoY > 3% 이고 NDAA 승인액이 전년 대비 증가"
+    contradicts_when: >
+      계속결의(CR)로 예산이 임시 집행되면 승인액이 늘어도 신규 착수(new start)가
+      막혀 수주로 전환되지 않는다. 이 구간은 엣지가 발동하지 않은 것으로 본다.
+
+  - from: defense_outlays
+    to: [rare_earth, semi_analog_power, cybersecurity, epc_engineering]
+    sign: +1
+    lag_months: [12, 36]
+    strength: weak
+    channel: >
+      방산 공급망의 2차·3차 티어다. 전략광물 비축, 방산용 아날로그 반도체, 국방 사이버
+      계약, 기지 인프라 공사로 각각 흘러가지만 예산 대비 비중이 작아 신호가 묻힌다.
+    evidence: "2022 이후 전략광물 비축 프로그램과 국방 사이버 예산 증액"
+    observable: "FDEFX YoY > 3% 이고 해당 프로그램의 개별 예산 항목이 신설·증액"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # hyperscaler_capex — 하이퍼스케일러 자본지출
+  # ───────────────────────────────────────────────────────────────────────
+  - from: hyperscaler_capex
+    to: [grid_equipment, datacenter_hw, networking_optical, utility_ipp, reit_datacenter,
+         semi_foundry_logic, semi_memory, semi_equipment]
+    sign: +1
+    lag_months: [0, 6]
+    strength: strong
+    channel: >
+      발주처의 자본지출이 이들의 매출로 직접 전환된다 (수주 → 인식 시차만 존재).
+      반도체는 GPU·HBM 을 통해, 전력기기·IPP 는 전력 확보를 통해 같은 예산을 나눠 받는다.
+    evidence: "2023-2026 AI 데이터센터 투자 사이클"
+    observable: "5사 TTM capex YoY > 10%"
+    contradicts_when: >
+      capex 가 GPU 로 편중되면 전력·네트워크 하류로 전이되지 않을 수 있다.
+      배분 비율은 재무제표에 나오지 않으므로 발주처 가이던스로 보완 관측한다.
+
+  - from: hyperscaler_capex
+    to: [epc_engineering, hvac_building, nuclear_smr, energy_storage, industrial_gas,
+         software_infra, ems_pcb, cybersecurity]
+    sign: +1
+    lag_months: [6, 18]
+    strength: moderate
+    channel: >
+      데이터센터 건설의 2차 수혜다. EPC 가 짓고, 냉각(HVAC)·백업 전력이 붙고, 전력
+      확보 계약이 SMR·ESS 로 가고, 클라우드 소비 증가가 인프라 SaaS 매출로 돌아온다.
+    evidence: "2024-2026 데이터센터 냉각·전력 발주와 SMR PPA 체결"
+    observable: "5사 TTM capex YoY > 10% 이고 데이터센터 착공 면적 증가"
+
+  - from: hyperscaler_capex
+    to: [utility_regulated, water_utility, midstream]
+    sign: +1
+    lag_months: [12, 36]
+    strength: weak
+    channel: >
+      데이터센터의 전력·냉각수·가스 수요는 규제 유틸리티의 요금기저 투자를 늘리고,
+      요금기저 증가가 허용 이익을 늘린다. 규제 승인 절차 때문에 전달이 매우 느리다.
+    evidence: "2024-2026 데이터센터 밀집 지역 유틸리티의 부하 성장 전망 상향"
+    observable: "5사 TTM capex YoY > 10% 이고 해당 유틸리티가 부하 성장 가이던스를 상향"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # policy_events — 정책 이벤트
+  # sign = +1 은 '해당 테마에 유리한 정책이 확정되면 우호', −1 은 규제가 역풍인 테마.
+  # 이 드라이버만 state 가 (테마, 이벤트) 쌍으로 판정된다 (drivers 절의 note 참조).
+  # ───────────────────────────────────────────────────────────────────────
+  - from: policy_events
+    to: [solar, wind, hydrogen_fuelcell, energy_storage, ev_charging, nuclear_smr,
+         rare_earth, uranium, infra_construction, semi_foundry_logic, lithium]
+    sign: +1
+    lag_months: [3, 18]
+    strength: strong
+    channel: >
+      이 테마들은 수요 자체가 정책으로 만들어진다. 세액공제(IRA 45X·48E)·보조금(CHIPS)·
+      인허가(원전 승인)·조달 의무가 프로젝트의 IRR 을 양수로 만드는 마지막 항목이고,
+      법안 통과에서 시행규칙 확정까지가 곧 발주 시점이다.
+    evidence: "2022 IRA 이후 태양광·ESS 발주, 2022 CHIPS 이후 파운드리 착공"
+    observable: "해당 테마에 유리한 법안·시행규칙·인허가가 직전 12개월 안에 확정"
+    contradicts_when: >
+      법안 통과와 시행규칙 확정 사이(보통 6~18개월)에는 발주가 오히려 멈춘다 —
+      규칙을 기다리는 것이 합리적이기 때문이다. 통과 시점을 발동 시점으로 쓰면 틀린다.
+
+  - from: policy_events
+    to: [coal, tobacco, offshore_drilling, cable_broadband, managed_care,
+         hospitals_providers, pharma_large, semi_eda_ip, semi_equipment, casinos_gaming]
+    sign: -1
+    lag_months: [0, 12]
+    strength: moderate
+    channel: >
+      규제가 물량이나 판가의 상한을 정하는 테마다. 배출 규제·니코틴 상한·시추 허가 제한·
+      망 중립·수가 삭감·약가 협상(IRA)·수출통제가 각각 매출의 한 축을 직접 잘라낸다.
+      규제 리스크 테마의 sign 이 −1 인 것은 정책 이벤트의 기본값이 제약이기 때문이다.
+    evidence: "2022 IRA 약가 협상 도입, 2022-2023 대중 반도체 수출통제 확대"
+    observable: "해당 테마에 불리한 규제·수출통제·수가 결정이 직전 12개월 안에 확정"
+    contradicts_when: >
+      규제가 신규 진입을 막아 기존 사업자의 지대를 키우는 경우가 있다 (담배의
+      마케팅 규제, 시추 허가 제한이 만드는 공급 제약). 이 경우 부호가 반대다.
+
+  - from: policy_events
+    to: [defense, space_satellite, shipbuilding, cement_aggregates, epc_engineering,
+         grid_equipment, water_utility, ems_pcb, hospitals_providers]
+    sign: +1
+    lag_months: [6, 24]
+    strength: moderate
+    channel: >
+      정부가 발주처인 사업이다. IIJA 도로·교량, 전력망 현대화 보조, 수도 인프라 기준
+      강화, 리쇼어링 조달 요건이 각각 다년 예산으로 배정되고 입찰을 통해 수주로 바뀐다.
+    evidence: "2021 IIJA 이후 도로·교량 발주, 2022 이후 전력망 보조 프로그램"
+    observable: "해당 프로그램의 예산 배정과 첫 입찰 공고가 확정"
+
+  - from: policy_events
+    to: [banks_regional, banks_large, homebuilders, auto_oem, apparel_footwear,
+         retail_specialty, ecommerce, fintech_payments]
+    sign: -1
+    lag_months: [0, 12]
+    strength: weak
+    channel: >
+      자본규제 강화(바젤 엔드게임)·연비 규제·관세·수수료 상한이 각각 자본비용과
+      원가·수수료 수익에 들어간다. 개별 규제의 크기가 작고 최종안이 자주 완화되어 약하다.
+    evidence: "2018-2019, 2025 관세 라운드의 소싱 원가, 2023-2024 자본규제 논의"
+    observable: "해당 규제의 최종 규칙이 확정 (제안 단계는 발동으로 보지 않는다)"
+
+  # ───────────────────────────────────────────────────────────────────────
+  # 공통 인자 — 전 테마에 같은 부호. tailwind 계산에서 횡단면 중앙값을 뺀다.
+  # 테마의 '입력 엣지 최소 2개' 하한에는 세지 않는다.
+  # ───────────────────────────────────────────────────────────────────────
+  - from: usd_liquidity
+    to: ["*"]
+    sign: +1
+    lag_months: [0, 3]
+    strength: moderate
+    common_factor_edge: true
+    channel: >
+      준비금 확대는 위험 선호 전반을 밀어올린다. 특정 테마의 현금흐름 경로가 아니라
+      할인율·포지셔닝 경로라 전 테마에 같은 부호로 들어온다. 상대 순위를 만들지 않으므로
+      횡단면 중앙값 차감 후 사용한다 (docs/03 §7).
+    evidence: "2020-2021 유동성 확장기 전 자산 동반 상승, 2022 QT 구간의 반대"
+    observable: "(WALCL - WTREGEN - RRPONTSYD) 3개월 변화 > 0"
+
+  - from: fed_policy_path
+    to: ["*"]
+    sign: -1
+    lag_months: [0, 6]
+    common_factor_edge: true
+    strength: moderate
+    channel: >
+      정책금리 인상은 무위험 할인율의 기준선을 올려 전 테마의 밸류에이션을 동시에 누른다.
+      테마 간 차이는 real_rate_10y·term_spread·hy_spread 개별 엣지가 담당하고,
+      여기서는 레벨 시프트만 담는다. 횡단면 중앙값 차감 후 사용한다.
+    evidence: "2022 인상 사이클의 전 섹터 동시 디레이팅"
+    observable: "DFEDTARU 6개월 변화 > 0"
+
+  - from: m2_growth
+    to: ["*"]
+    sign: +1
+    lag_months: [6, 18]
+    common_factor_edge: true
+    strength: weak
+    channel: >
+      통화량 증가는 명목 매출의 공통 성장률과 자산가격의 공통 성분을 동시에 밀어올린다.
+      usd_liquidity 와 겹치는 경로이므로 강도를 낮게 둔다 — 두 공통 인자를 같은 강도로
+      주면 공통 성분이 이중 계상된다.
+    evidence: "2020-2021 M2 급증기, 2022-2023 M2 축소기"
+    observable: "M2SL YoY > 3%"
