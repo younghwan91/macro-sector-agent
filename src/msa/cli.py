@@ -1,7 +1,8 @@
 """`msa` CLI.
 
 도는 것: `data status`·`data audit`·`data fred-lag`·`data fred-fetch`(M1·M4) · `scan`(M3) ·
-`macro`(M4). 나머지(`research`·`picks`·`portfolio`·`check`)는 `--help` 에는 나오되
+`macro`(M4) · `picks`(M5) · `portfolio`(M6) · `research`(M7).
+나머지(`check`)는 `--help` 에는 나오되
 호출하면 `NotImplementedError` 를 던진다 — 있는 척하는 스텁이 조용히 빈 결과를
 내는 것보다 낫다 (`CLAUDE.md` §2).
 """
@@ -9,6 +10,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date
 
 import typer
@@ -20,7 +22,7 @@ app = typer.Typer(
     no_args_is_help=True,
     help=(
         "macro-sector-agent — 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 "
-        "(M1~M4: 데이터·L1 스캐너·L2 거시 DAG)"
+        "(M1~M7: 데이터·L1 스캐너·L2 거시 DAG·L4 종목 선정·L5 포트·L3 리서치)"
     ),
 )
 data_app = typer.Typer(no_args_is_help=True, help="L0 데이터 — 스토어 상태와 커버리지 감사")
@@ -332,21 +334,149 @@ def macro(
 
 
 @app.command()
-def research(theme: str) -> None:
-    """L3 에이전트 리서치 → thesis 객체. (미구현 — M5)"""
-    _todo("research", "docs/05-agent-research.md")
+def research(
+    theme: str = typer.Argument(..., help="테마 id (state/themes.yaml)"),
+    asof: str = typer.Option(
+        "", help="기준일 YYYY-MM-DD — 그 이전 최신 스캔을 쓴다. 기본 = 최신 스캔"
+    ),
+    provider: str = typer.Option(
+        "anthropic",
+        "--provider",
+        help="anthropic | mock | fixture. anthropic 은 ANTHROPIC_API_KEY 필요",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="MockProvider 로 경로만 검증 (저장도 한다 — 합성 표기)"
+    ),
+    no_write: bool = typer.Option(False, "--no-write", help="state/theses/ 에 저장하지 않는다"),
+    no_store: bool = typer.Option(
+        False, "--no-store", help="DuckDB 구성원 재무 요약 생략 (경고로 표시)"
+    ),
+    macro: str = typer.Option(
+        "", help="L2 거시 상태 JSON 경로 (기본 state/macro/latest.json 이 있으면 사용)"
+    ),
+    fixtures: str = typer.Option("", help="--provider fixture 의 루트 (기본 tests/fixtures/l3)"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """L3 에이전트 리서치 (supply · catalyst · bear · referee) → thesis 객체 (docs/05).
+
+    산출물: state/theses/<date>/<theme>.thesis.yaml · <theme>.report.md · rejections-pending.yaml ·
+    contested.json.
+    스키마 미달이면 저장하지 않고 종료 코드 2. 게이트 기각은 저장한다 (docs/05 §4).
+    """
+    from pathlib import Path
+
+    from msa.config import paths
+    from msa.l3.contracts import InputsError, assemble_inputs
+    from msa.l3.pipeline import run_research
+    from msa.l3.providers import ProviderError, make_provider
+    from msa.l3.schema import ThesisRejected
+
+    _setup_logging(verbose)
+    kind = "mock" if dry_run else provider
+    state = paths().state
+    try:
+        inputs = assemble_inputs(
+            theme,
+            state_dir=state,
+            asof=asof or None,
+            macro_path=Path(macro) if macro else None,
+            with_store=not no_store,
+        )
+    except InputsError as e:
+        typer.echo(f"입력 오류: {e}", err=True)
+        raise typer.Exit(code=1) from e
+    prov = make_provider(kind, theme_id=theme, fixture_root=Path(fixtures) if fixtures else None)
+    if kind == "anthropic" and not (
+        os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ):
+        typer.echo(
+            "경고: ANTHROPIC_API_KEY 가 비어 있다 — SDK 가 `ant auth login` 프로필을 찾지 못하면 "
+            "인증 오류가 난다. "
+            "오프라인 검증은 --dry-run 또는 --provider fixture.",
+            err=True,
+        )
+    try:
+        res = run_research(inputs, prov, theses_root=state / "theses", write=not no_write)
+    except ThesisRejected as e:
+        typer.echo("thesis 스키마 검증 실패 — 저장하지 않는다 (CLAUDE.md §3·§5):", err=True)
+        for line in e.result.errors:
+            typer.echo(f"  - {line}", err=True)
+        raise typer.Exit(code=2) from e
+    except ProviderError as e:
+        typer.echo(f"제공자 오류: {e}", err=True)
+        raise typer.Exit(code=3) from e
+    typer.echo(res.report_md)
+    if res.thesis_path:
+        typer.echo(f"\n저장: {res.thesis_path}")
 
 
 @app.command()
-def picks(theme: str) -> None:
-    """L4 종목 랭킹. (미구현 — M6)"""
-    _todo("picks", "docs/06-stock-selection.md")
+def picks(
+    theme: str,
+    asof: str = typer.Option("", help="기준일 YYYY-MM-DD. 기본 = 스토어 최종일"),
+    top: int = typer.Option(4, help="바벨 종목 수 (앵커 max(1, top//2) + 토크)"),
+    no_write: bool = typer.Option(False, "--no-write", help="state/picks/ 에 저장하지 않는다"),
+    no_physical: bool = typer.Option(
+        False,
+        "--no-physical",
+        help="상품가 탄력성(price_beta_hist) 계산 생략 — ETF 벌크 스캔 ~12초",
+    ),
+    no_fetch: bool = typer.Option(False, "--no-fetch", help="FRED 를 받지 않는다 (캐시만)"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """L4 종목 선정 — 3축(S·T·M)·하드 필터·바벨 (docs/06). 산출물: state/picks/<date>/<theme>/"""
+    from msa.l4.picks import run_picks
+
+    _setup_logging(verbose)
+    res = run_picks(
+        theme,
+        asof=asof or None,
+        top=top,
+        write=not no_write,
+        allow_fetch=not no_fetch,
+        with_physical=not no_physical,
+    )
+    typer.echo(res.report)
+    if res.out_dir:
+        typer.echo(f"저장: {res.out_dir}")
 
 
 @app.command()
-def portfolio() -> None:
-    """L5 포트 구성 + 매매계획. (미구현 — M7)"""
-    _todo("portfolio", "docs/07-portfolio.md")
+def portfolio(
+    inputs: str = typer.Option(
+        ..., "--inputs", help="입력 디렉터리: picks.csv · theses/*.yaml (· returns.csv 선택)"
+    ),
+    asof: str = typer.Option("", help="기준일 YYYY-MM-DD. 기본 = 오늘"),
+    cases: str = typer.Option(
+        "",
+        "--cases",
+        help="케이스 스터디 표. 기본 = state/cases/cases.yaml (없으면 L_i 형성 불가로 표기)",
+    ),
+    capital: float = typer.Option(
+        0.0, "--capital", help="총자본(USD). 주면 C4 유동성 상한(ADV20 의 10%)을 건다"
+    ),
+    cluster_cap: list[str] = typer.Option(  # noqa: B008 — typer 의 옵션 선언 관용구
+        [], "--cluster-cap", help="선택적 클러스터 상한 name=cap (docs/07 §2.5 — 요구했을 때만)"
+    ),
+    no_write: bool = typer.Option(False, "--no-write", help="state/portfolio/ 에 저장하지 않는다"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """L5 포트 구성 + 매매계획서 (docs/07). 산출물: state/portfolio/<date>/"""
+    from msa.l5.plan import render_plan
+    from msa.l5.run import cluster_caps_from_args, run_portfolio
+
+    _setup_logging(verbose)
+    res = run_portfolio(
+        asof=asof or None,
+        inputs_dir=inputs,
+        cases_path=cases or None,
+        capital_usd=capital if capital > 0 else None,
+        cluster_caps=cluster_caps_from_args(cluster_cap),
+        write=not no_write,
+    )
+    typer.echo(render_plan(res))
+    if res.out_dir:
+        typer.echo(f"저장: {res.out_dir}")
 
 
 @app.command()

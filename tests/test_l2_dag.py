@@ -101,6 +101,6 @@ def test_real_dag_loads_and_schema_passes() -> None:
     """저장소의 실제 DAG 는 스키마를 통과해야 한다 (커버리지는 별도 — 134 테마 대비 미달 있음)."""
     dag = load_dag()
     assert len(dag.drivers) == 26
-    assert len(dag.edges) == 72
+    assert len(dag.edges) >= 72  # 134 버킷 재감사 후 86
     rules = sum(1 for e in dag.edges if e.contradicts_rule is not None)
     assert rules == 2

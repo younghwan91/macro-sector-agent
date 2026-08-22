@@ -122,73 +122,116 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
 
 ## M4 · L2 거시 DAG
 **완료 기준**
-- [x] `state/macro-dag.yaml` 작성 — **개수가 아니라 조건이 기준이다: 전 테마가 최소 2개의
+- [ ] `state/macro-dag.yaml` 작성 — **개수가 아니라 조건이 기준이다: 전 테마가 최소 2개의
       입력 엣지를 갖는다.** 확정 버킷 수 N 에 대해 엣지 수의 하한은 2N 이고, 초안 109개
       기준이면 218 이다 (상한은 없다 — `channel` 을 쓸 수 있는 만큼). 공통 인자 엣지는
       이 하한에 세지 않는다 (전 테마에 같은 부호라 테마를 고르는 데 쓸모없다 —
       `03-macro-dag.md` §7). 이전 판의 "~150개" 는 버킷 85개 기준으로 잡힌 수치였다
-      — **완료**: 드라이버 26 · 테마-엣지 쌍 380 · in-degree min 2 (`docs/macro-dag-audit.md`)
+      — **완료**: 드라이버 26 · 엣지 레코드 86(개별 83 + 공통 3) · 테마-엣지 쌍 451 / 하한 268 ·
+      in-degree min 2 · median 3 · max 6 — **134 버킷 기준 재감사 통과 (M4-134)**. 초안 기준
+      수치(쌍 380)는 폐기 id 6개와 신설 버킷 31개의 in-degree 0 으로 22건 실패했고, 재매핑 +
+      엣지 14개 추가로 해소했다 (`docs/macro-dag-audit.md` §10)
 - [x] `channel` 없는 엣지 0개 (스키마 검증) — `scripts/audit_dag.py`
 - [x] `tailwind` 계산 + 공통 인자 횡단면 중앙값 차감 — `src/msa/l2/tailwind.py`, `msa macro`
       (`03-macro-dag.md` §8.3). 단, **오늘 실제 값은 3개 드라이버(GLD·CPER·hyperscaler_capex)로만**
       계산된다 — FRED 23개 드라이버가 `FRED_API_KEY` 없음으로 결측
 - [x] 국면 4분면 시각화 — ASCII 차트 + 24개월 CSV (`regime.txt`·`regime.csv`, §8.4). PNG 없음.
       **오늘은 계산 불가** (성장·인플레 축 구성 드라이버 전부 FRED)
-- [x] 모순 감사 1회 실행, 플래그 목록 리뷰 — `docs/macro-dag-audit.md` (`contradicts_when` 22개).
-      런타임 평가(`contradictions.csv`)는 규칙 있는 2개만 판정하고 20개는 `PROSE_ONLY`
+- [x] 모순 감사 1회 실행, 플래그 목록 리뷰 — `docs/macro-dag-audit.md` (`contradicts_when` 26개).
+      런타임 평가(`contradictions.csv`)는 기계 규칙(`contradicts_rule`)이 있는 2개만 판정하고
+      나머지는 `PROSE_ONLY` 로 표에 올린다
 - [ ] **엣지 부호 일치율 실측** (`10-validation.md` §2.1) — 선언한 `sign` 과
       36·60개월 창 상관의 부호가 맞는 비율. **불일치 엣지를 고치는 것이 아니라 세는 것**이다.
       기계는 있다 (`src/msa/l2/signcheck.py`, `docs/macro-dag-sign-check.md` 는 실행 불가 기록).
-      **실측은 안 됐다** — 359쌍 중 27쌍(ETF·Sharadar 드라이버)만 계산, FRED 기반 332쌍은 키 대기
-- [ ] **DAG 를 확정 버킷 134개에 맞춘다** — `scripts/audit_dag.py` 가 `state/themes.yaml` 기준으로
-      실패한다: `to` 에 없는 테마 6개(`nickel_cobalt`·`ag_machinery`·`semi_memory`·`semi_analog_power`·
-      `semi_foundry_logic`·`aerospace_commercial`), 입력 엣지 2개 미만 테마 31개. 런타임은 미지
-      타깃을 세어서 제외하고 미달 테마에 `undercovered` 플래그를 단다 (`msa macro` 리포트 첫 줄)
+      **실측은 안 됐다** — 451쌍 중 29쌍(ETF·Sharadar 드라이버)만 계산, FRED·수동 기반 422쌍은 키/CSV 대기
 
 ## M5 · L4 종목 선정
 **완료 기준**
-- [ ] S·T·M 3축 + 하드 제외 필터
-- [ ] `fin-checkup` 레드플래그 이식 동작
-- [ ] 앵커/토크 바벨 분류
-- [ ] **사후 대조**: 2026-08 시점 `rare_earth`·`silver_miners` 에서 MP·AG 가 토크 상위에 오는가
+- [x] S·T·M 3축 + 하드 제외 필터 — `src/msa/l4/` (`features`·`axes`·`barbell`·`picks`), `msa picks`.
+      **입력이 없어 적용하지 못한 것**: `going_concern`(감사의견 — 스토어에 없음),
+      `maturity_wall_24m`(SF1 에 만기 스케줄 없음 → `debtc`/시총 12개월 대용). 둘 다 리포트와
+      `meta.json` 에 매번 적힌다 (`06-stock-selection.md` §8)
+- [x] `fin-checkup` 레드플래그 이식 동작 — `src/msa/vendor/redflags.py`. 4종 계산
+      (완전자본잠식·3년 연속 영업손실·흑자인데 영업현금 유출·3년 연속 이자보상 < 1),
+      `partial_capital_impairment` 는 SF1 에 자본금이 없어 **계산 불가**로 표기
+- [x] 앵커/토크 바벨 분류 — `barbell.classify`. 앵커 수 비중을 리포트에 명시
+- [x] **사후 대조** 실행 — `docs/picks-m5-check.md`. **결과는 그대로 적었고 값을 바꾸지 않았다**:
+      MP 는 `rare_earth` 토크 축 **T̃ 1.00 (1위)** — 다만 T 를 계산할 수 있는 구성원이 2개(MP·USAR)뿐이고,
+      바벨 규칙("S̃ 상위에서 T̃ 최고" 를 앵커가 먼저 집는다)상 **앵커**로 분류된다.
+      AG 는 `silver_miners` 토크 축 **T̃ 1.00 (1위)** — 역시 계산 가능 2개(AG·SVM), 앵커로 분류.
+      2026-08 시점 AG 의 `margin_headroom` 은 −22pp (마진이 이미 테마 P75 위) — 토크를 끌어올린 것은
+      `price_beta_hist` 1.21·opleverage 다. SBSW 는 SF1 미수록(20-F)이라 **판정 불가**, ALM 은
+      `rare_earth` 에서 S̃ 1.00 이지만 분기 6개뿐이라 T 계산 불가. 표본이 2개인 "1위" 는 검정이
+      아니다 — **M3.5 와 같은 종류의 관문이며, 맞지 않는 것을 맞게 고치지 않았다** (`CLAUDE.md` §1)
+- [ ] 로열티/스트리밍·미드스트림 옵션 그룹 태깅 (§5) — Sharadar 라벨이 없어 미구현
+- [ ] L4 스코어 백테스트 (축별 rank-IC) — `10-validation.md` §2 경로. 특성 함수는 `asof` 만
+      바꾸면 PIT 로 돈다 (`features.build_features`)
 
 ## M6 · L5 포트 구성기
+> **구현 상태 (2026-08-23)** — 최적화기·사다리·계획서 절반은 `src/msa/l5/` · `msa portfolio` 로 서 있다
+> (`07-portfolio.md` "구현 노트 (M6)"). **케이스 스터디 6건은 아직 없다** — 그래서 C1-(ii) 는 현재
+> 어느 테마에서도 숫자를 만들지 못하고, 계획서는 그 사실을 테마마다 `L = 계산 불가 (… 사망 사례 —)`
+> 로 찍는다. 아래 체크는 그 상태 그대로다.
+
 **완료 기준**
-- [ ] SOCP 풀이 (ENB 는 구속 제약이 아니다 — 클러스터 상한 반복은 사용자가 요구할 때만 도는 선택적 절차)
-- [ ] MDD 예산 두 방식(변동성·시나리오) 병행 계산, 보수적 쪽 채택
-- [ ] **케이스 스터디 6건 작성** (`04-value-trap.md` §5 · 사이클 3 · 사망 3) —
+- [x] SOCP 풀이 (ENB 는 구속 제약이 아니다 — 클러스터 상한 반복은 사용자가 요구할 때만 도는 선택적 절차)
+      — `cvxpy` + CLARABEL. 클러스터 상한은 `--cluster-cap name=cap` 로만 들어간다 (`optimize.py`)
+- [x] MDD 예산 두 방식(변동성·시나리오) 병행 계산, 보수적 쪽 채택 — 두 제약을 **동시에** 걸어
+      자동으로 타이트한 쪽이 구속하고, 어느 쪽이 경계에 붙었는지(`mdd_binding`)를 계획서에 적는다.
+      단, (ii) 는 `L_i` 가 있는 종목의 **부분합**이며 빠진 종목은 경고로 드러난다
+- [x] **케이스 스터디 6건 작성** (`04-value-trap.md` §5 · 사이클 3 · 사망 3) —
       **M6 의 선행 조건이다.** C1-(ii) 가 1차 방어선이 되면서 시나리오 손실 `L_i` 가
-      사망 사례의 낙폭을 입력으로 요구한다 (`07-portfolio.md` §2 C1)
+      사망 사례의 낙폭을 입력으로 요구한다 (`07-portfolio.md` §2 C1).
+      → 2026-08-23 작성: `docs/cases/` 6건 + `state/cases/cases.yaml` + `docs/cases/README.md`.
+      6건 모두 게이트 결과가 역사와 일치했다. 다만 `verified: false` 4건
+      (silver-miners-2015 축1 10y 출처 없음 · offshore-drilling-2016 리그 10y 시계열 없음 ·
+      tankers-2021 발주잔량 출처 본문 미확인 · mall-reit-2018 축1 이 저장소 설정상 n/a).
+      사망 낙폭(L_i 입력): coal −95.3% · offshore_drilling −99.0% · reit_retail 버킷 −64.0%
+      (몰 REIT 개별 −77~−100% — 어느 쪽을 쓸지 `07` 리포트가 명시해야 한다).
+      `× 0.5` 계수 재검토는 이 작업에 포함하지 않았다.
 - [ ] **`L_i` 를 케이스 스터디에서 산출했음을 검증** — 각 테마의 `L_i` 가
       `max(과거 유사 국면 최대 낙폭, 케이스 스터디 사망 사례 낙폭 × 0.5)` 로 계산되고,
       어느 케이스에서 왔는지 리포트에 출처로 표기된다. 케이스가 없는 테마는
       `L_i` 를 만들 수 없으므로 C1-(ii) 를 계산할 수 없다는 사실이 드러나야 한다
       (이 사용은 임계값 조정이 아니라 **손실 크기의 추정**이다 — `10-validation.md` §7)
-- [ ] 사다리 3단 · Tier1/2 스탑 · 시간 스탑 · TP 3단 산출
+      — **기계 쪽은 있다**: 공식·출처 표기(`[case_id]`)·"없음" 표기는 `risk.py` 가 하고 테스트가 잰다.
+      **입력 쪽이 없다**: 표 `state/cases/cases.yaml` 의 스키마와 예시(`docs/specs/cases.example.yaml`,
+      11행 전부 `verified: false` · `sources: []`)만 있고, `verified: true` 인 사망 사례 행은 0개라
+      실제 `L_i` 는 아직 한 테마도 서지 않는다. 체크는 6건이 들어온 뒤에 한다
+- [x] 사다리 3단 · Tier1/2 스탑 · 시간 스탑 · TP 3단 산출 — `ladders.py`. M0.1 정정 산술
+      (50/30/20 → 평단 −8.5% · Tier2 = 초기가 −40.5% · 손실 기여 12.25%)을 테스트가 재현한다
 - [ ] **`cycle_confidence` 수기 산출 경로가 서 있다** — 아래 "M6 구간에 `c` 를 누가 만드는가"
       의 절차대로 사람이 `04-value-trap.md` §4 규칙을 적용하고, 그 값과 5축 판정·증거가
       결정 저널 진입 항목에 남으며(`09-operations.md` §2), 스캔 산출물에도 같은 값이 기록된다.
       `c` 없이는 목적함수도 C6 도 사다리도 계산되지 않으므로 이것이 M6 의 실행 전제다
-- [ ] **확신도 압축 `c̃_t = c̄ + (1−λ)(c_t − c̄)` 를 목적함수에 적용하고 쓰인 `λ` 를
-      매매계획서에 표기** (기본 λ=0.3 선언값, `07-portfolio.md` §2·§6)
-- [ ] `07-portfolio.md` §6 형식의 매매계획서 출력
-- [ ] **ENB 를 리포트 지표로 산출하고 경고 임계 미달 시 경고 표시** (집중을 막지는 않는다)
-- [ ] **축 1 적용 가능 테마 목록(`physical_ref` 보유)을 산출하고 리포트에 표기** —
-      나머지 테마는 축 1 없이 판정된다는 사실이 리포트 안에서 보여야 한다
-- [ ] infeasible 시 완화 순서 고정 동작 (**C3 → C1**. C2 는 구속 제약이 아니므로
-      완화 대상이 아니다 — `07-portfolio.md` §2 풀이 · `09-operations.md` §5)
+- [x] **확신도 압축 `c̃_t = c̄ + (1−λ)(c_t − c̄)` 를 목적함수에 적용하고 쓰인 `λ` 를
+      매매계획서에 표기** (기본 λ=0.3 선언값, `07-portfolio.md` §2·§6) — 계획서 머리 `확신도 압축 λ = 0.3`
+- [x] `07-portfolio.md` §6 형식의 매매계획서 출력 — `plan.py` → `state/portfolio/<date>/plan.md`
+- [x] **ENB 를 리포트 지표로 산출하고 표기** (집중을 막지는 않는다) — ENB 와 `p₁·p₂·p₃` 를
+      항상 찍는다. **경고 임계는 두지 않았다** — 이 항목의 이전 문구("경고 임계 미달 시 경고 표시")는
+      `07-portfolio.md` §2.4 (b) 가 임계를 없애기로 한 결정과 충돌하므로 07 을 따른다
+- [x] **축 1 적용 가능 테마 목록(`physical_ref` 보유)을 산출하고 리포트에 표기** —
+      후보 테마별 가능/불가 목록 + 유니버스 45/134 를 계획서에 적고, 불가 테마가 편입되면 경고를 낸다
+- [x] infeasible 시 완화 순서 고정 동작 (**C3 → C1**. C2 는 구속 제약이 아니므로
+      완화 대상이 아니다 — `07-portfolio.md` §2 풀이 · `09-operations.md` §5) — 0단 전부 →
+      1단 C3 해제 → 2단 예산 0.35/0.40/0.45/0.50 → 그래도 안 되면 예외. 하한(`min_weight`)이
+      없으면 `w=0` 이 항상 feasible 이라 완화는 하한이 있을 때만 돈다
+- [ ] **L4 → L5 배선** — `msa picks` 산출물을 `picks.csv` 계약으로 떨어뜨리는 연결 (M5 가 끝난 뒤).
+      계약은 `src/msa/l5/inputs.py` 머리말이 정본이다
 
 ## M7 · L3 에이전트
 > **의도적으로 늦다.** 결정론적 계층이 먼저 후보를 좁혀야 비용과 편향이 통제된다.
 
-**완료 기준**
-- [ ] 4역할(supply · catalyst · bear · referee) 구현
-- [ ] thesis 스키마 검증 (evidence·invalidations 없으면 거부)
-- [ ] `bear` 가 **L1 스코어를 못 보는** 독립 컨텍스트로 실행
-- [ ] 하드 게이트 자동 적용 + 기각 사유 기록
-- [ ] 재실행 시 이전 thesis diff 출력
+**완료 기준** (2026-08-23 — 프레임워크 구현 `src/msa/l3/`, `msa research <theme>`. 구현 노트는 `05-agent-research.md` §7)
+- [x] 4역할(supply · catalyst · bear · referee) 구현 — 프롬프트·출력 스키마·오케스트레이션.
+      **실제 LLM 호출은 미검증**: 런타임에 `ANTHROPIC_API_KEY` 와 웹 검색 도구가 없어 Mock/Fixture 제공자로만 돌렸다
+- [x] thesis 스키마 검증 (evidence·invalidations 없으면 거부) — `05` §4 규약 전 행이 검증기·테스트
+- [x] `bear` 가 **L1 스코어를 못 보는** 독립 컨텍스트로 실행 — `BearInputs` 계약 + 프롬프트 토큰 전수 검사 테스트
+- [x] 하드 게이트 자동 적용 + 기각 사유 기록 — `04` §3·§3.1 기계 적용, 기각도 저장, `rejections-pending.yaml` 행
+- [x] 재실행 시 이전 thesis diff 출력 — 필드별 diff + 무효화 제거 의심 표시
 - [ ] **M6 에서 작성된 케이스 스터디 6건을 에이전트 프롬프트에 few-shot 으로 투입**
-      (작성은 M6, 투입은 M7 — 두 일은 다르다)
+      (작성은 M6, 투입은 M7 — 두 일은 다르다). 로더(`state/cases/*.md`)는 연결돼 있고 파일이 없으면
+      프롬프트에 "few-shot 없음" 을 적는다 — **케이스 파일이 아직 없어 미완료**
 
 ## M8 · 운영
 **완료 기준**

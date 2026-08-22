@@ -16,3 +16,6 @@ build/
 state/cache/
 state/scans/
 state/macro/
+state/portfolio/
+state/theses/
+state/picks/
