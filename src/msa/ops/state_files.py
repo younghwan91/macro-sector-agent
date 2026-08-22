@@ -17,24 +17,26 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
 
+from msa.errors import Immutable, RefusedInput
+from msa.io import to_plain
 from msa.ops.thesis import REJECTION_PATHS
 
 Role = Literal["anchor", "torque"]
 PositionStatus = Literal["open", "closed"]
 
 
-class StateFileError(ValueError):
+class StateFileError(RefusedInput, ValueError):
     """스키마 위반 — 조용히 넘어가지 않는다 (`CLAUDE.md` §2)."""
 
 
-class ImmutableRowChanged(StateFileError):
+class ImmutableRowChanged(Immutable, StateFileError):
     """`rejections.yaml` 의 기각 시점 필드를 바꾸려 했다."""
 
 
@@ -213,17 +215,7 @@ class PositionsFile:
         return [p for p in self.positions if p.status == "open"]
 
 
-def _plain(obj: Any) -> Any:
-    """dataclass → yaml 친화 dict (date 는 ISO 문자열, tuple 은 list)."""
-    if hasattr(obj, "__dataclass_fields__"):
-        return _plain(asdict(obj))
-    if isinstance(obj, dict):
-        return {k: _plain(v) for k, v in obj.items()}
-    if isinstance(obj, list | tuple):
-        return [_plain(v) for v in obj]
-    if isinstance(obj, date):
-        return obj.isoformat()
-    return obj
+_plain = to_plain  # dataclass → yaml 친화 dict (date 는 ISO 문자열, tuple 은 list)
 
 
 def _dump(obj: Any, path: Path) -> None:

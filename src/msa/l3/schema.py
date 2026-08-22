@@ -32,6 +32,7 @@ from typing import Any
 import yaml
 
 from msa.config import REPO_ROOT
+from msa.errors import Rejected
 
 SPEC_PATH = REPO_ROOT / "docs" / "specs" / "thesis.schema.yaml"
 
@@ -91,7 +92,7 @@ class ValidationResult:
         self.warnings.append(f"{code}: {msg}")
 
 
-class ThesisRejected(ValueError):
+class ThesisRejected(Rejected, ValueError):
     """스키마 미달 — 산출물이 불완전하다. 저장하지 않는다 (게이트 기각과 다르다, `docs/05` §4)."""
 
     def __init__(self, result: ValidationResult) -> None:

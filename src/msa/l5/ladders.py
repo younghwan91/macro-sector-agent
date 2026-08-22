@@ -26,6 +26,7 @@ from datetime import date
 
 import pandas as pd
 
+from msa.errors import RefusedInput
 from msa.l5.inputs import Pick, ThesisInput
 
 #: 확신도 구간 → 사다리 비율 (1단 / 2단 / 3단). 선언값 (docs/07 §3)
@@ -47,7 +48,7 @@ RUNNER_TRAIL = 0.25
 RUNNER_MA_WEEKS = 10
 
 
-class LadderError(ValueError):
+class LadderError(RefusedInput, ValueError):
     pass
 
 

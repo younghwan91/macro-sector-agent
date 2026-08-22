@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from msa.errors import RefusedInput
+
 #: `gate_result.path` / `rejections.yaml` 의 `path` 열 — 두 곳이 같은 값을 쓴다 (docs/09 §4).
 REJECTION_PATHS: tuple[str, ...] = (
     "hard_gate",
@@ -46,7 +48,7 @@ _REQUIRED_TOP = (
 )
 
 
-class ThesisInvalid(ValueError):
+class ThesisInvalid(RefusedInput, ValueError):
     """저장을 거부해야 하는 thesis — 불완전한 산출물은 기록되지 않는다."""
 
 

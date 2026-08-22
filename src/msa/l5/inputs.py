@@ -64,6 +64,7 @@ from __future__ import annotations
 
 import csv
 import logging
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -71,6 +72,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+
+from msa.errors import RefusedInput
 
 log = logging.getLogger(__name__)
 
@@ -93,7 +96,7 @@ PICKS_OPTIONAL_COLUMNS: tuple[str, ...] = (
 )
 
 
-class InputError(ValueError):
+class InputError(RefusedInput, ValueError):
     """입력 파일이 계약을 어긴다. 조용히 건너뛰지 않고 던진다 (`CLAUDE.md` §2)."""
 
 
@@ -484,8 +487,7 @@ def load_cases(path: Path | str | None) -> CaseTable:
         raise InputError(f"{p}: 최상위에 cases 키가 없다")
     rows = raw["cases"] or []
     cases = tuple(_parse_case(r, str(p)) for r in rows)
-    ids = [c.id for c in cases]
-    dups = sorted({i for i in ids if ids.count(i) > 1})
+    dups = sorted(i for i, n in Counter(c.id for c in cases).items() if n > 1)
     if dups:
         raise InputError(f"{p}: 중복 케이스 id {dups}")
     return CaseTable(cases=cases, path=str(p), exists=True)
