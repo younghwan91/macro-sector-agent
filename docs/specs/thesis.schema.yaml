@@ -81,7 +81,11 @@ properties:
       not_applicable = 축을 **쓸 수 없다** (입력 자체가 없다 — 04-value-trap.md 축1 적용 가능 범위).
       contested      = 축을 썼는데 **집계 방식에 따라 판정이 뒤집힌다** (입력이 불안정하다 — 04 §3.1).
       공통점은 **둘 다 통과로 취급하지 않는다**는 것이다. 해당 축의 상태가 리포트에 표시되고,
-      not_applicable 은 확신도가 감점되며, contested 는 게이트가 보류되고 포트 편입이 불가하다.
+      not_applicable 은 그 축의 가중치가 축 3 으로 이전되며 axis1_available = false 가
+      key_uncertainties 에 명시된다 (04-value-trap.md 축1 적용 가능 범위).
+      **확신도를 감점하지 않는다** — 04 §4 의 가감점 규칙에 해당 항목이 없고,
+      04 는 이 사유로 계수를 바꾸지 않는다고 못박았다 (CLAUDE.md §1).
+      contested 는 게이트가 보류되고 포트 편입이 불가하다.
 
     properties:
 
@@ -103,10 +107,16 @@ properties:
               (04-value-trap.md 축1 적용 가능 범위). 스위치는 themes.yaml 의 physical_ref 다.
 
           unit_series_source:
-            enum: [physical_series, revenue_proxy]
+            enum: [physical_series, revenue_proxy, none]
             note: >
               어느 입력으로 unit_series 를 계산했는지. physical_series = 외부 실물 소비량 시계열
               (1순위, L3 supply_analyst 수집), revenue_proxy = 동일 구성원 매출 / 가격지수 (폴백).
+              none = 두 입력이 모두 없어 unit_series 를 계산하지 못했다 —
+              **axis1_available: false 일 때만 허용되며**(그때는 verdict 도 not_applicable 이다),
+              반대로 axis1_available: true 이면 none 을 쓸 수 없다.
+              required 를 axis1_available 에 종속시키지 않고 none 을 넣은 이유:
+              필드를 빼면 "누락" 과 "쓸 수 없음" 이 구분되지 않아 조용한 절단이 된다
+              (CLAUDE.md §2). 값으로 남겨야 리포트가 그 사실을 표시할 수 있다.
               **출처가 없으면 축 판정 불가** — CLAUDE.md §3 에 따라 이 필드가 가리키는 시계열은
               evidence_refs 로 최소 1개 reliability medium 이상의 출처에 연결돼야 하고,
               연결되지 않으면 verdict 를 낼 수 없다 (not_applicable 로 닫고 그 사실을 적는다).

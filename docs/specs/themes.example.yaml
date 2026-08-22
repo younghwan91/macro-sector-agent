@@ -1,6 +1,8 @@
 # 테마 버킷 정의 — 스키마 예시
 # 실제 파일은 state/themes.yaml (M2 에서 109개 초안을 실측 대조해 확정)
 # 규약: id 는 영구 불변 (결정 저널이 이걸로 참조한다)
+# physical_ref 는 {source, symbol} 객체 또는 null 이다 (source: etf | fred | manual).
+#   null = 축 1(물량 추세)을 쓸 수 없다는 뜻 → axis1_available = false (04-value-trap.md 축 1)
 
 schema_version: 1
 
@@ -34,7 +36,7 @@ themes:
     exclude_tickers: []
     etf_proxy: REMX
     etf_proxy_alt: []
-    physical_ref: null
+    physical_ref: null                          # 축 1 적용 불가 → axis1_available = false
     correlation_cluster: strategic_materials
     notes: >
       Sharadar 에 '희토류' industry 라벨이 없다 — 자동 매칭만으로는 분리 불가라
@@ -86,7 +88,7 @@ themes:
     exclude_tickers: []
     etf_proxy: null
     etf_proxy_alt: [XLI]
-    physical_ref: null
+    physical_ref: null                          # 축 1 적용 불가 → axis1_available = false
     correlation_cluster: ai_power
     notes: >
       상류 드라이버가 hyperscaler_capex — Sharadar SF1 에서 직접 계산한다.
