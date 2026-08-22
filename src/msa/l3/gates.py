@@ -19,18 +19,14 @@ referee(LLM) 는 축 2~5 의 판정만 내고, 이 모듈이 게이트와 확신
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import partial
 from typing import Any
 
 from msa.l3.contracts import Axis1Inputs
+from msa.thesis import AXES, AXIS_VERDICTS
 
-AXES: tuple[str, ...] = (
-    "unit_demand",
-    "capital_cycle",
-    "substitution",
-    "cost_curve",
-    "terminal_risk",
-)
-VERDICTS: tuple[str, ...] = ("cycle", "warning", "death", "contested", "not_applicable")
+#: 옛 이름 — enum 은 `msa.thesis` 가 단일 출처다.
+VERDICTS = AXIS_VERDICTS
 
 CONF_BASE = 0.5
 CONF_CAP_ON_DEATH = 0.35
@@ -67,8 +63,8 @@ class AxisVerdicts:
     def __post_init__(self) -> None:
         for a in AXES:
             v = getattr(self, a)
-            if v not in VERDICTS:
-                raise ValueError(f"{a}: 알 수 없는 판정 {v!r} (허용 {VERDICTS})")
+            if v not in AXIS_VERDICTS:
+                raise ValueError(f"{a}: 알 수 없는 판정 {v!r} (허용 {AXIS_VERDICTS})")
 
 
 @dataclass(frozen=True)
@@ -182,7 +178,6 @@ def apply_gates(
     """`docs/04` §3 하드 게이트. `confidence` 는 이미 `cycle_confidence()` 로 계산된 값(상한 "
     "포함)."""
     a1, a3 = verdicts.unit_demand, verdicts.substitution
-    snap = verdicts.as_dict()
     notes: list[str] = []
     if debt_24m_over_half:
         notes.append(
@@ -192,24 +187,26 @@ def apply_gates(
         notes.append(
             "cycle_class=secular_risk — 게이트 기본 적용, 통과를 입증해야 후보 (docs/01 §3)"
         )
+    # 모든 분기가 공유하는 필드 — 분기는 status·rule·reason(·path·ruling)만 말한다
+    result = partial(
+        GateResult,
+        path=None,
+        axis_verdicts=verdicts.as_dict(),
+        l4_survival_filter=debt_24m_over_half,
+        notes=tuple(notes),
+    )
 
     # 1. 선행 관문 — 입력이 안정적인가
     if axis1.contested or a1 == "contested":
-        ruling_ok = (
-            bool(referee_ruling and referee_ruling.strip())
-            and bool(referee_evidence_refs)
-            and referee_refs_valid
-        )
-        if ruling_ok:
-            return GateResult(
+        has_ruling = bool(referee_ruling and referee_ruling.strip())
+        if has_ruling and referee_evidence_refs and referee_refs_valid:
+            return result(
                 status="contested",
                 portfolio_eligible=False,
                 rule=(
                     "축1 판정이 SS 보정 전후로 뒤집힘 또는 sign_split → axis1_contested (04 "
                     "§3.1). referee_ruling 있음 → 보류"
                 ),
-                path=None,
-                axis_verdicts=snap,
                 reason=(
                     f"verdict_pre_ss={axis1.verdict_pre_ss} · "
                     f"verdict_post_ss={axis1.verdict_post_ss} · sign_split={axis1.sign_split}. "
@@ -217,19 +214,17 @@ def apply_gates(
                 ),
                 referee_ruling=referee_ruling,
                 referee_evidence_refs=referee_evidence_refs,
-                l4_survival_filter=debt_24m_over_half,
-                notes=tuple(notes),
             )
         why = (
             "referee_ruling 없음"
-            if not (referee_ruling and referee_ruling.strip())
+            if not has_ruling
             else (
                 "referee_evidence_refs 비어 있음"
                 if not referee_evidence_refs
                 else "referee_evidence_refs 가 증거 목록에 없음"
             )
         )
-        return GateResult(
+        return result(
             status="rejected",
             portfolio_eligible=False,
             rule=(
@@ -237,61 +232,47 @@ def apply_gates(
                 "닫는다 (04 §3.1 '서술 못 하면 기각')"
             ),
             path="hard_gate",
-            axis_verdicts=snap,
             reason=f"{why}. 보류는 판단 유보이지 면제가 아니다.",
             referee_ruling=referee_ruling,
             referee_evidence_refs=referee_evidence_refs,
-            l4_survival_filter=debt_24m_over_half,
-            notes=tuple(notes),
         )
 
     # 2. 자동 기각
     if a1 == "death" and a3 in ("warning", "death"):
-        return GateResult(
+        return result(
             status="rejected",
             portfolio_eligible=False,
             rule="축1 사망 AND 축3 ∈ {경고, 사망} → 자동 기각 (04 §3). L1 스코어 무관",
             path="hard_gate",
-            axis_verdicts=snap,
             reason=f"축1 {a1} (unit_cagr_10y={axis1.unit_cagr_10y}) · 축3 {a3}",
-            l4_survival_filter=debt_24m_over_half,
-            notes=tuple(notes),
         )
 
     # 3. 상한 — 편입 불가
     if a1 == "death" or a3 == "death":
-        return GateResult(
+        return result(
             status="passed",
             portfolio_eligible=False,
             rule=(
                 f"축1 사망 OR 축3 사망 → cycle_confidence 상한 {CONF_CAP_ON_DEATH} · 포트 편입 "
                 f"불가, 관찰 목록만 (04 §3)"
             ),
-            path=None,
-            axis_verdicts=snap,
             reason=f"축1 {a1} · 축3 {a3} · cycle_confidence={confidence}",
-            l4_survival_filter=debt_24m_over_half,
-            notes=tuple(notes),
         )
 
     # 5. secular_risk — 통과 입증
     if secular_risk and not (a1 == "cycle" and a3 == "cycle"):
-        return GateResult(
+        return result(
             status="passed",
             portfolio_eligible=False,
             rule=(
                 "secular_risk 버킷: 축1·축3 모두 cycle 이어야 편입 후보 (docs/01 §3 '통과를 "
                 "입증') — 입증 안 됨"
             ),
-            path=None,
-            axis_verdicts=snap,
             reason=f"축1 {a1} · 축3 {a3}",
-            l4_survival_filter=debt_24m_over_half,
-            notes=tuple(notes),
         )
 
     eligible = confidence >= PORTFOLIO_MIN_CONFIDENCE
-    return GateResult(
+    return result(
         status="passed",
         portfolio_eligible=eligible,
         rule="04 §3 의 어느 기각 조항에도 걸리지 않음"
@@ -303,11 +284,7 @@ def apply_gates(
                 " 로 편입 불가"
             )
         ),
-        path=None,
-        axis_verdicts=snap,
         reason=f"축1 {a1} · 축3 {a3} · cycle_confidence={confidence}",
-        l4_survival_filter=debt_24m_over_half,
-        notes=tuple(notes),
     )
 
 
@@ -320,7 +297,8 @@ def rejection_row(
     scoreboard_rank: int | None,
     scan_dir: str,
 ) -> dict[str, Any]:
-    """`docs/09-operations.md` §4 `state/rejections.yaml` 행 형식. `journal` 은 M8 이 채운다."""
+    """`docs/09-operations.md` §4 `state/rejections.yaml` 행 — 키는 `ops.state_files.Rejection` 의
+    필드와 같다 (임포트하지 않고 이름을 맞춘다). `journal`·`r_12m`·`r_24m` 은 M8 이 채운다."""
     return {
         "theme": theme_id,
         "rejected_at": rejected_at,
@@ -332,6 +310,7 @@ def rejection_row(
         "scan": scan_dir,
         "r_12m": None,
         "r_24m": None,
+        "axis_verdicts": dict(gate.axis_verdicts),
     }
 
 
