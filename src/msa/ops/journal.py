@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import re
 import subprocess
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
@@ -25,6 +25,8 @@ from typing import Any, Literal
 import yaml
 
 from msa.config import REPO_ROOT
+from msa.errors import Immutable, RefusedInput
+from msa.io import to_plain
 from msa.ops.thesis import (
     AXES,
     AXIS_VERDICTS,
@@ -42,11 +44,11 @@ ENTRY_TYPES = ("entry", "check", "add", "tp", "exit", "reject")
 ExitVia = Literal["tier1", "tier2", "time_stop", "tp_complete", "human"]
 
 
-class IncompleteEntry(ValueError):
+class IncompleteEntry(RefusedInput, ValueError):
     """필수 필드가 비어 작성이 거부됐다. 어떤 필드인지 전부 나열한다."""
 
 
-class JournalImmutable(RuntimeError):
+class JournalImmutable(Immutable, RuntimeError):
     """기존 파일을 덮어쓰려 했다 — 생각이 바뀌면 새 항목을 추가하고 링크한다."""
 
 
@@ -359,16 +361,7 @@ JournalRecord = EntryRecord | CheckRecord | AddRecord | TpRecord | ExitRecord | 
 # ---------------------------------------------------------------------------
 
 
-def _plain(obj: Any) -> Any:
-    if hasattr(obj, "__dataclass_fields__"):
-        return _plain(asdict(obj))
-    if isinstance(obj, dict):
-        return {k: _plain(v) for k, v in obj.items()}
-    if isinstance(obj, list | tuple):
-        return [_plain(v) for v in obj]
-    if isinstance(obj, date):
-        return obj.isoformat()
-    return obj
+_plain = to_plain
 
 
 def _yaml(obj: Any) -> str:

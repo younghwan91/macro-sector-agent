@@ -33,11 +33,11 @@ M1 에서 `~/data/us_micro.duckdb` 를 실측한 결과, 문서가 기술한 Sha
 
 from __future__ import annotations
 
-import csv
-import io
+import hashlib
 import logging
 import zipfile
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -45,8 +45,12 @@ from typing import Any
 
 import duckdb
 import pandas as pd
+import pyarrow as pa
+import pyarrow.compute as pc
+import pyarrow.csv as pacsv
 
 from msa.config import paths
+from msa.errors import MsaError
 
 log = logging.getLogger(__name__)
 
@@ -70,8 +74,24 @@ KNOWN_TABLES = (
 #: 실측 결과 0행인 테이블. `table_stats()` 가 이것을 "비었음" 이 아니라 "미적재" 로 보고한다.
 EMPTY_TABLES = ("estimates",)
 
+#: `Store.prices()` 가 기본으로 돌려주는 12개 컬럼 (순서 포함).
+PRICE_COLUMNS: tuple[str, ...] = (
+    "ticker",
+    "date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "closeunadj",
+    "volume",
+    "dividends",
+    "mcap",
+    "ev",
+    "short_interest",
+)
 
-class StoreError(RuntimeError):
+
+class StoreError(MsaError, RuntimeError):
     """스토어 계층의 모든 예외의 최상위."""
 
 
@@ -113,6 +133,7 @@ class Store:
                 "`docs/08-data-contract.md` §6 부트스트랩 절차를 먼저 밟아라."
             )
         self._con = duckdb.connect(str(self.path), read_only=True)
+        self._columns: dict[str, list[str]] = {}
         self._verify_schema()
 
     # ------------------------------------------------------------------ 내부
@@ -129,15 +150,118 @@ class Store:
     def _df(self, sql: str, params: Sequence[Any] | None = None) -> pd.DataFrame:
         return self._con.execute(sql, list(params or [])).fetch_df()
 
+    def scalar(self, sql: str, params: Sequence[Any] | None = None) -> Any:
+        """단일 값 조회 (`select max(date) …`·`select count(*) …`). 행이 없으면 None."""
+        row = self._con.execute(sql, list(params or [])).fetchone()
+        return None if row is None else row[0]
+
     def columns(self, table: str) -> list[str]:
+        """테이블 컬럼 목록 (ordinal 순). 읽기 전용 연결이라 한 번 읽으면 캐시한다."""
         if table not in KNOWN_TABLES:
             raise SchemaDrift(f"모르는 테이블: {table}")
-        rows = self._con.execute(
-            "select column_name from information_schema.columns "
-            "where table_name = ? order by ordinal_position",
-            [table],
-        ).fetchall()
-        return [r[0] for r in rows]
+        if table not in self._columns:
+            rows = self._con.execute(
+                "select column_name from information_schema.columns "
+                "where table_name = ? order by ordinal_position",
+                [table],
+            ).fetchall()
+            self._columns[table] = [r[0] for r in rows]
+        return list(self._columns[table])
+
+    # ------------------------------------------------------------------ 일반 질의 표면
+    #
+    # 계층 모듈이 `store._con` 에 직접 손대지 않게 하기 위한 것이다. SQL 텍스트는 호출자가
+    # 갖고, 프레임 등록·해제·`_guard` 는 여기서 한다.
+
+    @contextmanager
+    def temp_tables(self, **frames: pd.DataFrame) -> Iterator[None]:
+        """`frames` 를 이름대로 DuckDB 뷰로 등록하고 블록이 끝나면 해제한다."""
+        names = list(frames)
+        for name, df in frames.items():
+            self._con.register(name, df)
+        try:
+            yield
+        finally:
+            for name in names:
+                self._con.unregister(name)
+
+    def query(
+        self,
+        sql: str,
+        params: Sequence[Any] | None = None,
+        *,
+        min_rows: int = 0,
+        frames: dict[str, pd.DataFrame] | None = None,
+        what: str | None = None,
+    ) -> pd.DataFrame:
+        """임의 SQL → DataFrame. `frames` 는 질의 동안만 등록되는 뷰. `min_rows` 미만이면 던진다."""
+        with self.temp_tables(**(frames or {})):
+            df = self._df(sql, params)
+        _guard(df, what or f"query({' '.join(sql.split())[:60]}…)", min_rows=min_rows)
+        return df
+
+    def execute(self, sql: str, params: Sequence[Any] | None = None) -> None:
+        """결과가 없는 문장 (임시 테이블 생성·삭제). 읽기 전용 연결이라 DDL 은 임시 객체뿐이다."""
+        self._con.execute(sql, list(params or []))
+
+    def configure(self, *, threads: int | None = None, memory_limit: str | None = None) -> None:
+        """세션 설정 (`set threads`·`set memory_limit`) — 큰 집계 전에 호출한다."""
+        if threads is not None:
+            self._con.execute(f"set threads = {int(threads)}")
+        if memory_limit is not None:
+            self._con.execute(f"set memory_limit = '{memory_limit}'")
+
+    def store_end(self) -> date | None:
+        """`prices` 의 최종일 — 스캔·피처의 기본 기준일. 행이 없으면 None."""
+        v = self.scalar("select max(date) from prices")
+        return None if v is None else _as_date(v)
+
+    def latest_mcap(
+        self, tickers: Iterable[str] | None = None, asof: date | str | None = None
+    ) -> pd.Series:
+        """종목별 **가장 최근 non-null 시총** (달러). index ticker(오름차순), name `mcap`.
+
+        `arg_max(mcap, date)` 해시 집계 — `row_number() over (order by date desc) = 1` 과 같다.
+        `asof` 를 주면 `date ≤ asof` 안에서 고른다.
+        """
+        clauses = ["mcap is not null"]
+        params: list[Any] = []
+        if tickers is not None:
+            frag, vals = _in_clause("ticker", [t.upper() for t in tickers])
+            clauses.append(frag)
+            params.extend(vals)
+        _date_clauses(clauses, params, None, asof, "date")
+        df = self._df(
+            "select ticker, arg_max(mcap, date) as mcap from prices "
+            f"where {' and '.join(clauses)} group by ticker order by ticker",
+            params,
+        )
+        return pd.Series(
+            df["mcap"].to_numpy(), index=pd.Index(df["ticker"], name="ticker"), name="mcap"
+        )
+
+    def close_series(
+        self, ticker: str, start: date | str | None = None, end: date | str | None = None
+    ) -> pd.Series:
+        """한 종목의 조정 종가 — `DatetimeIndex`(오름차순), name = ticker. 없으면 빈 시리즈."""
+        where, params = _ticker_date_where([ticker], start, end)
+        df = self._df(f"select date, close from prices {where} order by date", params)
+        return pd.Series(
+            df["close"].to_numpy(dtype=float),
+            index=pd.DatetimeIndex(pd.to_datetime(df["date"]), name="date"),
+            name=ticker.upper(),
+        )
+
+    def tickers_with_prices(
+        self, tickers: Iterable[str], start: date | str | None = None, end: date | str | None = None
+    ) -> set[str]:
+        """요청 종목 중 구간 안에 가격 행이 **하나라도** 있는 것 (`select distinct ticker`)."""
+        ts = list(tickers)
+        if not ts:
+            return set()
+        where, params = _ticker_date_where(ts, start, end)
+        df = self._df(f"select distinct ticker from prices {where}", params)
+        return set(df["ticker"].astype(str))
 
     def close(self) -> None:
         self._con.close()
@@ -158,11 +282,13 @@ class Store:
         *,
         min_rows: int,
         expect_tickers: int | None = None,
+        columns: Sequence[str] | None = None,
     ) -> pd.DataFrame:
         """일별 가격·시총. **폐지 종목을 포함한다** (생존 편향 방지, `docs/01` §5).
 
-        반환 컬럼: `ticker, date, open, high, low, close, closeunadj, volume,
-        dividends, mcap, ev, short_interest`.
+        반환 컬럼(기본 = `PRICE_COLUMNS` 12개): `ticker, date, open, high, low, close, closeunadj,
+        volume, dividends, mcap, ev, short_interest`. `columns` 를 주면 그 열만 읽는다
+        (순서는 준 대로; `PRICE_COLUMNS` 밖이면 `SchemaDrift`).
 
         - `close` 는 **조정 종가**, `closeunadj` 가 미조정 원가다.
         - `mcap`·`ev` 는 **달러**다. 적재 시점에 백만→달러 환산이 이미 끝났다
@@ -175,10 +301,13 @@ class Store:
             expect_tickers: 요청 티커 중 최소 몇 개가 결과에 있어야 하는지.
                 `None` 이면 검사하지 않는다.
         """
+        cols = PRICE_COLUMNS if columns is None else tuple(columns)
+        unknown = [c for c in cols if c not in PRICE_COLUMNS]
+        if unknown:
+            raise SchemaDrift(f"prices 에 없는 컬럼: {unknown}. 있는 것: {list(PRICE_COLUMNS)}")
         where, params = _ticker_date_where(tickers, start, end)
         df = self._df(
-            "select ticker, date, open, high, low, close, closeunadj, volume, "
-            f"dividends, mcap, ev, short_interest from prices {where} order by ticker, date",
+            f"select {', '.join(cols)} from prices {where} order by ticker, date",
             params,
         )
         _guard(df, "prices", min_rows=min_rows, expect_tickers=expect_tickers, requested=tickers)
@@ -210,8 +339,9 @@ class Store:
             cats = list(categories)
             if not cats:
                 raise ValueError("categories=[] 는 전부 거르라는 뜻이 된다. 필터 없음은 None 이다.")
-            clauses.append(f"category in ({','.join('?' * len(cats))})")
-            params.extend(cats)
+            frag, vals = _in_clause("category", cats)
+            clauses.append(frag)
+            params.extend(vals)
         if not include_delisted:
             clauses.append("coalesce(is_delisted, 'N') <> 'Y'")
         where = f"where {' and '.join(clauses)}" if clauses else ""
@@ -285,8 +415,9 @@ class Store:
             ks = list(kinds)
             if not ks:
                 raise ValueError("kinds=[] 는 전부 거르라는 뜻이 된다. 필터 없음은 None 이다.")
-            clauses.append(f"action in ({','.join('?' * len(ks))})")
-            params.extend(ks)
+            frag, vals = _in_clause("action", ks)
+            clauses.append(frag)
+            params.extend(vals)
         _date_clauses(clauses, params, start, end, "date")
         where = f"where {' and '.join(clauses)}" if clauses else ""
         df = self._df(
@@ -307,7 +438,7 @@ class Store:
         out: list[TableStat] = []
         for name in KNOWN_TABLES:
             cols = set(self.columns(name))
-            rows = int(self._con.execute(f'select count(*) from "{name}"').fetchone()[0])  # type: ignore[index]
+            rows = int(self.scalar(f'select count(*) from "{name}"'))
             date_col = next((c for c in ("date", "datekey", "calendardate") if c in cols), None)
             start = end = None
             if date_col and rows:
@@ -316,9 +447,7 @@ class Store:
                 ).fetchone()  # type: ignore[misc]
             n_tickers = None
             if "ticker" in cols and rows:
-                n_tickers = int(
-                    self._con.execute(f'select count(distinct ticker) from "{name}"').fetchone()[0]  # type: ignore[index]
-                )
+                n_tickers = int(self.scalar(f'select count(distinct ticker) from "{name}"'))
             out.append(
                 TableStat(
                     name=name,
@@ -337,7 +466,7 @@ class Store:
         unknown = [c for c in columns if c not in available]
         if unknown:
             raise SchemaDrift(f"{table} 에 없는 컬럼: {unknown}")
-        rows = int(self._con.execute(f'select count(*) from "{table}"').fetchone()[0])  # type: ignore[index]
+        rows = int(self.scalar(f'select count(*) from "{table}"'))
         if rows == 0:
             return dict.fromkeys(columns, 1.0)
         expr = ", ".join(f'count("{c}")' for c in columns)
@@ -364,12 +493,25 @@ ENTRY_ACTIONS = ("listed",)
 #: 스토어에 적재된 유일한 ETF. 나머지는 벌크 `funds.csv.zip` 에만 있다.
 ETF_IN_STORE = ("SPY",)
 
+#: `etf_prices()` 반환 프레임의 컬럼 (순서 포함).
+ETF_COLUMNS: tuple[str, ...] = ("ticker", "date", "close", "closeadj", "volume")
+
+#: 벌크 CSV 에서 읽는 열의 pyarrow 타입 — 전부 문자열로 받아 pandas 에서 예전과 같은 규칙으로
+#: 변환한다 (`pd.to_datetime(...).dt.date` · `pd.to_numeric(errors="coerce")`).
+_ETF_READ_TYPES = {c: pa.string() for c in ETF_COLUMNS}
+
+
+def empty_etf_frame() -> pd.DataFrame:
+    """`etf_prices()` 와 같은 컬럼의 빈 프레임 — 벌크를 못 읽었을 때 하류가 같은 모양을 본다."""
+    return pd.DataFrame(columns=list(ETF_COLUMNS))
+
 
 def etf_prices(
     tickers: Sequence[str],
     *,
     min_rows: int,
     raw_dir: Path | None = None,
+    cache_dir: Path | None = None,
 ) -> pd.DataFrame:
     """ETF 일별 가격 — 벌크 원본 `funds.csv.zip` 을 직접 읽는다.
 
@@ -378,8 +520,14 @@ def etf_prices(
     NLR·GLD·CPER 은 전부 없다. `docs/08` §6.2 가 "`SPY` 외 ETF 가 있는지" 로 물었던
     항목의 답은 **없다** 이며, 그래서 이 함수가 벌크를 직접 읽는다.
 
-    zip 안 CSV 를 한 번 스트리밍하며 요청한 티커를 전부 걸러 낸다 (약 12초, 1회 통과).
+    zip 안 CSV 를 pyarrow 로 한 번 스트리밍하며 요청한 티커를 배치 단위로 걸러 낸다.
     티커를 하나씩 부르면 그만큼 통과 횟수가 늘어나므로 **한 번에 모아서 부른다.**
+
+    결과는 `state/cache/etf_<지문>.parquet` 에 사이드 캐시한다 — 지문 = 요청 티커 집합 +
+    zip 의 크기·수정시각이라 **벌크가 갱신되면 자동으로 비껴간다.** 캐시 적중이면 zip 을 열지
+    않는다. `cache_dir=None` 이면 `paths().cache`.
+
+    반환: `ETF_COLUMNS` — `date` 는 `datetime.date`, 나머지 숫자는 float, `ticker, date` 오름차순.
     """
     want = {t.upper() for t in tickers}
     if not want:
@@ -393,34 +541,89 @@ def etf_prices(
             f"ETF 벌크 원본을 찾을 수 없다: {base}/funds.csv.zip. "
             "MSA_SHARADAR_RAW 로 경로를 지정해라."
         )
-    rows = list(_scan_funds_zip(zip_path, want))
-    df = pd.DataFrame(rows, columns=["ticker", "date", "close", "closeadj", "volume"])
-    if not df.empty:
-        df["date"] = pd.to_datetime(df["date"]).dt.date
-        for c in ("close", "closeadj", "volume"):
-            df[c] = pd.to_numeric(df[c], errors="coerce")
-        df = df.sort_values(["ticker", "date"], ignore_index=True)
+    cdir = cache_dir if cache_dir is not None else paths().cache
+    cache = cdir / f"etf_{_etf_cache_key(want, zip_path)}.parquet"
+    if cache.exists():
+        log.info("etf_prices: 캐시 사용 %s", cache.name)
+        df = pd.read_parquet(cache)
+    else:
+        df = _scan_funds_zip(zip_path, want)
+        try:
+            cdir.mkdir(parents=True, exist_ok=True)
+            df.to_parquet(cache)
+        except OSError as e:  # 캐시 실패는 결과를 막지 않는다 — 다음에 다시 훑을 뿐이다
+            log.warning("etf_prices: 캐시 저장 실패 %s: %s", cache, e)
     _guard(df, f"etf_prices({zip_path.name})", min_rows=min_rows, requested=sorted(want))
     return df
 
 
-def _scan_funds_zip(zip_path: Path, want: set[str]) -> Iterable[tuple[str, str, str, str, str]]:
+def _etf_cache_key(want: set[str], zip_path: Path) -> str:
+    st = zip_path.stat()
+    h = hashlib.sha256()
+    h.update(",".join(sorted(want)).encode())
+    h.update(f"|{st.st_size}|{int(st.st_mtime)}".encode())
+    return h.hexdigest()[:16]
+
+
+def _scan_funds_zip(zip_path: Path, want: set[str]) -> pd.DataFrame:
+    """zip 안 CSV 를 pyarrow 로 배치 스트리밍하며 `want` 티커만 남긴다. 한 번 통과."""
     with zipfile.ZipFile(zip_path) as zf:
         name = next((n for n in zf.namelist() if n.endswith(".csv")), None)
         if name is None:
             raise StoreError(f"{zip_path} 안에 csv 가 없다: {zf.namelist()}")
         with zf.open(name) as raw:
-            reader = csv.reader(io.TextIOWrapper(raw, encoding="utf-8", newline=""))
-            header = next(reader)
-            idx = {c: i for i, c in enumerate(header)}
-            need = ("ticker", "date", "close", "closeadj", "volume")
-            missing = [c for c in need if c not in idx]
-            if missing:
-                raise SchemaDrift(f"funds.csv 헤더에 없는 컬럼 {missing}. 헤더: {header}")
-            cols = [idx[c] for c in need]
-            for row in reader:
-                if row and row[0] in want:
-                    yield tuple(row[i] for i in cols)  # type: ignore[misc]
+            header = raw.readline().decode("utf-8").rstrip("\r\n").split(",")
+        missing = [c for c in ETF_COLUMNS if c not in header]
+        if missing:
+            raise SchemaDrift(f"funds.csv 헤더에 없는 컬럼 {missing}. 헤더: {header}")
+        value_set = pa.array(sorted(want), type=pa.string())
+        batches: list[pa.RecordBatch] = []
+        with zf.open(name) as raw:
+            reader = pacsv.open_csv(
+                raw,
+                read_options=pacsv.ReadOptions(block_size=8 << 20),
+                convert_options=pacsv.ConvertOptions(
+                    include_columns=list(ETF_COLUMNS), column_types=_ETF_READ_TYPES
+                ),
+            )
+            for batch in reader:
+                mask = pc.is_in(batch.column("ticker"), value_set=value_set)
+                if pc.any(mask).as_py():
+                    batches.append(batch.filter(mask))
+    if batches:
+        table = pa.Table.from_batches(batches).select(list(ETF_COLUMNS))
+        df: pd.DataFrame = table.to_pandas()
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+        for c in ("close", "closeadj", "volume"):
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df = df.sort_values(["ticker", "date"], ignore_index=True)
+    else:
+        df = empty_etf_frame()
+    return df
+
+
+def etf_prices_or_empty(
+    tickers: Sequence[str], *, raw_dir: Path | None = None, cache_dir: Path | None = None
+) -> pd.DataFrame:
+    """`etf_prices(min_rows=0)` 이되 벌크를 못 읽으면(`StoreError`) **경고를 남기고** 빈 프레임.
+
+    스캔·백테스트처럼 ETF 없이도 진행하는 경로용이다 — 조용히 비우지 않고 경고는 반드시 남긴다.
+    """
+    try:
+        return etf_prices(tickers, min_rows=0, raw_dir=raw_dir, cache_dir=cache_dir)
+    except StoreError as e:
+        log.warning("ETF 벌크를 읽지 못했다: %s", e)
+        return empty_etf_frame()
+
+
+def etf_series(df: pd.DataFrame, symbol: str) -> pd.Series | None:
+    """`etf_prices` 프레임에서 한 심볼의 `closeadj` 시계열 (`DatetimeIndex`, 결측 제거, 오름차순).
+    프레임에 없으면 None."""
+    sub = df.loc[df["ticker"] == symbol.upper()]
+    if sub.empty:
+        return None
+    s = pd.Series(sub["closeadj"].to_numpy(), index=pd.to_datetime(sub["date"])).dropna()
+    return s.sort_index()
 
 
 # ---------------------------------------------------------------- 공용 헬퍼
@@ -441,6 +644,18 @@ def _date_clauses(
         params.append(str(end))
 
 
+def _as_date(v: Any) -> date:
+    """DuckDB 가 돌려주는 `date`/`datetime`/`Timestamp` → `datetime.date`."""
+    if isinstance(v, date) and not hasattr(v, "hour"):
+        return v
+    return pd.Timestamp(v).date()
+
+
+def _in_clause(col: str, values: Sequence[Any]) -> tuple[str, list[Any]]:
+    """`col in (?,?,…)` 조각과 바인딩 값. 빈 목록은 호출자가 먼저 거른다."""
+    return f"{col} in ({','.join('?' * len(values))})", list(values)
+
+
 def _ticker_date_where(
     tickers: Iterable[str] | None,
     start: date | str | None,
@@ -454,8 +669,9 @@ def _ticker_date_where(
         ts = [t.upper() for t in tickers]
         if not ts:
             raise ValueError("tickers=[] 는 전부 거르라는 뜻이 된다. 필터 없음은 None 이다.")
-        clauses.append(f"ticker in ({','.join('?' * len(ts))})")
-        params.extend(ts)
+        frag, vals = _in_clause("ticker", ts)
+        clauses.append(frag)
+        params.extend(vals)
     _date_clauses(clauses, params, start, end, date_col)
     return (f"where {' and '.join(clauses)}" if clauses else ""), params
 

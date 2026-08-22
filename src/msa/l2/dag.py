@@ -28,6 +28,7 @@ from typing import Any
 import yaml
 
 from msa.config import paths
+from msa.errors import RefusedInput
 
 REQUIRED_EDGE_FIELDS: tuple[str, ...] = ("from", "to", "sign", "strength", "channel", "observable")
 STRENGTH_WEIGHT: dict[str, int] = {"strong": 3, "moderate": 2, "weak": 1}
@@ -36,7 +37,7 @@ MIN_IN_DEGREE = 2  # docs/11 M4 — 공통 인자 제외
 _RULE_RE = re.compile(r"^\s*([a-z_0-9]+)\s*(<=|>=|<|>)\s*(-?[0-9]*\.?[0-9]+)\s*$")
 
 
-class DagError(ValueError):
+class DagError(RefusedInput, ValueError):
     """스키마 수준 실패 — 전부 모아서 한 번에 던진다."""
 
 
@@ -306,7 +307,7 @@ def _parse_edge(i: int, raw: Mapping[str, Any], errors: list[str]) -> Edge | Non
 
 
 def dag_path() -> Path:
-    return paths().state / "macro-dag.yaml"
+    return paths().dag_yaml
 
 
 def load_dag(path: Path | str | None = None) -> MacroDag:

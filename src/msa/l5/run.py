@@ -401,10 +401,10 @@ def run_portfolio(
     쓴다."""
     p = paths()
     d = Path(inputs_dir)
-    cases = Path(cases_path) if cases_path is not None else p.state / "cases" / "cases.yaml"
+    cases = Path(cases_path) if cases_path is not None else p.cases
     inputs = load_inputs(d, cases_path=cases, capital_usd=capital_usd, cluster_caps=cluster_caps)
     themes = load_themes(themes_path)
-    cdir = Path(cache_dir) if cache_dir is not None else p.state / "cache"
+    cdir = Path(cache_dir) if cache_dir is not None else p.cache
     daily = load_theme_ew_returns(cdir)
     returns: pd.DataFrame | None = None
     rp = d / "returns.csv"

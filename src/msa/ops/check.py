@@ -47,6 +47,7 @@ from typing import Any, Protocol
 import pandas as pd
 import yaml
 
+from msa.io import to_plain
 from msa.ops.alerts import Alert, AlertKind, format_alert
 from msa.ops.journal import load_entries, load_snapshot
 from msa.ops.state_files import Position, PositionsFile, load_positions
@@ -685,7 +686,10 @@ def run_check(
         (out_dir / "report.txt").write_text(report.render(), encoding="utf-8")
         (out_dir / "positions.json").write_text(
             json.dumps(
-                [_plain(asdict(pc)) for pc in checks], ensure_ascii=False, indent=1, default=str
+                [to_plain(asdict(pc), drop=_DROP_ALERTS) for pc in checks],
+                ensure_ascii=False,
+                indent=1,
+                default=str,
             ),
             encoding="utf-8",
         )
@@ -704,13 +708,5 @@ def run_check(
     return report
 
 
-def _plain(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {k: _plain(v) for k, v in obj.items() if k != "alerts"}
-    if isinstance(obj, list):
-        return [_plain(v) for v in obj]
-    if isinstance(obj, date):
-        return obj.isoformat()
-    if isinstance(obj, AlertKind):
-        return str(obj)
-    return obj
+#: `positions.json` 에는 알림 본문을 싣지 않는다 (`alerts.json` 이 따로 있다).
+_DROP_ALERTS = frozenset({"alerts"})

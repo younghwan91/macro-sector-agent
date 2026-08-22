@@ -35,6 +35,7 @@ from typing import Any
 import httpx
 
 from msa.config import fred_api_key
+from msa.errors import MsaError
 
 log = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ ALL_SERIES: tuple[str, ...] = tuple(
 NEEDS_VERIFICATION: tuple[str, ...] = ("FDEFX", "PCOPPUSDM")
 
 
-class FredError(RuntimeError):
+class FredError(MsaError, RuntimeError):
     pass
 
 

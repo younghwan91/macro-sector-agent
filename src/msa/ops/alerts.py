@@ -21,6 +21,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from msa.errors import RefusedInput
 from msa.vendor.telegram import TelegramConfig, TelegramNotifier, telegram_config
 
 
@@ -70,7 +71,7 @@ _FORBIDDEN = tuple(re.compile(p, re.I) for p in FORBIDDEN_WORDING)
 FOOTER = "측정값과 사실의 전달이며 투자 조언이 아니다. 집행 여부는 사람이 정한다."
 
 
-class WordingViolation(ValueError):
+class WordingViolation(RefusedInput, ValueError):
     """알림 문구에 권유 표현이 들어 있다."""
 
 

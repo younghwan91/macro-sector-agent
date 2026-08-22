@@ -34,6 +34,7 @@ from pathlib import Path
 import pandas as pd
 
 from msa.config import MissingApiKey, paths
+from msa.data.pit import pit_quarterly
 from msa.l1.physical import fetch_fred_to_cache, fred_cache_path, read_fred_cache
 
 log = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ class RawSeries:
 
 
 def _manual_dir() -> Path:
-    return paths().state / "physical" / "manual"
+    return paths().manual_dir
 
 
 def _rel(path: Path) -> str:
@@ -110,11 +111,7 @@ def capex_ttm_asof(
         raise ValueError(
             f"fund 프레임 컬럼 부족: 필요 {sorted(need)}, 있는 것 {list(fund.columns)}"
         )
-    f = fund.copy()
-    f["calendardate"] = pd.to_datetime(f["calendardate"])
-    f["datekey"] = pd.to_datetime(f["datekey"])
-    f = f.sort_values(["ticker", "calendardate", "datekey"])
-    f = f.drop_duplicates(["ticker", "calendardate"], keep="first")
+    f = pit_quarterly(fund, asof=None)  # 최초 보고분 규칙 — datekey 상한은 격자 as-of 가 맡는다
     out: dict[str, pd.Series] = {}
     for tk, g in f.groupby("ticker"):
         g = g.sort_values("calendardate").reset_index(drop=True)

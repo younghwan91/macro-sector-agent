@@ -25,18 +25,24 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import yaml
 
 from msa.config import paths
-from msa.data.universe import CANADIAN_COMMON_CATEGORIES, COMMON_STOCK_CATEGORIES
+from msa.data.store import Store
+from msa.data.universe import CANADIAN_COMMON_CATEGORIES, COMMON_STOCK_CATEGORIES, count_by
+from msa.errors import RefusedInput
+from msa.io import load_yaml_mapping
 
 log = logging.getLogger(__name__)
+
+#: `tickers` 메타를 읽을 때의 최소 행수 — 실측 43,919행. 이보다 적으면 스토어가 잘린 것이다.
+MEMBER_META_MIN_ROWS = 10_000
 
 #: 영업 실체가 없어 사이클이 정의되지 않는 industry 라벨. 어느 버킷에도 넣지 않는다.
 EXCLUDED_LABELS: frozenset[str] = frozenset({"Shell Companies"})
@@ -60,7 +66,7 @@ PHYSICAL_KINDS: tuple[str, ...] = ("price", "volume", "nominal")
 MEMBER_CATEGORIES: tuple[str, ...] = COMMON_STOCK_CATEGORIES + CANADIAN_COMMON_CATEGORIES
 
 
-class ThemeSpecError(ValueError):
+class ThemeSpecError(RefusedInput, ValueError):
     """`state/themes.yaml` 이 스키마를 어긴다."""
 
 
@@ -179,39 +185,34 @@ def load_themes(path: Path | str | None = None) -> ThemeSet:
 
     검증 실패는 예외다 — 잘못된 정의로 스캔이 도는 것보다 낫다.
     """
-    p = Path(path) if path is not None else paths().state / "themes.yaml"
+    p = Path(path) if path is not None else paths().themes_yaml
     if not p.exists():
         raise ThemeSpecError(f"테마 정의 파일이 없다: {p}")
-    spec = yaml.safe_load(p.read_text(encoding="utf-8"))
-    if not isinstance(spec, Mapping) or "themes" not in spec:
-        raise ThemeSpecError(f"{p}: 최상위에 themes 키가 없다")
+    spec = load_yaml_mapping(p, required_keys=("themes",), err=ThemeSpecError)
     defaults = spec.get("defaults") or {}
     themes = tuple(_parse_theme(t, defaults) for t in spec["themes"])
 
-    ids = [t.id for t in themes]
-    dup_ids = sorted({i for i in ids if ids.count(i) > 1})
+    dup_ids = sorted(i for i, n in Counter(t.id for t in themes).items() if n > 1)
     if dup_ids:
         raise ThemeSpecError(f"중복 테마 id: {dup_ids}")
-    # industry 라벨은 정확히 한 버킷에만
-    label_owner: dict[str, str] = {}
-    for t in themes:
-        for label in t.industry_match:
-            if label in label_owner:
-                raise ThemeSpecError(
-                    f"industry 라벨 {label!r} 이 두 버킷에 있다: {label_owner[label]} / {t.id}"
-                )
-            label_owner[label] = t.id
-    inc_owner: dict[str, str] = {}
-    for t in themes:
-        for tk in t.include_tickers:
-            if tk in inc_owner:
-                raise ThemeSpecError(
-                    f"include_tickers {tk} 가 두 버킷에 있다: {inc_owner[tk]} / {t.id}"
-                )
-            inc_owner[tk] = t.id
+    # industry 라벨·include 티커는 정확히 한 버킷에만
+    _assert_unique_owner(themes, "industry_match", "industry 라벨 {key!r} 이")
+    _assert_unique_owner(themes, "include_tickers", "include_tickers {key} 가")
     return ThemeSet(
         themes=themes, schema_version=int(spec.get("schema_version", 1)), defaults=defaults
     )
+
+
+def _assert_unique_owner(themes: Iterable[Theme], attr: str, subject: str) -> None:
+    """`attr`(튜플 필드)의 값이 두 테마에 나타나면 `ThemeSpecError`. `subject` 는 `{key}` 문구."""
+    owner: dict[str, str] = {}
+    for t in themes:
+        for key in getattr(t, attr):
+            if key in owner:
+                raise ThemeSpecError(
+                    f"{subject.format(key=key)} 두 버킷에 있다: {owner[key]} / {t.id}"
+                )
+            owner[key] = t.id
 
 
 # ---------------------------------------------------------------- 구성원 배정
@@ -226,6 +227,8 @@ class Membership:
     unassigned: int
     excluded_shell: int
     excluded_non_member_category: dict[str, int]
+    #: 배정에 쓴 `tickers` 메타 원본 — 이름·섹터가 필요한 호출자가 다시 읽지 않게 함께 돌려준다.
+    meta: pd.DataFrame = field(default_factory=pd.DataFrame, repr=False, compare=False)
 
     def members(self, theme_id: str) -> list[str]:
         return self.frame.loc[self.frame["theme"] == theme_id, "ticker"].tolist()
@@ -234,11 +237,12 @@ class Membership:
         return {str(k): v["ticker"].tolist() for k, v in self.frame.groupby("theme", sort=True)}
 
     def counts(self) -> pd.DataFrame:
-        g = self.frame.groupby("theme")
+        """테마별 n_total · n_live · n_delisted (index theme)."""
+        by_theme = self.frame["theme"]
         out = pd.DataFrame(
             {
-                "n_total": g.size(),
-                "n_live": g["is_delisted"].apply(lambda s: int((s != "Y").sum())),
+                "n_total": by_theme.groupby(by_theme).size(),
+                "n_live": (self.frame["is_delisted"] != "Y").groupby(by_theme).sum().astype(int),
             }
         )
         out["n_delisted"] = out["n_total"] - out["n_live"]
@@ -273,10 +277,7 @@ def assign_members(
     if "is_delisted" not in df.columns:
         df["is_delisted"] = "N"
     cat_ok = df["category"].isin(set(member_categories))
-    excluded_cat = {
-        str(k): int(v)
-        for k, v in df.loc[~cat_ok, "category"].fillna("(category 없음)").value_counts().items()
-    }
+    excluded_cat = count_by(df.loc[~cat_ok, "category"])
     uni = df.loc[cat_ok].copy()
     total_universe = len(uni)
 
@@ -307,9 +308,20 @@ def assign_members(
         ),
         excluded_shell=int((is_shell & theme_by_inc.isna()).sum()),
         excluded_non_member_category=excluded_cat,
+        meta=meta,
     )
     log.info("assign_members: %s", ms.report())
     return ms
+
+
+def membership_from_store(
+    store: Store, themes: ThemeSet, *, min_rows: int = MEMBER_META_MIN_ROWS
+) -> Membership:
+    """스토어의 `tickers` 메타를 읽어 배정한다 — L1·L3·L4 가 같은 프롤로그를 쓴다.
+
+    읽은 메타는 `Membership.meta` 로 함께 돌려준다 (이름·섹터·미분류 시총 계산용).
+    """
+    return assign_members(themes, store.tickers_meta(min_rows=min_rows))
 
 
 #: `02-cycle-state.md` §7 — cycle_class 별 블록 가중치. **선언값이다. 데이터에 맞춰 바꾸지 않는다.**

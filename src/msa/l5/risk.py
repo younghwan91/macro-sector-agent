@@ -61,6 +61,7 @@ import numpy as np
 import pandas as pd
 from numpy.typing import NDArray
 
+from msa.errors import RefusedInput
 from msa.l5.inputs import CaseTable
 
 log = logging.getLogger(__name__)
@@ -75,7 +76,7 @@ MONTHS_PER_YEAR = 12
 FArray = NDArray[np.float64]
 
 
-class RiskInputError(ValueError):
+class RiskInputError(RefusedInput, ValueError):
     """리스크 입력을 만들 수 없다."""
 
 

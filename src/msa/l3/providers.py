@@ -34,13 +34,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
+from msa import errors
+
 log = logging.getLogger(__name__)
 
 ROLES: tuple[str, ...] = ("supply_analyst", "catalyst_analyst", "bear", "referee")
 SEARCH_BUDGET_PER_ROLE = 15  # docs/05 §5 "~15 쿼리"
 
 
-class ProviderError(RuntimeError):
+class ProviderError(errors.ProviderError, RuntimeError):
     """제공자가 쓸 수 있는 응답을 주지 못했다 (거부·절단·JSON 아님). 빈 응답으로 진행하지 않는다."""
 
 

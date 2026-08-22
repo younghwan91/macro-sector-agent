@@ -28,7 +28,7 @@ from msa.data.store import Store, StoreError
 from msa.l4 import axes
 from msa.l4.barbell import DEFAULT_TOP, Barbell, classify
 from msa.l4.features import INPUTS_UNUSED, FeatureSet, build_features
-from msa.themes import assign_members, load_themes
+from msa.themes import load_themes, membership_from_store
 
 log = logging.getLogger(__name__)
 
@@ -93,8 +93,7 @@ def run_picks(
     themes = load_themes(themes_path)
     theme = themes.get(theme_id)
     with Store(p.duckdb) as store:
-        meta = store.tickers_meta(min_rows=10_000)
-        membership = assign_members(themes, meta)
+        membership = membership_from_store(store, themes)
         if not membership.members(theme_id):
             raise StoreError(f"{theme_id}: 배정된 구성원이 0개다")
         fs = build_features(
@@ -137,7 +136,7 @@ def run_picks(
 
     out_dir: Path | None = None
     if write:
-        root = out_root if out_root is not None else p.state / "picks"
+        root = out_root if out_root is not None else p.picks
         out_dir = root / str(fs.asof.date()) / theme_id
         out_dir.mkdir(parents=True, exist_ok=True)
         ranking.to_csv(out_dir / "ranking.csv")

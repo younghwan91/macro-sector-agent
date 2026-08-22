@@ -76,9 +76,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from msa.data import pit
 from msa.data.store import Store, StoreError
 from msa.l1.physical import PhysicalSeries, load_etf_series, load_fred_series, load_manual_series
-from msa.themes import Membership, Theme
+from msa.themes import MEMBER_META_MIN_ROWS, Membership, Theme
 from msa.vendor.redflags import FINANCIAL_SECTORS, AnnualRow, detect_red_flags
 from msa.vendor.vcp import build_contractions, compress_pivots, find_pivots
 
@@ -216,51 +217,28 @@ class FeatureSet:
 
 
 def pit_quarterly(fund: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
-    """`datekey ≤ asof` · ARQ · 같은 `calendardate` 는 최초 보고분만. ticker·calendardate 오름차순.
-
-    입력 열: ticker, calendardate, datekey, dimension, + 재무 필드.
-    """
-    need = {"ticker", "calendardate", "datekey"}
-    if missing := need - set(fund.columns):
-        raise KeyError(f"fundamentals 에 없는 열: {sorted(missing)}")
-    q = fund.copy()
-    q["calendardate"] = pd.to_datetime(q["calendardate"])
-    q["datekey"] = pd.to_datetime(q["datekey"])
-    if "dimension" in q.columns:
-        q = q.loc[q["dimension"] == "ARQ"]
-    q = q.loc[q["datekey"] <= pd.Timestamp(asof)]
-    q = q.dropna(subset=["calendardate", "datekey"])
-    q = q.sort_values(["ticker", "calendardate", "datekey"])
-    q = q.drop_duplicates(["ticker", "calendardate"], keep="first")
-    return q.reset_index(drop=True)
+    """`datekey ≤ asof` · ARQ · 같은 `calendardate` 는 최초 보고분만 (`msa.data.pit`)."""
+    return pit.pit_quarterly(fund, asof)
 
 
 def add_ttm(q: pd.DataFrame, fields: tuple[str, ...] = TTM_FIELDS) -> pd.DataFrame:
-    """분기 표에 `<field>_ttm` 을 붙인다 — 4개 분기 전부 있고 4번째가 400일 이내일 때만."""
+    """분기 표에 `<field>_ttm` 을 붙인다 — 4개 분기 전부 있고 4번째가 300일 이내일 때만.
+
+    `fcf_q` 는 `fcf` 가 결측이면 `ncfo + capex` 로 대체한 분기 FCF 다 (L4 고유) — 그 뒤의 TTM 은
+    `msa.data.pit.add_ttm(span_days=TTM_MAX_SPAN_DAYS)` 다.
+    """
     out = q.copy()
     if "fcf" in out.columns:
         alt = out["ncfo"] + out["capex"] if {"ncfo", "capex"} <= set(out.columns) else np.nan
         out["fcf_q"] = out["fcf"].where(out["fcf"].notna(), alt)
     else:
         out["fcf_q"] = np.nan
-    g = out.groupby("ticker", sort=False)
-    cd3 = g["calendardate"].shift(3)
-    span_ok = cd3 >= out["calendardate"] - pd.Timedelta(days=TTM_MAX_SPAN_DAYS)
-    for f in fields:
-        if f not in out.columns:
-            out[f"{f}_ttm"] = np.nan
-            continue
-        s = g[f].rolling(4, min_periods=4).sum().reset_index(level=0, drop=True)
-        n = g[f].rolling(4, min_periods=1).count().reset_index(level=0, drop=True)
-        out[f"{f}_ttm"] = s.where((n == 4) & span_ok)
-    return out
+    return pit.add_ttm(out, fields, span_days=TTM_MAX_SPAN_DAYS)
 
 
 def latest_rows(qt: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
     """ticker 별 최신 분기(신선도 15개월 이내). index ticker."""
-    last = qt.groupby("ticker", sort=False).tail(1).set_index("ticker")
-    fresh = last["calendardate"] >= pd.Timestamp(asof) - pd.DateOffset(months=STALE_MONTHS)
-    return last.loc[fresh]
+    return pit.latest_fresh_rows(qt, asof, stale_months=STALE_MONTHS)
 
 
 def _row_near(tq: pd.DataFrame, target: pd.Timestamp, tol_days: int) -> pd.Series | None:
@@ -627,7 +605,7 @@ def universe_rs(store: Store, trading_dates: pd.DatetimeIndex) -> pd.Series:
     sql = (
         "select ticker, date, close from prices where date in (" + ",".join("?" * len(dates)) + ")"
     )
-    df = store._df(sql, [d.date() for d in dates])
+    df = store.query(sql, [d.date() for d in dates])
     if df.empty:
         raise StoreError("RS 유니버스 슬라이스가 0행이다")
     df["date"] = pd.to_datetime(df["date"])
@@ -649,14 +627,14 @@ def build_features(
     with_physical: bool = True,
 ) -> FeatureSet:
     """스토어에서 테마 구성원의 특성 표를 만든다. `asof` 기본 = 스토어 최종일."""
-    row = store._con.execute("select max(date) from prices").fetchone()
-    store_end = pd.Timestamp(row[0]) if row and row[0] else pd.Timestamp.today().normalize()
+    se = store.store_end()
+    store_end = pd.Timestamp(se) if se else pd.Timestamp.today().normalize()
     asof_ts = min(pd.Timestamp(asof), store_end) if asof else store_end
     members = membership.members(theme.id)
     if not members:
         raise StoreError(f"{theme.id}: 구성원이 0개다")
     mf = membership.frame.set_index("ticker").reindex(members)
-    meta = store.tickers_meta(min_rows=10_000).set_index("ticker")
+    meta = store.tickers_meta(min_rows=MEMBER_META_MIN_ROWS).set_index("ticker")
     names = meta["name"].reindex(members)
     sectors = meta["sector"].reindex(members)
 
