@@ -15,11 +15,14 @@
 | [silver-miners-2015](silver-miners-2015.md) | cycle | 2015-12-31 | −85.2% (2011-04-08→2016-01-19) | 사이클 | 사이클 | passed | 0.70 | 예 (12M +97%) | false (축1 10y 미검증) |
 | [coal-2013](coal-2013.md) | death | 2013-12-31 | **−95.3%** (2011-04-01→2016-01-19) | **경고** | 사망 | cap 0.35 | 0.25 | 예 (24M −83%, 4사 Ch.11) | true |
 | [shale-ep-2020](shale-ep-2020.md) | cycle | 2020-04-30 | −94.9% (2014-06-23→2020-03-18) | 사이클 | 사이클 | passed | 0.75 | 예 (24M +321%) | true |
-| [offshore-drilling-2016](offshore-drilling-2016.md) | death | 2016-02-29 | **−99.0%** (2014-06-20→2020-04-01) | 경고 (리그 10y 미검증) | 사망 | cap 0.35 | 0.25 | 예 (12M +62% 후 −94%, 전원 Ch.11) | false |
+| [offshore-drilling-2016](offshore-drilling-2016.md) | death | 2016-02-29 | **−99.0%** (2014-06-20→2020-04-01) | 경고 (리그 10y 는 대안 입력, 미확보) | 사망 | cap 0.35 | 0.25 | 예 (12M +62% 후 −94%, 전원 Ch.11) | true |
 | [tankers-2021](tankers-2021.md) | cycle | 2021-12-31 | −53.9% (2020-04-27→2022-01-24) | 사이클 | 사이클 | passed | 1.00 (포화) | 예 (24M +239%) | false (발주잔량 출처 미확인) |
 | [mall-reit-2018](mall-reit-2018.md) | death | 2018-12-31 | **−64.0%** 버킷 (2016-08-01→2020-04-03) / 몰 REIT 개별 −77~−100% | n/a (저장소 설정) / 그림자 사망 | 경고 | passed·c<0.5 (그림자: rejected) | 0.20 | 예 (편입 불가; 경로 약함) | false |
 
 낙폭은 L1 EW 테마 지수(`msa.l1.panel.build_panel`, `~/data/us_micro.duckdb`, 상장폐지 포함, store_end 2026-08-14).
+
+**오늘 `L_i` 에 쓸 수 있는 행** (`src/msa/l5/inputs.py` `Case.usable_for_loss` = death · verified · sources≥1 · 낙폭): **coal-2013 (0.953) · offshore-drilling-2016 (0.990)** 둘뿐이다.
+mall-reit-2018 은 축 1 이 저장소 설정상 n/a 라 `verified: false` → C1-(ii) 는 `reit_retail` 에서 숫자를 만들지 못한다(계획서에 '계산 불가' 로 찍힘). 사이클 3건은 정의상 `L_i` 에 쓰지 않는다.
 
 ## 읽을 때의 주의
 
@@ -36,10 +39,9 @@
    `offshore_drilling` 은 육상 시추를 포함한다. `L_i` 에 어느 숫자를 넣는지 `07` 리포트가 명시해야 한다.
 6. **성과 광고 아님.** 전방 수익률은 "규칙이 막았는가/통과시켰는가" 의 사후 대조용이지 전략 수익률이 아니다 (`CLAUDE.md` §7).
 
-## 미검증 목록 (yaml `verified: false` 사유)
+## 미검증 목록 (yaml `verified: false` 사유 — `verified` 는 '실제로 쓴 값이 전부 출처 있음' 을 뜻한다; offshore-drilling-2016 의 리그 10y 시계열은 쓰지 않은 대안 입력이라 사유가 아니다)
 
 - silver-miners-2015: 은 산업용 수요 2005 값(10y CAGR) 1차 출처 없음 — 4y CAGR(+4.9%)·총수요 사상 최고는 확정.
-- offshore-drilling-2016: 오프쇼어 리그 카운트 10y 연평균 시계열 없음 — IEA 생산 정체·IHS 1y 급감은 확정.
 - tankers-2021: 발주잔량/선대 7.3%(1996 이후 최저)의 1차 출처 본문 미확인 — 해체 급증·TCE 음수는 확정.
 - mall-reit-2018: 축 1 이 저장소 설정상 n/a; 그림자 시계열은 백화점 매출 프록시.
 

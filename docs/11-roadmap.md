@@ -147,9 +147,9 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
 
 ## M6 · L5 포트 구성기
 > **구현 상태 (2026-08-23)** — 최적화기·사다리·계획서 절반은 `src/msa/l5/` · `msa portfolio` 로 서 있다
-> (`07-portfolio.md` "구현 노트 (M6)"). **케이스 스터디 6건은 아직 없다** — 그래서 C1-(ii) 는 현재
-> 어느 테마에서도 숫자를 만들지 못하고, 계획서는 그 사실을 테마마다 `L = 계산 불가 (… 사망 사례 —)`
-> 로 찍는다. 아래 체크는 그 상태 그대로다.
+> (`07-portfolio.md` "구현 노트 (M6)"). **케이스 스터디 6건은 2026-08-23 작성됐다** (`docs/cases/`, `state/cases/cases.yaml`) —
+> `L_i` 에 쓸 수 있는 행은 coal-2013 · offshore-drilling-2016 둘이라 C1-(ii) 는 `coal`·`offshore_drilling`
+> (및 같은 클러스터 `fossil` 의 테마)에서만 숫자를 만들고, 나머지는 `L = 계산 불가 (… 사망 사례 —)` 로 찍힌다.
 
 **완료 기준**
 - [x] SOCP 풀이 (ENB 는 구속 제약이 아니다 — 클러스터 상한 반복은 사용자가 요구할 때만 도는 선택적 절차)
@@ -161,10 +161,11 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
       **M6 의 선행 조건이다.** C1-(ii) 가 1차 방어선이 되면서 시나리오 손실 `L_i` 가
       사망 사례의 낙폭을 입력으로 요구한다 (`07-portfolio.md` §2 C1).
       → 2026-08-23 작성: `docs/cases/` 6건 + `state/cases/cases.yaml` + `docs/cases/README.md`.
-      6건 모두 게이트 결과가 역사와 일치했다. 다만 `verified: false` 4건
-      (silver-miners-2015 축1 10y 출처 없음 · offshore-drilling-2016 리그 10y 시계열 없음 ·
-      tankers-2021 발주잔량 출처 본문 미확인 · mall-reit-2018 축1 이 저장소 설정상 n/a).
-      사망 낙폭(L_i 입력): coal −95.3% · offshore_drilling −99.0% · reit_retail 버킷 −64.0%
+      6건 모두 게이트 결과가 역사와 일치했다. `verified: false` 3건
+      (silver-miners-2015 축1 10y 출처 없음 · tankers-2021 발주잔량 출처 본문 미확인 ·
+      mall-reit-2018 축1 이 저장소 설정상 n/a). offshore-drilling-2016 은 쓴 값이 전부 출처 있어 true
+      (리그 10y 시계열은 쓰지 않은 대안 입력). `L_i` 사용 가능 행(`load_cases` 기준):
+      **coal-2013 0.953 · offshore-drilling-2016 0.990**. reit_retail 버킷 0.640 은 미검증이라 불가
       (몰 REIT 개별 −77~−100% — 어느 쪽을 쓸지 `07` 리포트가 명시해야 한다).
       `× 0.5` 계수 재검토는 이 작업에 포함하지 않았다.
 - [ ] **`L_i` 를 케이스 스터디에서 산출했음을 검증** — 각 테마의 `L_i` 가
@@ -174,8 +175,9 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
       (이 사용은 임계값 조정이 아니라 **손실 크기의 추정**이다 — `10-validation.md` §7)
       — **기계 쪽은 있다**: 공식·출처 표기(`[case_id]`)·"없음" 표기는 `risk.py` 가 하고 테스트가 잰다.
       **입력 쪽이 없다**: 표 `state/cases/cases.yaml` 의 스키마와 예시(`docs/specs/cases.example.yaml`,
-      11행 전부 `verified: false` · `sources: []`)만 있고, `verified: true` 인 사망 사례 행은 0개라
-      실제 `L_i` 는 아직 한 테마도 서지 않는다. 체크는 6건이 들어온 뒤에 한다
+      11행 전부 `verified: false` · `sources: []`)에 더해 이제 `state/cases/cases.yaml` 에
+      `verified: true` 사망 행 2개(coal-2013 · offshore-drilling-2016)가 있다 — `coal`·`offshore_drilling`
+      (·클러스터 `fossil`)에서 `L_i` 가 설 수 있다. 체크는 실제 계획서에서 출처 표기를 확인한 뒤에 한다
 - [x] 사다리 3단 · Tier1/2 스탑 · 시간 스탑 · TP 3단 산출 — `ladders.py`. M0.1 정정 산술
       (50/30/20 → 평단 −8.5% · Tier2 = 초기가 −40.5% · 손실 기여 12.25%)을 테스트가 재현한다
 - [ ] **`cycle_confidence` 수기 산출 경로가 서 있다** — 아래 "M6 구간에 `c` 를 누가 만드는가"
