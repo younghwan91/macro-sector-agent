@@ -3,7 +3,7 @@
 # M6 필수 필드: id, name_ko, type, theme_ids, clusters, drawdown_peak_to_trough, peak_date, trough_date, verified, sources[{url,title,date}], notes.
 # 추가 필드: theme, pair, verdict_date, period_start/end, drawdown(=drawdown_peak_to_trough), drawdown_note, recovery,
 #   axes{axis1..5:{value,verdict}}, gate_result, confidence_mechanical, confidence_terms, outcome_agrees, evidence[{claim,source_url,date,reliability}].
-# drawdown_peak_to_trough = L1 EW 테마 지수 고점→저점 (msa.l1.panel, ~/data/us_micro.duckdb, store_end 2026-08-14). 음수 소수.
+# drawdown_peak_to_trough = L1 EW 테마 지수 고점→저점 (msa.l1.panel, ~/data/us_micro.duckdb, store_end 2026-08-14). 양수 비율 (0,1] — M6 로더 계약(src/msa/l5/inputs.py). `drawdown` 은 같은 값의 음수 표기.
 # gate_result ∈ {passed, capped, rejected, contested} — capped = docs/04 §3 의 "상한 0.35, 포트 편입 불가".
 # verified: true = 낙폭 수치와 5축 값이 모두 출처로 뒷받침됨. false 의 사유는 notes 와 각 md §7.
 # sources = 외부 URL 목록(M6 형식, url·title·date; 내부 계산은 URL 이 없어 notes 에만 적는다). evidence = 주장 단위 인용(claim·source_url·date·reliability). 미검증 수치는 둘 다에서 뺀다.
@@ -25,7 +25,7 @@ cases:
   period_end: 2016-08-31
   peak_date: 2011-04-08
   trough_date: 2016-01-19
-  drawdown_peak_to_trough: -0.852
+  drawdown_peak_to_trough: 0.852
   drawdown: -0.852
   drawdown_note: 버킷 EW, 구성원 2~3종(소표본). 대표 7종 -0.72~-0.96
   recovery: EW 12M +97%, 24M +96%; 2011 고점 회복 2021-02-01
@@ -116,7 +116,7 @@ cases:
   period_end: 2016-04-30
   peak_date: 2011-04-01
   trough_date: 2016-01-19
-  drawdown_peak_to_trough: -0.953
+  drawdown_peak_to_trough: 0.953
   drawdown: -0.953
   drawdown_note: 버킷 EW, 구성원 ~17종, 상장폐지 포함. 2026-08 현재 2011 고점 미회복
   recovery: EW 12M -41%, 24M -83%, 36M -55%; 고점 미회복
@@ -263,7 +263,7 @@ cases:
   period_end: 2022-06-30
   peak_date: 2014-06-23
   trough_date: 2020-03-18
-  drawdown_peak_to_trough: -0.949
+  drawdown_peak_to_trough: 0.949
   drawdown: -0.949
   drawdown_note: 버킷 EW, 구성원 ~75~148종, 파산 포함
   recovery: EW 12M +97%, 24M +321%, 36M +299%; 2014 고점 미회복
@@ -375,7 +375,7 @@ cases:
   period_end: 2021-02-28
   peak_date: 2014-06-20
   trough_date: 2020-04-01
-  drawdown_peak_to_trough: -0.99
+  drawdown_peak_to_trough: 0.99
   drawdown: -0.99
   drawdown_note: 버킷 EW, 육상 시추 포함(HP·PTEN·NBR). 오프쇼어만 떼면 전원 -99~-100%
   recovery: EW 12M +62%(반등), 24M +10%, 36M -24%; 2020-04 까지 판정 시점 대비 -94%; 고점 미회복
@@ -501,7 +501,7 @@ cases:
   period_end: 2023-06-30
   peak_date: 2020-04-27
   trough_date: 2022-01-24
-  drawdown_peak_to_trough: -0.539
+  drawdown_peak_to_trough: 0.539
   drawdown: -0.539
   drawdown_note: 버킷 EW 러닝 MDD. 5년 고점(2016-11-16) 대비 판정 시점 -62%; 2007 사상 고점 대비 -94%
   recovery: EW 12M +131%, 24M +239%, 36M +190%
@@ -620,7 +620,7 @@ cases:
   period_end: 2021-06-30
   peak_date: 2016-08-01
   trough_date: 2020-04-03
-  drawdown_peak_to_trough: -0.64
+  drawdown_peak_to_trough: 0.64
   drawdown: -0.64
   drawdown_note: '버킷 EW(몰·스트립·NNN 혼합), 2024-09-05 고점 회복. 몰 전문 REIT 개별: CBL -100%, PEI -98%, WPG -93%, MAC -93%, SKT -87%, SPG -77%'
   recovery: EW 12M +17%, 24M -11%, 36M +35%; 몰 REIT 는 Ch.11(CBL·PREIT 2020-11, WPG 2021-06)
