@@ -1,20 +1,115 @@
-"""L1 블록 수학 헬퍼·VCP·브레드스 리드·축 1 판정 — 합성 데이터, 스토어 없음."""
+"""L1 블록 수학 헬퍼·VCP·브레드스 리드·축 1 판정 — 합성 데이터, 스토어 없음.
+
+`_ref_*` 는 2026-08-23 벡터화 전의 구 구현(스칼라 루프)이다. 새 구현은 이것과 **같은 값**을
+내야 한다 — Φ(z) 만 `math.erf` → `scipy.special.ndtr` 로 바뀌어 ≤ 1 ulp 허용.
+"""
 
 from __future__ import annotations
+
+import math
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from msa.l1.blocks import (
+    _verdicts,
     axis1_verdict,
     breadth_lead_months,
+    months_since_peak,
     own_history_pct,
     rolling_slope,
+    vcp_index_matrix,
     vcp_index_score,
 )
 from msa.vendor.taa_signals import momentum_13612w
 from msa.vendor.vcp import build_contractions, compress_pivots, find_pivots
+
+# ---------------------------------------------------------------- 구 구현 (대조용)
+
+
+def _ref_breadth_lead_months(
+    breadth: pd.DataFrame, above: pd.DataFrame, cap: int = 12
+) -> pd.DataFrame:
+    br = (breadth >= 0.5) & breadth.notna()
+    ab = above.fillna(False).astype(bool)
+    pos = pd.DataFrame(
+        np.tile(np.arange(len(br))[:, None], (1, br.shape[1])), index=br.index, columns=br.columns
+    ).astype(float)
+    start_br = pos.where(br & ~br.shift(1, fill_value=False)).ffill().where(br)
+    start_ab = pos.where(ab & ~ab.shift(1, fill_value=False)).ffill().where(ab)
+    ref = start_ab.where(ab, pos)
+    sb = start_br.to_numpy(dtype=float)
+    rf = ref.to_numpy(dtype=float)
+    out = np.full(br.shape, np.nan)
+    for j in range(br.shape[1]):
+        for i in range(br.shape[0]):
+            r = rf[i, j]
+            if np.isnan(r):
+                continue
+            s = sb[int(r), j]
+            out[i, j] = 0.0 if np.isnan(s) else min(float(r - s), float(cap))
+    return pd.DataFrame(out, index=br.index, columns=br.columns)
+
+
+def _ref_months_since_max(a: np.ndarray) -> float:
+    if np.isnan(a).all():
+        return np.nan
+    return float(len(a) - 1 - int(np.nanargmax(a)))
+
+
+def _ref_months_since_peak(pm: pd.DataFrame) -> pd.DataFrame:
+    return pm.rolling(120, min_periods=12).apply(_ref_months_since_max, raw=True)
+
+
+def _phi(x: float) -> float:
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _ref_own_history_pct(
+    m: pd.DataFrame, window: int = 120, min_periods: int = 84, z_min: int = 36
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    pct = m.rolling(window, min_periods=min_periods).rank(pct=True)
+    cnt = m.rolling(window, min_periods=1).count()
+    mu = m.rolling(window, min_periods=z_min).mean()
+    sd = m.rolling(window, min_periods=z_min).std()
+    z = (m - mu) / sd.replace(0.0, np.nan)
+    zpct = z.apply(lambda col: col.map(lambda v: _phi(v) if pd.notna(v) else np.nan))
+    short = (cnt < min_periods) & (cnt >= z_min) & m.notna()
+    return pct.where(~short, zpct), short
+
+
+def _ref_vcp_index_score(
+    close: pd.Series, *, left: int = 5, right: int = 5, max_cons: int = 4
+) -> float:
+    c = close.dropna()
+    if len(c) < 60:
+        return np.nan
+    piv = compress_pivots(find_pivots(c, left=left, right=right))
+    cons = build_contractions(piv, ref_level=float(c.max()), tol=0.10, max_drop_from_ref=1.0)
+    cons = [x for x in cons if x["depth"] > 0.0][-max_cons:]
+    if len(cons) < 2:
+        return 0.0
+    depths = [x["depth"] for x in cons]
+    steps = len(depths) - 1
+    shrinking = sum(1 for i in range(1, len(depths)) if depths[i] < depths[i - 1])
+    return shrinking / steps
+
+
+def _ref_vcp_matrix(P: pd.DataFrame, me: pd.DatetimeIndex) -> pd.DataFrame:
+    """구 `compute_indicators` 의 VCP 루프 — 월말마다 252일 창을 잘라 `vcp_index_score`."""
+    vcp = pd.DataFrame(np.nan, index=me, columns=P.columns)
+    pos = P.index.searchsorted(me, side="right")
+    for j, col in enumerate(P.columns):
+        s = P[col]
+        for i, end in enumerate(pos):
+            if end < 60:
+                continue
+            vcp.iat[i, j] = _ref_vcp_index_score(s.iloc[max(0, end - 252) : end])
+    return vcp
+
+
+# ---------------------------------------------------------------- 테스트
 
 
 def test_rolling_slope_matches_polyfit() -> None:
@@ -44,6 +139,37 @@ def test_own_history_pct_and_short_history_flag() -> None:
     assert 0.9 < pct["x"].iloc[50] <= 1.0  # z → Φ 도 상단
 
 
+def test_own_history_pct_matches_scalar_erf_within_1ulp() -> None:
+    rng = np.random.default_rng(3)
+    idx = pd.date_range("2000-01-31", periods=150, freq="ME")
+    m = pd.DataFrame(rng.normal(size=(150, 6)), index=idx, columns=list("abcdef"))
+    m.iloc[10:20, 2] = np.nan
+    m.iloc[:, 5] = 3.0  # 표준편차 0 → z 정의 안 됨
+    got, short = own_history_pct(m)
+    ref, short_ref = _ref_own_history_pct(m)
+    pd.testing.assert_frame_equal(short, short_ref)
+    np.testing.assert_allclose(got.to_numpy(), ref.to_numpy(), rtol=0, atol=3e-16, equal_nan=True)
+    # z 대체 구간 밖(순위 백분위)은 비트 단위로 같다
+    plain = ~short.to_numpy()
+    assert np.array_equal(got.to_numpy()[plain], ref.to_numpy()[plain], equal_nan=True)
+
+
+def test_months_since_peak_matches_rolling_apply() -> None:
+    rng = np.random.default_rng(4)
+    idx = pd.date_range("1998-01-31", periods=300, freq="ME")
+    pm = pd.DataFrame(
+        np.cumsum(rng.normal(size=(300, 5)), axis=0) + 50, index=idx, columns=list("abcde")
+    )
+    pm.iloc[:40, 1] = np.nan  # 늦게 시작하는 테마
+    pm.iloc[100:130, 2] = np.nan  # 중간 결측
+    pm.iloc[:, 3] = 7.0  # 평탄 → 최초 도달(첫 번째 최댓값) 규칙
+    pm.iloc[:, 4] = np.nan  # 전부 결측
+    got = months_since_peak(pm)
+    ref = _ref_months_since_peak(pm)
+    pd.testing.assert_frame_equal(got, ref, check_exact=True)
+    assert got["d"].iloc[200] == 119  # 평탄: 창의 첫 값이 최초 최댓값
+
+
 def test_breadth_lead_counts_months_before_index_turn() -> None:
     idx = pd.date_range("2020-01-31", periods=12, freq="ME")
     # 브레드스는 3월부터 0.5 위, 지수는 7월부터 SMA200 위 → 리드 4개월
@@ -63,6 +189,23 @@ def test_breadth_lead_counts_months_before_index_turn() -> None:
     assert lead2["t"].iloc[11] == 0
 
 
+def test_breadth_lead_matches_double_loop() -> None:
+    rng = np.random.default_rng(5)
+    idx = pd.date_range("2000-01-31", periods=240, freq="ME")
+    breadth = pd.DataFrame(rng.uniform(0, 1, (240, 8)), index=idx, columns=list("abcdefgh"))
+    breadth.iloc[:30, 0] = np.nan
+    breadth.iloc[:, 7] = 0.9  # 런이 한 번도 끊기지 않고 지수는 30개월 뒤에 돈다 → 상한 12
+    above = pd.DataFrame(rng.uniform(0, 1, (240, 8)) > 0.5, index=idx, columns=breadth.columns)
+    above.iloc[:30, 7] = False
+    above.iloc[30:, 7] = True
+    got = breadth_lead_months(breadth, above)
+    pd.testing.assert_frame_equal(got, _ref_breadth_lead_months(breadth, above), check_exact=True)
+    assert got["h"].iloc[-1] == 12
+    # 빈 입력
+    empty = breadth.iloc[:0]
+    assert breadth_lead_months(empty, above.iloc[:0]).shape == (0, 8)
+
+
 def test_axis1_verdict_table() -> None:
     assert axis1_verdict(0.03, 0.01) == "cycle"
     assert axis1_verdict(0.0, -0.05) == "cycle"
@@ -70,6 +213,21 @@ def test_axis1_verdict_table() -> None:
     assert axis1_verdict(-0.05, -0.08) == "death"  # 가속
     assert axis1_verdict(-0.05, -0.01) == "warning"  # 감속 — 표의 공백
     assert axis1_verdict(float("nan"), 0.0) == "n/a"
+
+
+def test_verdicts_vector_equals_scalar_table() -> None:
+    rng = np.random.default_rng(6)
+    idx = pd.date_range("2000-01-31", periods=500, freq="ME")
+    c10 = pd.Series(rng.uniform(-0.1, 0.1, 500), index=idx)
+    c5 = pd.Series(rng.uniform(-0.1, 0.1, 500), index=idx)
+    c10.iloc[::7] = np.nan
+    c5.iloc[::11] = np.nan
+    c10.iloc[3] = 0.0
+    c10.iloc[4] = -0.02  # 경계
+    got = _verdicts(c10, c5)
+    ref = pd.Series([axis1_verdict(a, b) for a, b in zip(c10, c5, strict=True)], index=idx)
+    pd.testing.assert_series_equal(got, ref)
+    assert isinstance(got.iloc[0], str)
 
 
 def test_vendored_vcp_pivots_and_contractions() -> None:
@@ -99,6 +257,22 @@ def test_vcp_index_score_shrinking_vs_expanding() -> None:
     assert np.isnan(vcp_index_score(shrinking.iloc[:30]))
 
 
+def test_vcp_index_matrix_matches_per_window_loop() -> None:
+    rng = np.random.default_rng(7)
+    days = pd.bdate_range("2012-01-02", "2016-12-30")
+    ret = rng.normal(0, 0.012, (len(days), 6))
+    P = pd.DataFrame(np.cumprod(1 + ret, axis=0), index=days, columns=list("abcdef"))
+    P.iloc[:300, 1] = np.nan  # 늦게 상장
+    P.iloc[:, 2] = 1.0  # 평탄 — 0 폭 수축은 수축이 아니다
+    P.iloc[:, 3] = np.round(P.iloc[:, 3], 2)  # 동률 많음 (피벗이 H·L 동시)
+    P.iloc[700:720, 4] = np.nan  # 중간 결측
+    me = pd.DatetimeIndex(P.resample("ME").last().index)
+    got = vcp_index_matrix(P, me)
+    ref = _ref_vcp_matrix(P, me)
+    pd.testing.assert_frame_equal(got, ref, check_exact=True)
+    assert got.notna().to_numpy().sum() > 0
+
+
 def test_momentum_13612w_weights() -> None:
     idx = pd.date_range("2020-01-31", periods=14, freq="ME")
     m = pd.DataFrame({"p": 1.01 ** np.arange(14)}, index=idx)  # 월 1%
@@ -106,3 +280,22 @@ def test_momentum_13612w_weights() -> None:
     r1, r3, r6, r12 = 0.01, 1.01**3 - 1, 1.01**6 - 1, 1.01**12 - 1
     assert s.iloc[-1] == pytest.approx(12 * r1 + 4 * r3 + 2 * r6 + r12)
     assert s.iloc[:12].isna().all()
+
+
+# ---------------------------------------------------------------- 실데이터 대조
+
+
+@pytest.mark.data
+def test_vcp_index_matrix_matches_loop_on_real_panel() -> None:
+    """실제 패널 캐시의 테마 8개로 전 월말 VCP — 창마다 계산한 값과 최대 절대 차 0."""
+    from msa.config import paths
+    from msa.l1.panel import load_cached_panel
+
+    if not (paths().cache).exists():
+        pytest.skip("L1 캐시 없음")
+    panel = load_cached_panel()
+    P = panel.index_level("ew").iloc[:, :8]
+    me = pd.DatetimeIndex(P.resample("ME").last().index)
+    got = vcp_index_matrix(P, me)
+    ref = _ref_vcp_matrix(P, me)
+    pd.testing.assert_frame_equal(got, ref, check_exact=True)
