@@ -4,6 +4,12 @@ __pycache__/
 .env
 *.duckdb
 *.duckdb.wal
-data/
+/data/
 .omc/
 .DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/

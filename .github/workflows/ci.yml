@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: sync
+        run: uv sync --frozen
+
+      - name: ruff
+        run: uv run ruff check src tests
+
+      - name: mypy
+        run: uv run mypy src/
+
+      # CI 에는 DuckDB 스토어도 FRED 키도 없다.
+      # 데이터/네트워크 의존 테스트는 마커로 제외한다 — 스킵되는 것이 정상이다.
+      - name: pytest
+        run: uv run pytest -m "not data and not net" -v
