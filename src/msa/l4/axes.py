@@ -39,12 +39,14 @@
 
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+from msa.l1.scoreboard import xs_pct
+from msa.l4.features import FEATURE_COLUMNS
+from msa.status import FundStatus
 
 # ---- 문서 선언값 (docs/06 §2)
 RUNWAY_MIN_Q = 4.0
@@ -73,30 +75,62 @@ T_COMPONENTS: tuple[str, ...] = (
 T_BOOLEAN = ("marginal_producer",)
 M_BOOLEAN = ("stage2", "vcp_base", "above_50d")
 M_PCT = ("from_52w_low", "rvol_expansion")
+#: 레드플래그 감점 4종 — `features.red_flags` 문자열(`;` 구분)에 키가 들어 있으면 발동.
+RED_FLAG_KEYS: tuple[str, ...] = (
+    "full_capital_impairment",
+    "consecutive_operating_loss",
+    "profit_without_cash",
+    "zombie_streak",
+)
 PENALTY_ITEMS: tuple[str, ...] = (
     "nd_ebitda_gt4",
     "interest_coverage_lt1",
     "dilution_gt15",
     "adv_lt_2m",
     "price_lt_2",
-    "rf_full_capital_impairment",
-    "rf_consecutive_operating_loss",
-    "rf_profit_without_cash",
-    "rf_zombie_streak",
+    *(f"rf_{k}" for k in RED_FLAG_KEYS),
 )
 
 assert abs(sum(S_WEIGHTS.values()) - 1.0) < 1e-9
 assert abs(sum(AXIS_WEIGHTS.values()) - 1.0) < 1e-9
 
-
-@dataclass(frozen=True)
-class Exclusion:
-    ticker: str
-    reason: str
+#: 하드 필터 사유 문구 (테스트·`excluded.csv` 가 이 문자열을 본다)
+_REASON_NO_SF1 = "재무 없음 (SF1 에 행 0개 — 20-F 해외발행사 등 미수록) — 생존 필터 판정 불가"
+_REASON_STALE = "재무 없음 (asof 이전 15개월 내 분기 없음) — 생존 필터 판정 불가"
+_REASON_RUNWAY_NA = "런웨이 판정 불가 (현금흐름표 또는 현금 없음) — 하드 필터 미통과"
 
 
 def _num(s: pd.Series) -> pd.Series:
     return pd.to_numeric(s, errors="coerce")
+
+
+def _pct(s: pd.Series) -> pd.Series:
+    """테마 내 횡단면 백분위 (0,1]. NaN 은 NaN 으로 남는다 (`l1.scoreboard.xs_pct` 와 같은 규칙)."""
+    return xs_pct(_num(s), +1)
+
+
+def _bool01(s: pd.Series) -> pd.Series:
+    """True/False/NA(None·NaN·pd.NA) → 1.0/0.0/NaN."""
+    return s.astype("boolean").astype("float")
+
+
+def _check_columns(frame: pd.DataFrame) -> None:
+    """입력은 `features.FEATURE_COLUMNS` 전부를 가진 특성 표다 — 없는 열을 메우지 않는다."""
+    missing = set(FEATURE_COLUMNS) - set(frame.columns)
+    assert not missing, f"특성 표에 없는 열: {sorted(missing)}"
+
+
+def _join_nonempty(parts: list[pd.Series], sep: str) -> pd.Series:
+    """행마다 빈 문자열이 아닌 조각을 `sep` 로 잇는다 (벡터화된 `sep.join(x for x in row if x)`)."""
+    out = parts[0].copy()
+    for part in parts[1:]:
+        out = out + np.where((out != "") & (part != ""), sep, "") + part
+    return out
+
+
+def _tagged(mask: pd.Series, text: Any) -> pd.Series:
+    """`mask` 인 행만 `text`, 나머지는 빈 문자열."""
+    return pd.Series(np.where(mask.fillna(False).astype(bool), text, ""), index=mask.index)
 
 
 def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
@@ -105,42 +139,36 @@ def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
     재무가 없는(신선도 탈락) 종목도 제외한다 — 생존 필터를 **평가할 수 없는** 종목을 통과시키면
     필터가 있는 척하는 것이다. 사유에 그렇게 적는다. `going_concern` 은 입력이 없어 적용하지 못한다.
     """
-    reasons: dict[str, list[str]] = {str(t): [] for t in frame.index}
-    has_fund = (
-        frame["fund_calendardate"].notna()
-        if "fund_calendardate" in frame
-        else pd.Series(False, index=frame.index)
+    _check_columns(frame)
+    has_fund = frame["fund_calendardate"].notna()
+    runway = _num(frame["cash_runway_q"])
+    nd = _num(frame["net_debt_ebitda"])
+    wall = _num(frame["maturity_wall_12m"])
+    no_sf1 = frame["fund_status"].astype(str) == FundStatus.NONE
+    nd_unit = (frame["nd_basis"] == "ebitda").map({True: "EBITDA", False: "시총(EBITDA≤0 대체)"})
+
+    no_fund = _tagged(~has_fund, np.where(no_sf1, _REASON_NO_SF1, _REASON_STALE))
+    runway_na = _tagged(has_fund & runway.isna(), _REASON_RUNWAY_NA)
+    runway_low = _tagged(
+        has_fund & (runway < RUNWAY_MIN_Q),
+        runway.map(lambda r: f"런웨이 {r:.2f}분기 < {RUNWAY_MIN_Q:.0f}"),
     )
-    runway = _num(frame.get("cash_runway_q", pd.Series(np.nan, index=frame.index)))
-    nd = _num(frame.get("net_debt_ebitda", pd.Series(np.nan, index=frame.index)))
-    basis = frame.get("nd_basis", pd.Series("n/a", index=frame.index))
-    wall = _num(frame.get("maturity_wall_12m", pd.Series(np.nan, index=frame.index)))
-    status = frame.get("fund_status")
-    for t in frame.index:
-        k = str(t)
-        if not bool(has_fund.loc[t]):
-            st = str(status.loc[t]) if status is not None else "stale"
-            if st == "none":
-                reasons[k].append(
-                    "재무 없음 (SF1 에 행 0개 — 20-F 해외발행사 등 미수록) — 생존 필터 판정 불가"
-                )
-            else:
-                reasons[k].append("재무 없음 (asof 이전 15개월 내 분기 없음) — 생존 필터 판정 불가")
-            continue
-        r = runway.loc[t]
-        if pd.isna(r):
-            reasons[k].append("런웨이 판정 불가 (현금흐름표 또는 현금 없음) — 하드 필터 미통과")
-        elif r < RUNWAY_MIN_Q:
-            reasons[k].append(f"런웨이 {r:.2f}분기 < {RUNWAY_MIN_Q:.0f}")
-        x = nd.loc[t]
-        if pd.notna(x) and x > ND_EBITDA_EXCLUDE:
-            b = "EBITDA" if basis.loc[t] == "ebitda" else "시총(EBITDA≤0 대체)"
-            reasons[k].append(f"순부채/{b} {x:.1f}× > {ND_EBITDA_EXCLUDE:.0f}")
-        w = wall.loc[t]
-        if pd.notna(w) and w > MATURITY_WALL_EXCLUDE:
-            reasons[k].append(f"만기벽(12m 대용) {w:.2f} > {MATURITY_WALL_EXCLUDE}")
+    nd_high = _tagged(
+        has_fund & (nd > ND_EBITDA_EXCLUDE),
+        pd.Series(
+            [
+                f"순부채/{b} {x:.1f}× > {ND_EBITDA_EXCLUDE:.0f}"
+                for b, x in zip(nd_unit, nd, strict=True)
+            ],
+            index=frame.index,
+        ),
+    )
+    wall_high = _tagged(
+        has_fund & (wall > MATURITY_WALL_EXCLUDE),
+        wall.map(lambda w: f"만기벽(12m 대용) {w:.2f} > {MATURITY_WALL_EXCLUDE}"),
+    )
     out = pd.DataFrame(index=frame.index)
-    out["reason"] = pd.Series({k: " · ".join(v) for k, v in reasons.items()}).reindex(frame.index)
+    out["reason"] = _join_nonempty([no_fund, runway_na, runway_low, nd_high, wall_high], " · ")
     out["excluded"] = out["reason"].str.len() > 0
     return out
 
@@ -159,11 +187,7 @@ def survival(frame: pd.DataFrame) -> pd.DataFrame:
     dil = _num(frame["dilution_3y"])
     adv = _num(frame["adv20_usd"])
     price = _num(frame["price"])
-    flags = (
-        frame["red_flags"].fillna("").astype(str)
-        if "red_flags" in frame
-        else pd.Series("", index=idx)
-    )
+    flags = frame["red_flags"].fillna("").astype(str)
     has_fund = frame["fund_calendardate"].notna()
 
     checks: dict[str, tuple[pd.Series, pd.Series]] = {
@@ -174,23 +198,17 @@ def survival(frame: pd.DataFrame) -> pd.DataFrame:
         "adv_lt_2m": (adv.notna(), adv < ADV_MIN_USD),
         "price_lt_2": (price.notna(), price < PRICE_MIN),
     }
-    for key in (
-        "full_capital_impairment",
-        "consecutive_operating_loss",
-        "profit_without_cash",
-        "zombie_streak",
-    ):
+    for key in RED_FLAG_KEYS:
         checks[f"rf_{key}"] = (has_fund, flags.str.contains(key, regex=False))
     n_eval = pd.Series(0, index=idx, dtype=int)
     n_trig = pd.Series(0, index=idx, dtype=int)
-    names: dict[str, list[str]] = {str(t): [] for t in idx}
+    triggered: list[pd.Series] = []
     for name, (ev, tr) in checks.items():
         ev = ev.fillna(False).astype(bool)
         tr = (tr.fillna(False).astype(bool)) & ev
         n_eval = n_eval + ev.astype(int)
         n_trig = n_trig + tr.astype(int)
-        for t in idx[tr.to_numpy()]:
-            names[str(t)].append(name)
+        triggered.append(_tagged(tr, name))
     penalty_score = (1 - n_trig / n_eval.replace(0, np.nan)).astype(float)
 
     parts = pd.DataFrame(
@@ -201,25 +219,16 @@ def survival(frame: pd.DataFrame) -> pd.DataFrame:
     wsum = avail.mul(w, axis=1).sum(axis=1)
     s_raw = parts.fillna(0).mul(w, axis=1).sum(axis=1) / wsum.replace(0, np.nan)
 
-    missing: dict[str, str] = {}
-    for t in idx:
-        m = [c for c in ("runway", "leverage", "penalty") if not avail.loc[t, c]]
-        missing[str(t)] = ",".join(m)
     out = pd.DataFrame(index=idx)
     out["s_raw"] = s_raw
     out["runway_score"] = runway_score
     out["leverage_score"] = leverage_score
     out["penalty_score"] = penalty_score
-    out["penalties"] = pd.Series({k: ";".join(v) for k, v in names.items()}).reindex(idx)
+    out["penalties"] = _join_nonempty(triggered, ";")
     out["n_penalties"] = n_trig
     out["n_penalty_evaluable"] = n_eval
-    out["s_inputs_missing"] = pd.Series(missing).reindex(idx)
+    out["s_inputs_missing"] = _join_nonempty([_tagged(~avail[c], c) for c in parts.columns], ",")
     return out
-
-
-def _pct(s: pd.Series) -> pd.Series:
-    """테마 내 횡단면 백분위 (0,1]. NaN 은 NaN 으로 남는다."""
-    return _num(s).rank(pct=True, method="average")
 
 
 def torque(frame: pd.DataFrame) -> pd.DataFrame:
@@ -229,20 +238,13 @@ def torque(frame: pd.DataFrame) -> pd.DataFrame:
     idx = frame.index
     comps = pd.DataFrame(index=idx)
     for c in T_COMPONENTS:
-        s = frame[c] if c in frame else pd.Series(np.nan, index=idx)
-        if c in T_BOOLEAN:
-            b = pd.Series(s, index=idx).astype("boolean")
-            comps[c] = b.astype("float").where(b.notna(), np.nan)
-        else:
-            comps[c] = _pct(s)
+        comps[c] = _bool01(frame[c]) if c in T_BOOLEAN else _pct(frame[c])
     n = comps.notna().sum(axis=1)
     t_raw = comps.mean(axis=1).where(n >= T_MIN_INPUTS, np.nan)
     out = pd.DataFrame(index=idx)
     out["t_raw"] = t_raw
     out["t_n_inputs"] = n
-    out["t_inputs_missing"] = comps.isna().apply(
-        lambda r: ",".join(c for c in comps.columns if r[c]), axis=1
-    )
+    out["t_inputs_missing"] = _join_nonempty([_tagged(comps[c].isna(), c) for c in comps], ",")
     for c in T_COMPONENTS:
         out[f"tp_{c}"] = comps[c]
     return out
@@ -253,15 +255,10 @@ def timing(frame: pd.DataFrame) -> pd.DataFrame:
     idx = frame.index
     comps = pd.DataFrame(index=idx)
     for c in M_BOOLEAN:
-        b = (
-            pd.Series(frame[c], index=idx).astype("boolean")
-            if c in frame
-            else pd.Series(pd.NA, index=idx, dtype="boolean")
-        )
-        comps[c] = b.astype("float").where(b.notna(), np.nan)
-    comps["rs_rating"] = _num(frame["rs_rating"]) / 100.0 if "rs_rating" in frame else np.nan
+        comps[c] = _bool01(frame[c])
+    comps["rs_rating"] = _num(frame["rs_rating"]) / 100.0
     for c in M_PCT:
-        comps[c] = _pct(frame[c]) if c in frame else np.nan
+        comps[c] = _pct(frame[c])
     n = comps.notna().sum(axis=1)
     out = pd.DataFrame(index=idx)
     out["m_raw"] = comps.mean(axis=1).where(n >= M_MIN_INPUTS, np.nan)
@@ -271,6 +268,7 @@ def timing(frame: pd.DataFrame) -> pd.DataFrame:
 
 def score(frame: pd.DataFrame) -> pd.DataFrame:
     """적격(하드 필터 통과) 표 → 3축 원점수·백분위·종합·순위. 결정론."""
+    _check_columns(frame)
     s = survival(frame)
     t = torque(frame)
     m = timing(frame)
@@ -286,14 +284,14 @@ def score(frame: pd.DataFrame) -> pd.DataFrame:
     wsum = avail.mul(w, axis=1).sum(axis=1)
     out["composite"] = axes.fillna(0).mul(w, axis=1).sum(axis=1) / wsum.replace(0, np.nan)
     out["composite_partial"] = ~avail.all(axis=1)
-    order = pd.DataFrame(
-        {
-            "c": out["composite"].fillna(-1.0),
-            "s": out["s_pct"].fillna(-1.0),
-            "t": pd.Series(out.index.astype(str), index=out.index),
-        }
-    ).sort_values(["c", "s", "t"], ascending=[False, False, True])
-    out = out.reindex(order.index)
+    # 순위: 종합 ↓ → S̃ ↓ → 티커 ↑. NaN 은 맨 뒤 — 결정론
+    out = (
+        out.assign(_tk=out.index.astype(str))
+        .sort_values(
+            ["composite", "s_pct", "_tk"], ascending=[False, False, True], na_position="last"
+        )
+        .drop(columns="_tk")
+    )
     out["rank"] = np.arange(1, len(out) + 1)
     return out
 
@@ -323,18 +321,3 @@ def declared_constants() -> dict[str, Any]:
         "m_components": [*M_BOOLEAN, "rs_rating", *M_PCT],
         "axis_weights": AXIS_WEIGHTS,
     }
-
-
-def fmt_ratio(x: Any, unit: str = "", digits: int = 1) -> str:
-    """리포트용 — NaN 은 'n/a', inf 는 '∞'."""
-    if x is None:
-        return "n/a"
-    try:
-        v = float(x)
-    except (TypeError, ValueError):
-        return str(x)
-    if math.isnan(v):
-        return "n/a"
-    if math.isinf(v):
-        return "∞"
-    return f"{v:.{digits}f}{unit}"
