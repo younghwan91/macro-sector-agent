@@ -290,9 +290,10 @@ edges:
   # ───────────────────────────────────────────────────────────────────────
   # dollar_broad — 달러
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: nickel_cobalt → diversified_miners (흡수 폐기, 이미 목록에 있어 제거)
   - from: dollar_broad
     to: [gold_miners, silver_miners, pgm_miners, copper_miners, steel_iron, aluminum,
-         nickel_cobalt, diversified_miners, lithium, uranium, coal, fertilizer_potash]
+         diversified_miners, lithium, uranium, coal, fertilizer_potash]
     sign: -1
     lag_months: [0, 3]
     strength: strong
@@ -317,8 +318,10 @@ edges:
     evidence: "2014-2016 달러 급등 + 유가 붕괴 동반, 2020-2021 반대 국면"
     observable: "DTWEXBGS 6개월 변화 < -2%"
 
+  # M4-134: ag_machinery → construction_machinery (DE·AGCO·CNH 가 합쳐진 버킷. 채널의 '농기계' 는
+  #   그 버킷의 농업 장비 부분에만 해당하고 건설 장비(CAT)에는 해당 없음 — 강도는 그대로 둔다)
   - from: dollar_broad
-    to: [agribusiness, ag_machinery]
+    to: [agribusiness, construction_machinery]
     sign: -1
     lag_months: [3, 9]
     strength: moderate
@@ -328,8 +331,10 @@ edges:
     evidence: "2007-2008, 2010-2012 곡물 수출 호황기의 농가 소득·장비 수요"
     observable: "DTWEXBGS 6개월 변화 < -2% 이고 곡물 수출 검사량이 전년 대비 증가"
 
+  # M4-134: +consumer_electronics(AAPL·SONY 해외 매출) +pharma_generic(TEVA·VTRS) +travel_booking(BKNG·TCOM)
   - from: dollar_broad
-    to: [pharma_large, food_beverage, household_products, alcohol]
+    to: [pharma_large, food_beverage, household_products, alcohol,
+         consumer_electronics, pharma_generic, travel_booking]
     sign: -1
     lag_months: [0, 6]
     strength: weak
@@ -381,8 +386,11 @@ edges:
     evidence: "2021-2022 XBI -60%, 2023Q4 금리 피크아웃 직후 급반등"
     observable: "DFII10 6개월 변화 < -25bp"
 
+  # M4-134: +home_furnishings(거래 후행 내구재) +mortgage_finance(모기지 금리 = 오리지네이션 물량)
+  #   +real_estate_services(주거·상업 거래 건수가 중개 매출)
   - from: real_rate_10y
-    to: [homebuilders, home_improvement, lumber_paper]
+    to: [homebuilders, home_improvement, lumber_paper,
+         home_furnishings, mortgage_finance, real_estate_services]
     sign: -1
     lag_months: [3, 9]
     strength: strong
@@ -392,9 +400,11 @@ edges:
     evidence: "2020-2021 저금리 착공 붐, 2022-2023 금리 급등 후 거래량 붕괴"
     observable: "DFII10 6개월 변화 < -25bp"
 
+  # M4-134: +reit_diversified +reit_hotel +reit_specialty (캡레이트·레버리지 경로는 리츠 공통.
+  #   reit_mortgage 는 캡레이트가 아니라 듀레이션 경로라 별도 엣지)
   - from: real_rate_10y
     to: [reit_office, reit_retail, reit_industrial, reit_residential, reit_datacenter,
-         reit_towers, reit_healthcare]
+         reit_towers, reit_healthcare, reit_diversified, reit_hotel, reit_specialty]
     sign: -1
     lag_months: [0, 6]
     strength: strong
@@ -416,9 +426,10 @@ edges:
     evidence: "2013 테이퍼 탠트럼, 2022 금리 급등기 유틸·통신 동반 디레이팅"
     observable: "DFII10 6개월 변화 < -25bp"
 
+  # M4-134: +health_it (VEEV·DOCS·HIMS — 의료 SaaS, 같은 할인율 경로)
   - from: real_rate_10y
     to: [software_infra, software_vertical, cybersecurity, semi_eda_ip, internet_platform,
-         media_streaming, gaming_interactive, space_satellite]
+         media_streaming, gaming_interactive, space_satellite, health_it]
     sign: -1
     lag_months: [0, 3]
     strength: moderate
@@ -444,9 +455,11 @@ edges:
     evidence: "2022-2023 금리 급등기 해상풍력 프로젝트 대량 취소·상각"
     observable: "DFII10 6개월 변화 < -25bp"
 
+  # M4-134: ag_machinery → construction_machinery(이미 있음, 제거). +auto_dealers(할부·플로어플랜 금리)
+  #   +leisure_products(보트·RV 는 할부 판매 내구재)
   - from: real_rate_10y
-    to: [auto_oem, auto_parts, consumer_finance, hotels_resorts, ag_machinery,
-         construction_machinery, hvac_building]
+    to: [auto_oem, auto_parts, consumer_finance, hotels_resorts,
+         construction_machinery, hvac_building, auto_dealers, leisure_products]
     sign: -1
     lag_months: [3, 9]
     strength: moderate
@@ -471,8 +484,9 @@ edges:
       곡선 형태에 달렸다 — 단기금리만 오르는 역전 국면에서는 이 엣지가, 곡선이
       평행 이동하는 국면에서는 term_spread 엣지가 지배한다.
 
+  # M4-134: +insurance_diversified (BRK·AIG — 플로트 재투자 경로 동일)
   - from: real_rate_10y
-    to: [insurance_pc, insurance_life, reinsurance]
+    to: [insurance_pc, insurance_life, reinsurance, insurance_diversified]
     sign: +1
     lag_months: [6, 24]
     strength: moderate
@@ -512,8 +526,9 @@ edges:
   # ───────────────────────────────────────────────────────────────────────
   # term_spread — 수익률 곡선
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: +reit_mortgage (레포 단기 조달 → MBS·대출 장기 보유. 만기 변환의 가장 순수한 형태)
   - from: term_spread
-    to: [banks_large, banks_regional]
+    to: [banks_large, banks_regional, reit_mortgage]
     sign: +1
     lag_months: [3, 12]
     strength: strong
@@ -577,9 +592,12 @@ edges:
     evidence: "2015-2016 셰일·해운 디폴트 파동, 2020년 3월 크루즈·항공의 조달 경색"
     observable: "BAMLH0A0HYM2 3개월 변화 > +100bp"
 
+  # M4-134: +pharma_generic(TEVA·BHC·ENDO·MNK 고부채) +legacy_media(IHRT·SBGI·GTN 방송사 레버리지)
+  #   +reit_hotel +mortgage_finance(웨어하우스 라인 상시 조달) +rental_leasing(플릿 부채·HTZ 2020)
   - from: hy_spread
     to: [reit_office, cable_broadband, telecom_carriers, consumer_finance, casinos_gaming,
-         hydrogen_fuelcell, energy_storage, reit_healthcare, reit_retail]
+         hydrogen_fuelcell, energy_storage, reit_healthcare, reit_retail,
+         pharma_generic, legacy_media, reit_hotel, mortgage_finance, rental_leasing]
     sign: -1
     lag_months: [0, 6]
     strength: moderate
@@ -589,9 +607,10 @@ edges:
     evidence: "2020년 3월, 2022-2023 오피스 리파이낸싱 벽"
     observable: "BAMLH0A0HYM2 3개월 변화 > +100bp"
 
+  # M4-134: +insurance_diversified (보유 회사채 평가손 경로)
   - from: hy_spread
     to: [banks_large, banks_regional, insurance_life, reinsurance, asset_managers_exchanges,
-         reit_datacenter, midstream, utility_regulated, water_utility]
+         reit_datacenter, midstream, utility_regulated, water_utility, insurance_diversified]
     sign: -1
     lag_months: [0, 6]
     strength: weak
@@ -602,9 +621,11 @@ edges:
     evidence: "2016 에너지 대출 충당금, 2020 상반기 신용비용 급증"
     observable: "BAMLH0A0HYM2 3개월 변화 > +100bp"
 
+  # M4-134: +reit_diversified(WPC·BNL 넷리스 IG 발행자) +reit_specialty(VICI·IRM·WY IG 조달)
   - from: ig_spread
     to: [utility_regulated, gas_utility, water_utility, midstream, reit_towers,
-         reit_datacenter, telecom_carriers, pharma_large, defense]
+         reit_datacenter, telecom_carriers, pharma_large, defense,
+         reit_diversified, reit_specialty]
     sign: -1
     lag_months: [0, 6]
     strength: moderate
@@ -617,9 +638,11 @@ edges:
   # ───────────────────────────────────────────────────────────────────────
   # inventory_sales — 재고/출하 비율 (부호 −1: 비율 하락 = 재주문 재개)
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: semi_memory·semi_analog_power·semi_foundry_logic → semi_devices(단일 'Semiconductors' 라벨로 병합)
+  #   +industrial_distribution(GWW·FAST — 재주문 그 자체)
   - from: inventory_sales
-    to: [semi_memory, semi_analog_power, semi_equipment, semi_foundry_logic,
-         industrial_automation, trucking_logistics, ems_pcb, railroads]
+    to: [semi_devices, semi_equipment,
+         industrial_automation, trucking_logistics, ems_pcb, railroads, industrial_distribution]
     sign: -1
     lag_months: [0, 6]
     strength: strong
@@ -627,9 +650,11 @@ edges:
     evidence: "2016, 2019, 2023 반도체·산업재 재고 사이클"
     observable: "ISRATIO 6개월 변화 < 0"
 
+  # M4-134: +packaging(2023 골판지 디스톡) +medical_distribution(OMI·HSIC 의료 소모품 유통 재고)
   - from: inventory_sales
     to: [retail_specialty, retail_department, ecommerce, apparel_footwear,
-         shipping_container, specialty_chem, medtech_devices, life_science_tools]
+         shipping_container, specialty_chem, medtech_devices, life_science_tools,
+         packaging, medical_distribution]
     sign: -1
     lag_months: [0, 6]
     strength: moderate
@@ -655,9 +680,12 @@ edges:
   # ───────────────────────────────────────────────────────────────────────
   # new_orders_mfg · capex_orders_core · industrial_production
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: semi_analog_power·semi_memory → semi_devices. +conglomerates(MMM·HON 단주기 부품)
+  #   +industrial_distribution(MRO 일일 매출 = ISM) +instruments_test(제조 계측) +metal_fabrication(공구·가공재)
   - from: new_orders_mfg
-    to: [semi_analog_power, semi_memory, semi_equipment, ems_pcb, industrial_automation,
-         specialty_chem, coatings_adhesives]
+    to: [semi_devices, semi_equipment, ems_pcb, industrial_automation,
+         specialty_chem, coatings_adhesives,
+         conglomerates, industrial_distribution, instruments_test, metal_fabrication]
     sign: +1
     lag_months: [0, 6]
     strength: moderate
@@ -667,10 +695,12 @@ edges:
     evidence: "2016, 2020-2021, 2023-2024 제조업 수주 회복 구간"
     observable: "AMTMNO 6개월 변화 > 0"
 
+  # M4-134: ag_machinery → construction_machinery(이미 있음, 제거). +conglomerates(HON 항공·빌딩 자본재)
+  #   +instruments_test(KEYS·FTV — 비국방 자본재의 전형) +rental_leasing(장비 렌탈은 발주처 capex 를 따른다)
   - from: capex_orders_core
     to: [construction_machinery, epc_engineering, industrial_automation, hvac_building,
          industrial_gas, infra_construction, cement_aggregates, networking_optical,
-         grid_equipment, wind, ag_machinery]
+         grid_equipment, wind, conglomerates, instruments_test, rental_leasing]
     sign: +1
     lag_months: [3, 12]
     strength: moderate
@@ -680,8 +710,10 @@ edges:
     evidence: "2017-2018, 2021 자본재 사이클"
     observable: "NEWORDER 6개월 변화 > 0"
 
+  # M4-134: aerospace_commercial → defense ('Aerospace & Defense' 단일 라벨로 병합. 채널의 '항공기' 는
+  #   BA·TDG 등 상용 부분에 해당하며 순수 방산엔 해당 없음 — weak 라 그대로 둔다)
   - from: capex_orders_core
-    to: [aerospace_commercial, reit_towers]
+    to: [defense, reit_towers]
     sign: +1
     lag_months: [6, 18]
     strength: weak
@@ -691,10 +723,13 @@ edges:
     evidence: "2017-2019 항공기 수주잔고 확대"
     observable: "NEWORDER 6개월 변화 > 0"
 
+  # M4-134: nickel_cobalt → diversified_miners(이미 있음, 제거). semi_analog_power → semi_devices.
+  #   +conglomerates +industrial_distribution(MRO) +packaging(박스 출하 = 산업생산) +metal_fabrication
   - from: industrial_production
-    to: [copper_miners, steel_iron, aluminum, nickel_cobalt, diversified_miners,
+    to: [copper_miners, steel_iron, aluminum, diversified_miners,
          pgm_miners, silver_miners, specialty_chem, commodity_chem, industrial_gas,
-         railroads, auto_parts, coatings_adhesives, waste_services, semi_analog_power]
+         railroads, auto_parts, coatings_adhesives, waste_services, semi_devices,
+         conglomerates, industrial_distribution, packaging, metal_fabrication]
     sign: +1
     lag_months: [0, 6]
     strength: moderate
@@ -718,9 +753,10 @@ edges:
   # ───────────────────────────────────────────────────────────────────────
   # housing_starts — 주택 착공
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: +home_furnishings (MHK 바닥재·WHR 가전 — 준공·입주 단계 자재, HVAC 뒤)
   - from: housing_starts
     to: [lumber_paper, home_improvement, cement_aggregates, coatings_adhesives,
-         hvac_building, steel_iron, waste_services, homebuilders]
+         hvac_building, steel_iron, waste_services, homebuilders, home_furnishings]
     sign: +1
     lag_months: [0, 6]
     strength: strong
@@ -753,11 +789,16 @@ edges:
   # ───────────────────────────────────────────────────────────────────────
   # employment — 고용
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: +auto_dealers +consumer_electronics +home_furnishings +leisure_products +travel_booking
+  #   +reit_hotel(객실 수요) +mortgage_finance(소득 = 대출 적격·주택 구매력)
+  #   +legacy_media(지방 방송 광고비 — advertising 과 같은 후행 예산 경로)
   - from: employment
     to: [restaurants, retail_specialty, retail_department, ecommerce, apparel_footwear,
          hotels_resorts, cruise_lines, casinos_gaming, airlines, auto_oem, auto_parts,
          gaming_interactive, media_streaming, alcohol, fintech_payments, consumer_finance,
-         homebuilders, home_improvement, internet_platform, advertising]
+         homebuilders, home_improvement, internet_platform, advertising,
+         auto_dealers, consumer_electronics, home_furnishings, leisure_products,
+         travel_booking, reit_hotel, mortgage_finance, legacy_media]
     sign: +1
     lag_months: [0, 6]
     strength: strong
@@ -768,8 +809,9 @@ edges:
     evidence: "2008-2009, 2020년 2분기 고용 붕괴와 재량 소비의 동반 급락"
     observable: "PAYEMS 3개월 평균 증가분 z-score > 0.25 이고 UNRATE 6개월 변화 <= 0"
 
+  # M4-134: +medical_distribution (피보험자 수 → 처방·의료 소모품 물량)
   - from: employment
-    to: [hospitals_providers, managed_care, medtech_devices]
+    to: [hospitals_providers, managed_care, medtech_devices, medical_distribution]
     sign: +1
     lag_months: [3, 12]
     strength: moderate
@@ -779,9 +821,11 @@ edges:
     evidence: "2010-2019 고용 확장기 상업보험 가입자 증가, 2020 실직 후 메디케이드 이동"
     observable: "PAYEMS 3개월 평균 증가분 z-score > 0.25"
 
+  # M4-134: aerospace_commercial → defense(병합. 채널의 '항공 여객' 은 상용 부분에만 해당 — weak 라 그대로).
+  #   +health_it(의료 SaaS 좌석) +it_services(컨설턴트 시간·기업 IT 예산) +real_estate_services(오피스 임차 중개)
   - from: employment
     to: [software_infra, software_vertical, cybersecurity, reit_office, banks_large,
-         aerospace_commercial, railroads, ev_charging]
+         defense, railroads, ev_charging, health_it, it_services, real_estate_services]
     sign: +1
     lag_months: [3, 12]
     strength: weak
@@ -834,8 +878,9 @@ edges:
       정제 능력 부족 국면에서는 유가와 크랙이 같이 오른다. 이 엣지는 크랙 스프레드
       데이터가 확보되면 대체되어야 한다 — 현재는 대리 변수다.
 
+  # M4-134: +packaging (BERY·AMCR·SEE 플라스틱 포장의 수지 원료비)
   - from: oil_wti
-    to: [commodity_chem, specialty_chem, coatings_adhesives, fertilizer_potash]
+    to: [commodity_chem, specialty_chem, coatings_adhesives, fertilizer_potash, packaging]
     sign: -1
     lag_months: [0, 6]
     strength: moderate
@@ -900,8 +945,9 @@ edges:
   # ───────────────────────────────────────────────────────────────────────
   # copper_price · gold_price — 원자재 가격 (테마 매출의 직접 입력)
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: nickel_cobalt → diversified_miners (이미 있음, 제거)
   - from: copper_price
-    to: [copper_miners, diversified_miners, nickel_cobalt, aluminum]
+    to: [copper_miners, diversified_miners, aluminum]
     sign: +1
     lag_months: [0, 3]
     strength: strong
@@ -939,9 +985,11 @@ edges:
   # ───────────────────────────────────────────────────────────────────────
   # cpi_yoy · ppi_yoy — 물가
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: +consumer_electronics +leisure_products +consumer_services +travel_booking (재량 지출 잔여분 경로)
   - from: cpi_yoy
     to: [retail_specialty, retail_department, restaurants, apparel_footwear,
-         internet_platform, gaming_interactive, media_streaming, ecommerce]
+         internet_platform, gaming_interactive, media_streaming, ecommerce,
+         consumer_electronics, leisure_products, consumer_services, travel_booking]
     sign: -1
     lag_months: [3, 12]
     strength: moderate
@@ -962,8 +1010,11 @@ edges:
     evidence: "2021-2023 간호 인건비 급등기 병원 마진 악화, 2022-2023 의료비 트렌드와 MLR 상승"
     observable: "CPIAUCSL YoY > 2.5% 이고 서비스 CPI 가 헤드라인을 상회"
 
+  # M4-134: +legacy_media(광고 단가 명목 재가격) +reit_diversified·reit_specialty(넷리스 CPI 연동 임대료 조항)
+  #   +medical_distribution(약가 × 물량의 정률 마진)
   - from: cpi_yoy
-    to: [waste_services, fintech_payments, advertising, tobacco]
+    to: [waste_services, fintech_payments, advertising, tobacco,
+         legacy_media, reit_diversified, reit_specialty, medical_distribution]
     sign: +1
     lag_months: [0, 6]
     strength: weak
@@ -974,8 +1025,9 @@ edges:
     observable: "CPIAUCSL YoY > 2.5%"
     contradicts_when: "담배는 판가 인상이 물량 감소를 가속하면 순효과가 뒤집힌다"
 
+  # M4-134: ag_machinery → construction_machinery (채널의 '장비 교체' 는 DE·AGCO 부분에만 해당)
   - from: ppi_yoy
-    to: [agribusiness, fertilizer_potash, ag_machinery]
+    to: [agribusiness, fertilizer_potash, construction_machinery]
     sign: +1
     lag_months: [0, 9]
     strength: moderate
@@ -996,8 +1048,9 @@ edges:
     evidence: "2021-2022 투입비 급등기 필수소비재 총마진 압축, 2023 전가 후 회복"
     observable: "PPIACO YoY > 2%"
 
+  # M4-134: +insurance_diversified (GEICO·BRK 재보험·AIG 손보 — 수리·재건축비 경로)
   - from: ppi_yoy
-    to: [insurance_pc, reinsurance]
+    to: [insurance_pc, reinsurance, insurance_diversified]
     sign: -1
     lag_months: [6, 24]
     strength: moderate
@@ -1013,8 +1066,9 @@ edges:
   # ───────────────────────────────────────────────────────────────────────
   # china_credit_impulse · china_property
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: nickel_cobalt → diversified_miners (이미 있음, 제거)
   - from: china_credit_impulse
-    to: [copper_miners, steel_iron, aluminum, nickel_cobalt, diversified_miners,
+    to: [copper_miners, steel_iron, aluminum, diversified_miners,
          shipping_drybulk, cement_aggregates, construction_machinery, commodity_chem, coal]
     sign: +1
     lag_months: [3, 9]
@@ -1065,8 +1119,9 @@ edges:
   # ───────────────────────────────────────────────────────────────────────
   # defense_outlays — 국방 지출
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: aerospace_commercial → defense (이미 있음, 제거)
   - from: defense_outlays
-    to: [defense, shipbuilding, space_satellite, aerospace_commercial]
+    to: [defense, shipbuilding, space_satellite]
     sign: +1
     lag_months: [6, 24]
     strength: strong
@@ -1079,8 +1134,10 @@ edges:
       계속결의(CR)로 예산이 임시 집행되면 승인액이 늘어도 신규 착수(new start)가
       막혀 수주로 전환되지 않는다. 이 구간은 엣지가 발동하지 않은 것으로 본다.
 
+  # M4-134: semi_analog_power → semi_devices (채널의 '방산용 아날로그' 는 병합 버킷의 일부 — weak 라 그대로).
+  #   +instruments_test(TDY·KEYS 방산·항공 전자 계측)
   - from: defense_outlays
-    to: [rare_earth, semi_analog_power, cybersecurity, epc_engineering]
+    to: [rare_earth, semi_devices, cybersecurity, epc_engineering, instruments_test]
     sign: +1
     lag_months: [12, 36]
     strength: weak
@@ -1093,9 +1150,10 @@ edges:
   # ───────────────────────────────────────────────────────────────────────
   # hyperscaler_capex — 하이퍼스케일러 자본지출
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: semi_foundry_logic·semi_memory → semi_devices
   - from: hyperscaler_capex
     to: [grid_equipment, datacenter_hw, networking_optical, utility_ipp, reit_datacenter,
-         semi_foundry_logic, semi_memory, semi_equipment]
+         semi_devices, semi_equipment]
     sign: +1
     lag_months: [0, 6]
     strength: strong
@@ -1108,9 +1166,10 @@ edges:
       capex 가 GPU 로 편중되면 전력·네트워크 하류로 전이되지 않을 수 있다.
       배분 비율은 재무제표에 나오지 않으므로 발주처 가이던스로 보완 관측한다.
 
+  # M4-134: +it_services (ACN·EPAM·GLOB 클라우드 이전·구축 프로젝트 — 2차 수혜)
   - from: hyperscaler_capex
     to: [epc_engineering, hvac_building, nuclear_smr, energy_storage, industrial_gas,
-         software_infra, ems_pcb, cybersecurity]
+         software_infra, ems_pcb, cybersecurity, it_services]
     sign: +1
     lag_months: [6, 18]
     strength: moderate
@@ -1136,9 +1195,11 @@ edges:
   # sign = +1 은 '해당 테마에 유리한 정책이 확정되면 우호', −1 은 규제가 역풍인 테마.
   # 이 드라이버만 state 가 (테마, 이벤트) 쌍으로 판정된다 (drivers 절의 note 참조).
   # ───────────────────────────────────────────────────────────────────────
+  # M4-134: semi_foundry_logic → semi_devices (CHIPS 보조금은 INTC·MU 등 병합 버킷의 팹 보유사에 해당.
+  #   팹리스 다수에겐 해당 없음 — 병합으로 이 엣지의 실효 강도는 선언보다 낮아졌다. 수치는 바꾸지 않는다)
   - from: policy_events
     to: [solar, wind, hydrogen_fuelcell, energy_storage, ev_charging, nuclear_smr,
-         rare_earth, uranium, infra_construction, semi_foundry_logic, lithium]
+         rare_earth, uranium, infra_construction, semi_devices, lithium]
     sign: +1
     lag_months: [3, 18]
     strength: strong
@@ -1152,9 +1213,11 @@ edges:
       법안 통과와 시행규칙 확정 사이(보통 6~18개월)에는 발주가 오히려 멈춘다 —
       규칙을 기다리는 것이 합리적이기 때문이다. 통과 시점을 발동 시점으로 쓰면 틀린다.
 
+  # M4-134: +education(영리대학 규제·2021 중국 사교육 금지) +pharma_generic(약가 규제·API 관세)
   - from: policy_events
     to: [coal, tobacco, offshore_drilling, cable_broadband, managed_care,
-         hospitals_providers, pharma_large, semi_eda_ip, semi_equipment, casinos_gaming]
+         hospitals_providers, pharma_large, semi_eda_ip, semi_equipment, casinos_gaming,
+         education, pharma_generic]
     sign: -1
     lag_months: [0, 12]
     strength: moderate
@@ -1191,6 +1254,216 @@ edges:
       원가·수수료 수익에 들어간다. 개별 규제의 크기가 작고 최종안이 자주 완화되어 약하다.
     evidence: "2018-2019, 2025 관세 라운드의 소싱 원가, 2023-2024 자본규제 논의"
     observable: "해당 규제의 최종 규칙이 확정 (제안 단계는 발동으로 보지 않는다)"
+
+  # ═══════════════════════════════════════════════════════════════════════
+  # M4-134 추가 — 확정 버킷 134개 기준 재감사에서 in-degree 0 이던 31개 테마 보강.
+  #   기존 엣지의 `to` 에 붙일 수 있는 것(채널이 그대로 성립)은 위에서 붙였고
+  #   (`# M4-134:` 주석), 채널이 고유한 것만 여기 새 레코드로 둔다.
+  #   부호·시차·강도는 선언이며 데이터로 맞추지 않았다 (CLAUDE.md §1).
+  #   evidence 가 "선언; 실측 예정" 인 엣지는 M4 부호 일치율 실측(11-roadmap M4 마지막 항목)이 판정한다.
+  # ═══════════════════════════════════════════════════════════════════════
+
+  # ── employment ──────────────────────────────────────────────────────────
+  # M4-134 추가
+  - from: employment
+    to: [staffing_consulting]
+    sign: +1
+    lag_months: [0, 3]
+    strength: strong
+    channel: >
+      인력 파견·채용 매출은 배치 인원 × 시간이라 고용 증감의 직접 함수이며, 임시직은
+      기업이 가장 먼저 늘리고 가장 먼저 줄이는 항목이라 PAYEMS 전체보다 진폭이 크다.
+      컨설팅(KFY·FCN·HURN 계열)은 기업의 채용·조직 예산을 따르므로 같은 방향이되 느리다.
+    evidence: "2008-2009·2020 임시직 고용 급감과 파견사 매출 동반 급락, 2021 반등, 2023-2025 화이트칼라 채용 둔화기의 RHI·MAN 매출 감소"
+    observable: "PAYEMS 3개월 평균 증가분 z-score > 0.25 이고 임시직 고용(TEMPHELPS) 3개월 변화 > 0"
+
+  # M4-134 추가
+  - from: employment
+    to: [business_services, consumer_services, insurance_brokers]
+    sign: +1
+    lag_months: [3, 12]
+    strength: moderate
+    channel: >
+      고객사 인원수가 과금 단위인 사업이다 — 유니폼 렌탈(CTAS·UNF)·시설관리·보안 서비스·
+      사무가구(HNI·SCS)는 고객사 고용에, 복리후생 컨설팅·중개(MMC·AON·WTW)는 피보험 인원수와
+      급여 총액에, 개인 서비스(보육 BFAM·세무 HRB·체중관리)는 취업자 수에 붙는다.
+      moderate 인 이유: business_services·consumer_services 에 비경기 구성(장례 SCI 등)이 섞여 있고
+      계약 갱신 주기만큼 전달이 느리다.
+    evidence: "2009 유니폼 렌탈·사무가구 매출 급감, 2020-2021 보육 수요 붕괴·회복"
+    observable: "PAYEMS 3개월 평균 증가분 z-score > 0.25"
+
+  # M4-134 추가 — 부호가 다른 고용 엣지. 영리 교육 등록은 역경기다.
+  - from: employment
+    to: [education]
+    sign: -1
+    lag_months: [3, 12]
+    strength: moderate
+    channel: >
+      영리 대학·직업 훈련(STRA·LOPE·ATGE·PRDO·APEI)의 등록은 취업의 기회비용 함수다 —
+      실업률이 오르면 등록이 늘고(재교육·학자금 대출 접근), 노동시장이 타이트하면 등록이 준다.
+      다른 소비 테마와 부호가 반대인 이유이며, 이 버킷의 중국 사교육·온라인 교육 구성원에는
+      이 경로가 없어 moderate 로 둔다.
+    evidence: "2008-2010 영리대학 등록 급증(역경기), 2021-2023 타이트 노동시장의 등록 감소"
+    observable: "UNRATE 6개월 변화 > +0.3%p (employment composite_z < -0.25)"
+    contradicts_when: >
+      등록 급증이 규제(gainful employment·90/10 룰)를 불러 2010-2015 처럼 정책이 수요를 잘라내면
+      고용 경로가 정책 경로에 묻힌다 — policy_events 엣지(sign −1)가 지배한다.
+
+  # M4-134 추가 — 필수 소비 유통. 재량 소비(strong)와 분리한 이유는 방어적 성격과 트레이드다운 상쇄.
+  - from: employment
+    to: [retail_discount, food_retail_distribution]
+    sign: +1
+    lag_months: [0, 6]
+    strength: weak
+    channel: >
+      총 임금소득이 객수·객단가의 상한이라는 점은 재량 소비와 같지만, 필수품 비중이 높아
+      수요 탄력이 작고, 침체기 트레이드다운(WMT·COST·DG 점유율 이득)이 총량 감소를 부분 상쇄한다.
+      외식 유통(SYY·USFD·PFGC)은 레스토랑 트래픽을 따라 고용 민감도가 조금 더 크다.
+    evidence: "2008-2009 할인점 점유율 상승(총량은 소폭 감소), 2020 외식 유통 매출 급감·식료품 급증의 상쇄"
+    observable: "PAYEMS 3개월 평균 증가분 z-score > 0.25"
+
+  # ── new_orders_mfg · capex_orders_core ─────────────────────────────────
+  # M4-134 추가
+  - from: new_orders_mfg
+    to: [staffing_consulting]
+    sign: +1
+    lag_months: [0, 3]
+    strength: weak
+    channel: >
+      제조업 수주가 돌아설 때 기업이 가장 먼저 늘리는 것이 임시 생산직이다 (ISM 고용 지수가
+      수주 지수에 후행). 산업 파견 비중이 큰 MAN·KELYA 에 해당하며 화이트칼라 컨설팅엔 없다 — weak.
+    evidence: "2016, 2020-2021 제조업 수주 회복 직후 산업 임시직 증가"
+    observable: "AMTMNO 6개월 변화 > 0"
+
+  # M4-134 추가
+  - from: capex_orders_core
+    to: [business_services]
+    sign: +1
+    lag_months: [3, 12]
+    strength: weak
+    channel: >
+      'Business Equipment & Supplies' 부분(HNI·SCS 사무가구, PBI 사무기기, ACCO)은 기업의
+      사무 자본지출이라 비국방 자본재 사이클의 일부다. 버킷의 나머지(보안·전문 서비스)에는
+      이 경로가 없어 weak.
+    evidence: "2009, 2020-2021 사무가구 발주 급감·회복이 자본재 수주와 동행"
+    observable: "NEWORDER 6개월 변화 > 0"
+
+  # ── housing_starts ─────────────────────────────────────────────────────
+  # M4-134 추가
+  - from: housing_starts
+    to: [metal_fabrication, rental_leasing]
+    sign: +1
+    lag_months: [3, 12]
+    strength: moderate
+    channel: >
+      건설 착공에 붙는 2차 수요다 — 건축용 금속 가공재·배관(MLI·WOR)·전동공구(SWK·SNA) 는
+      골조 이후 공정에서 소비되고, 건설 장비 렌탈(URI·HRI)은 현장 수만큼 가동률이 오른다.
+      두 버킷 모두 비주거·산업 노출이 커서 주택 착공만으로는 moderate 다.
+    evidence: "2020-2021 착공 급증기의 공구 채널 수요와 렌탈 가동률 상승, 2022-2023 둔화"
+    observable: "HOUST 6개월 변화 > 0"
+
+  # M4-134 추가
+  - from: housing_starts
+    to: [reit_specialty]
+    sign: +1
+    lag_months: [3, 12]
+    strength: weak
+    channel: >
+      팀버 리츠(WY·RYN·PCH)의 벌목 물량과 목재 판가가 착공에 붙는다. 버킷의 나머지(카지노·
+      옥외광고·문서보관·농지 리츠)에는 이 경로가 없어 weak — 잡다한 잔여집합이라는 사실이 강도를 정한다.
+    evidence: "2020-2021 목재 가격 스파이크 구간의 팀버 리츠 초과 수익"
+    observable: "HOUST 6개월 변화 > 0"
+
+  # ── hy_spread · real_rate_10y · term_spread — 모기지 리츠·부동산 서비스 ──
+  # M4-134 추가
+  - from: hy_spread
+    to: [reit_mortgage]
+    sign: -1
+    lag_months: [0, 3]
+    strength: strong
+    channel: >
+      레버리지 채권 포트폴리오다 — 레포·웨어하우스로 5~8배 조달해 MBS·상업용 대출을 든다.
+      스프레드 확대는 담보 가치 하락 → 마진콜 → 강제 매각의 경로로 자본구조를 통해 즉시 들어오고,
+      신용 mREIT(BXMT·STWD·ARI)는 대출 손실까지 겹친다.
+    evidence: "2008 mREIT 연쇄 청산, 2020년 3월 마진콜 파동(MITT·NYMT·MFA 자산 투매)"
+    observable: "BAMLH0A0HYM2 3개월 변화 > +100bp"
+
+  # M4-134 추가
+  - from: hy_spread
+    to: [real_estate_services]
+    sign: -1
+    lag_months: [0, 6]
+    strength: moderate
+    channel: >
+      상업용 부동산 거래는 차입 매수라 신용 스프레드(CMBS·은행 CRE 대출 조건)가 거래 건수를
+      정하고, 중개(CBRE·JLL·CWK)의 자본시장·리싱 수수료는 거래 건수 × 가격이다. 주거 중개
+      (Z·COMP·RDFN)는 이 경로가 약하고 real_rate_10y 엣지가 지배한다 — 그래서 moderate.
+    evidence: "2008-2009, 2022-2023 CRE 거래량 급감과 브로커 자본시장 수수료 반토막"
+    observable: "BAMLH0A0HYM2 3개월 변화 > +100bp"
+
+  # M4-134 추가 — 리츠지만 캡레이트 경로가 아니라 듀레이션 경로라 별도 레코드.
+  - from: real_rate_10y
+    to: [reit_mortgage]
+    sign: -1
+    lag_months: [0, 6]
+    strength: moderate
+    channel: >
+      보유 MBS·대출의 듀레이션 평가손이 장부가치에 직접 들어오고, 금리 상승기에는 MBS
+      스프레드도 함께 벌어져(2022) 손실이 증폭된다. 부동산 캡레이트 경로(다른 리츠)가 아니라
+      채권 듀레이션 경로다. 프리페이먼트 둔화로 일부 상쇄되므로 strong 이 아니다.
+    evidence: "2022 금리 급등기 AGNC·NLY 장부가치 −30~40%, 2013 테이퍼 탠트럼"
+    observable: "DFII10 6개월 변화 < -25bp"
+    contradicts_when: >
+      MSR(모기지 서비싱권) 비중이 큰 구성원(RITM·COOP 계열)은 금리 상승 시 MSR 가치가 올라
+      부호가 반대다. term_spread 엣지(+1)와도 국면에 따라 충돌한다 — 단기금리 급등·평탄화
+      국면에서는 양쪽 다 역풍, 장기금리만 오르는 가팔라짐 국면에서는 상쇄된다.
+
+  # ── ppi_yoy — 보험 중개 (손보와 부호가 반대) ─────────────────────────
+  # M4-134 추가
+  - from: ppi_yoy
+    to: [insurance_brokers]
+    sign: +1
+    lag_months: [6, 24]
+    strength: moderate
+    channel: >
+      중개 수수료는 보험료의 정률이다. 손해액 인플레(수리·재건축비)가 요율 인상(하드 마켓)을
+      부르면 보험료 총액이 늘고, 중개사는 인수 리스크 없이 수수료만 커진다 — insurance_pc 의
+      ppi_yoy 엣지(−1)와 부호가 반대인 이유. 갱신 주기를 거치므로 전달이 느리다.
+    evidence: "2021-2024 손보 하드마켓 구간 MMC·AON·AJG·BRO 유기적 성장 가속, 2016-2018 소프트마켓의 둔화"
+    observable: "PPIACO YoY > 2% 이고 건설자재·자동차부품 PPI 가 상회 (insurance_pc 엣지와 같은 조건)"
+    contradicts_when: >
+      하드마켓이 길어져 요율 저항(보험 구매 축소·자가보험 전환)이 생기면 물량이 줄어 순효과가 약해진다.
+
+  # ── cpi_yoy — 필수 소비 유통 (재량 유통과 부호가 반대) ────────────────
+  # M4-134 추가
+  - from: cpi_yoy
+    to: [retail_discount, food_retail_distribution]
+    sign: +1
+    lag_months: [0, 6]
+    strength: weak
+    channel: >
+      필수품(식료품) 비중이 매출의 절반 이상이라 명목 매출이 물가를 따라가고, 실질소득 압박이
+      상위 소득층의 트레이드다운(WMT·COST·BJ 점유율)으로 이어진다. 외식 유통은 원가 플러스 구조라
+      인플레가 달러 마진을 키운다. 재량 유통(retail_specialty 등)의 cpi_yoy 엣지(−1)와 부호가 반대다.
+    evidence: "2022 식품 인플레 구간 WMT·COST 점유율 상승과 SYY 달러 마진 확대"
+    observable: "CPIAUCSL YoY > 2.5% 이고 식품 CPI 가 헤드라인을 상회"
+    contradicts_when: >
+      저소득 고객 기반(DG·DLTR)은 실질소득 훼손이 객단가 하락과 shrink 로 나타나 2022-2023 처럼
+      부호가 반대다. 버킷 안에서 소득층별로 갈린다 — 그래서 weak.
+
+  # ── policy_events — 의료 IT ────────────────────────────────────────────
+  # M4-134 추가
+  - from: policy_events
+    to: [health_it]
+    sign: +1
+    lag_months: [6, 24]
+    strength: weak
+    channel: >
+      의료 IT 수요의 큰 파도는 정책이 만들었다 — HITECH(2009) EHR 인센티브가 전자의무기록
+      도입을, CMS 원격의료 수가(2020)가 원격진료를, 상호운용성 규칙이 데이터 플랫폼을 만들었다.
+      다만 현재 구성원(VEEV·DOCS·HIMS)의 매출은 민간 계약 비중이 커서 weak.
+    evidence: "2009 HITECH 이후 EHR 벤더 매출 급증, 2020 원격의료 수가 확대 후 TDOC 이용 급증"
+    observable: "의료 IT 도입 인센티브·수가 확대 규칙이 직전 12개월 안에 확정"
 
   # ───────────────────────────────────────────────────────────────────────
   # 공통 인자 — 전 테마에 같은 부호. tailwind 계산에서 횡단면 중앙값을 뺀다.
