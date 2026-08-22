@@ -1,7 +1,7 @@
 # 케이스 스터디 기계 판독본 — docs/cases/*.md 의 요약. M6 로더(src/msa/l5/inputs.py) 계약의 상위집합.
 # 규약: 임계값 조정의 근거가 아니다 (docs/04 §5, docs/10 §7, CLAUDE.md §1).
 # M6 필수 필드: id, name_ko, type, theme_ids, clusters, drawdown_peak_to_trough, peak_date, trough_date, verified, sources[{url,title,date}], notes.
-# 추가 필드: theme, pair, verdict_date, period_start/end, drawdown(=drawdown_peak_to_trough), drawdown_note, recovery,
+# 추가 필드: theme, pair, verdict_date, period_start/end, drawdown(= −drawdown_peak_to_trough), drawdown_note, recovery,
 #   axes{axis1..5:{value,verdict}}, gate_result, confidence_mechanical, confidence_terms, outcome_agrees, evidence[{claim,source_url,date,reliability}].
 # drawdown_peak_to_trough = L1 EW 테마 지수 고점→저점 (msa.l1.panel, ~/data/us_micro.duckdb, store_end 2026-08-14). 양수 비율 (0,1] — M6 로더 계약(src/msa/l5/inputs.py). `drawdown` 은 같은 값의 음수 표기.
 # gate_result ∈ {passed, capped, rejected, contested} — capped = docs/04 §3 의 "상한 0.35, 포트 편입 불가".
@@ -20,11 +20,11 @@ cases:
   clusters:
   - precious_metals
   pair: coal-2013
-  verdict_date: 2015-12-31
-  period_start: 2011-04-08
-  period_end: 2016-08-31
-  peak_date: 2011-04-08
-  trough_date: 2016-01-19
+  verdict_date: '2015-12-31'
+  period_start: '2011-04-08'
+  period_end: '2016-08-31'
+  peak_date: '2011-04-08'
+  trough_date: '2016-01-19'
   drawdown_peak_to_trough: 0.852
   drawdown: -0.852
   drawdown_note: 버킷 EW, 구성원 2~3종(소표본). 대표 7종 -0.72~-0.96
@@ -111,11 +111,11 @@ cases:
   clusters:
   - fossil
   pair: silver-miners-2015
-  verdict_date: 2013-12-31
-  period_start: 2011-04-01
-  period_end: 2016-04-30
-  peak_date: 2011-04-01
-  trough_date: 2016-01-19
+  verdict_date: '2013-12-31'
+  period_start: '2011-04-01'
+  period_end: '2016-04-30'
+  peak_date: '2011-04-01'
+  trough_date: '2016-01-19'
   drawdown_peak_to_trough: 0.953
   drawdown: -0.953
   drawdown_note: 버킷 EW, 구성원 ~17종, 상장폐지 포함. 2026-08 현재 2011 고점 미회복
@@ -258,11 +258,11 @@ cases:
   clusters:
   - fossil
   pair: offshore-drilling-2016
-  verdict_date: 2020-04-30
-  period_start: 2014-06-23
-  period_end: 2022-06-30
-  peak_date: 2014-06-23
-  trough_date: 2020-03-18
+  verdict_date: '2020-04-30'
+  period_start: '2014-06-23'
+  period_end: '2022-06-30'
+  peak_date: '2014-06-23'
+  trough_date: '2020-03-18'
   drawdown_peak_to_trough: 0.949
   drawdown: -0.949
   drawdown_note: 버킷 EW, 구성원 ~75~148종, 파산 포함
@@ -370,11 +370,11 @@ cases:
   clusters:
   - fossil
   pair: shale-ep-2020
-  verdict_date: 2016-02-29
-  period_start: 2014-06-20
-  period_end: 2021-02-28
-  peak_date: 2014-06-20
-  trough_date: 2020-04-01
+  verdict_date: '2016-02-29'
+  period_start: '2014-06-20'
+  period_end: '2021-02-28'
+  peak_date: '2014-06-20'
+  trough_date: '2020-04-01'
   drawdown_peak_to_trough: 0.99
   drawdown: -0.99
   drawdown_note: 버킷 EW, 육상 시추 포함(HP·PTEN·NBR). 오프쇼어만 떼면 전원 -99~-100%
@@ -496,11 +496,11 @@ cases:
   clusters:
   - shipping
   pair: mall-reit-2018
-  verdict_date: 2021-12-31
-  period_start: 2020-04-27
-  period_end: 2023-06-30
-  peak_date: 2020-04-27
-  trough_date: 2022-01-24
+  verdict_date: '2021-12-31'
+  period_start: '2020-04-27'
+  period_end: '2023-06-30'
+  peak_date: '2020-04-27'
+  trough_date: '2022-01-24'
   drawdown_peak_to_trough: 0.539
   drawdown: -0.539
   drawdown_note: 버킷 EW 러닝 MDD. 5년 고점(2016-11-16) 대비 판정 시점 -62%; 2007 사상 고점 대비 -94%
@@ -615,11 +615,11 @@ cases:
   clusters:
   - reit
   pair: tankers-2021
-  verdict_date: 2018-12-31
-  period_start: 2016-08-01
-  period_end: 2021-06-30
-  peak_date: 2016-08-01
-  trough_date: 2020-04-03
+  verdict_date: '2018-12-31'
+  period_start: '2016-08-01'
+  period_end: '2021-06-30'
+  peak_date: '2016-08-01'
+  trough_date: '2020-04-03'
   drawdown_peak_to_trough: 0.64
   drawdown: -0.64
   drawdown_note: '버킷 EW(몰·스트립·NNN 혼합), 2024-09-05 고점 회복. 몰 전문 REIT 개별: CBL -100%, PEI -98%, WPG -93%, MAC -93%, SKT -87%, SPG -77%'
@@ -645,7 +645,7 @@ cases:
   confidence_terms: 0.5 -0.15(ax3 경고) -0.15(ax5) = 0.20 -> 편입 불가(<0.5). 그림자 시계열 적용 시 ax1 사망 AND ax3 경고 -> rejected
   outcome_agrees: true
   verified: false
-  notes: '저장소 설정(reit_retail.physical_ref: null)으로 축1 n/a → 확신도 바닥(0.20)으로만 편입 불가. 그림자 시계열(백화점 매출 10y −3.3%, 5y −3.6%)이면 자동 기각. 버킷이 몰·스트립·NNN 혼합이라 버킷 낙폭(−64%)과 몰 REIT 개별(−77~−100%)이 다름 — L_i 에 어느 쪽을 쓰는지 명시 필요. 낙폭 출처: 저장소 L1 EW 테마 지수 내부 계산(msa.l1.panel, store_end 2026-08-14) — 외부 URL 없음.'
+  notes: '저장소 설정(reit_retail.physical_ref: null)으로 축1 n/a → 확신도 바닥(0.20)으로만 편입 불가. 그림자 시계열(백화점 매출 10y −3.3%, 5y −3.6%)이면 자동 기각. 버킷이 몰·스트립·NNN 혼합이라 버킷 낙폭(−64%)과 몰 REIT 개별 −0.77~−1.00 (CBL −1.00·PEI −0.98·WPG −0.93·MAC −0.93·SKT −0.87·SPG −0.77)이 다름 — L_i 에 어느 쪽을 쓰는지 명시 필요. 낙폭 출처: 저장소 L1 EW 테마 지수 내부 계산(msa.l1.panel, store_end 2026-08-14) — 외부 URL 없음.'
   sources:
   - url: https://www2.census.gov/retail/releases/historical/ecomm/18q4.pdf
     title: 전자상거래 비중 2018Q4 9.9%, 2018 9.7%, 2017 8.9%

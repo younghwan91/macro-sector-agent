@@ -1,0 +1,35 @@
+{
+ "model": "claude-opus-5",
+ "usage": {"input_tokens": 21000, "output_tokens": 3100, "search_queries": 2},
+ "output": {
+  "claim": "2027년 말까지 우라늄 장기계약가가 $80/lb 이상을 유지하고 1차 생산 증가분이 소요량 증가분을 넘지 못해, 생산자 실현가격 상승이 구성원 EBITDA 마진 확대로 이어진다.",
+  "mechanism": "2011-2020 저가격 국면에서 신규 광산 FID 가 거의 없어 2026년 1차 생산이 원자로 소요량의 약 85% 수준이고, 신규 광산 리드타임이 7~10년이라 2027년까지 공급 반응은 카자흐 증산과 ISR 재가동으로 제한된다. 소요량은 정체에 가깝지만 감소하지 않으므로(WNA), 부족분은 유틸리티 재고·2차 공급에서 나오고 그 고갈 속도가 장기계약 체결을 강제해 계약가를 지지한다.",
+  "horizon_months": [6, 18],
+  "triggers": [
+   {"observable": "Cameco 또는 Kazatomprom 연간 생산 가이던스 하향 또는 미달", "source": "분기 실적 공시", "by": "2027-Q1"},
+   {"observable": "UxC 장기계약가 > 현물가 상태 3개월 지속", "source": "UxC 주간 리포트", "by": "2027-Q2"},
+   {"observable": "유틸리티 장기계약 체결량 연 120M lb 초과", "source": "UxC/TradeTech", "by": "2027-Q2"}
+  ],
+  "invalidations": [
+   {"observable": "카자흐 생산 쿼터 20% 이상 상향 발표", "source": "Kazatomprom 공시", "action": "exit"},
+   {"observable": "장기계약가 $65/lb 이하 3개월 지속", "source": "UxC", "action": "exit"},
+   {"observable": "러시아 농축 수입 금지 면제 2028 이후로 연장", "source": "DOE/의회 공시", "action": "halve"}
+  ],
+  "key_uncertainties": [
+   "SPUT·ETF 의 금융 매집이 현물가에 기여한 비중을 분리할 수 없다 (bear structural_change)",
+   "2차 공급(언더피딩·재고 매각) 규모가 공개 통계로 잡히지 않는다",
+   "소요량 증가는 연 0.3~0.5% 로 정체에 가깝다 — 논지는 수요 성장이 아니라 공급 제약에 의존한다"
+  ],
+  "axes": {
+   "unit_demand": {"note": "L1 판정 수용. WNA 소요량은 정체(+0.3%/y)이지만 감소가 아니다 — bear 의 지적을 key_uncertainties 에 반영.", "evidence_refs": [6, 10], "referee_ruling": null, "referee_evidence_refs": []},
+   "capital_cycle": {"verdict": "cycle", "evidence_refs": [1, 2, 3], "note": "1차 생산 < 소요량, 2020-2023 감산, 2025 가이던스 하향. 단독 판별 불가 — 축1·3 과 함께 읽는다."},
+   "substitution": {"verdict": "cycle", "evidence_refs": [11], "note": "기존 원자로 연료의 대체재는 없다. 재생+저장은 신규 발전 경쟁에 해당하며 10년 지평의 연료 소요량을 줄이지 않는다. bear 도 strength=weak."},
+   "cost_curve": {"verdict": "cycle", "evidence_refs": [5], "note": "현물 $70 부근에서 고원가 ISR 한계, 감산 발표 2건 관측. 장기계약가 $80 은 P75 위 — 강한 사이클까지는 아님.", "strong_cycle": false},
+   "terminal_risk": {"verdict": "warning", "evidence_refs": [13, 14], "note": "카자흐 지리 집중과 러시아 농축 의존. 구성원 24M 만기부채/시총은 0.5 미만.", "severe": false, "debt_maturity_24m_over_half": false}
+  },
+  "bear_rebuttal": "priced_in(강)·omitted_facts(강)는 반박하지 못한다 — 논지는 2차 공급 고갈 시점에 의존하며 그 시점은 증명되지 않았다. substitution 은 연료 대체가 없다는 점에서 반박. unit_demand 정체는 사실이며 논지를 수요 성장이 아닌 공급 제약으로 한정했다.",
+  "evidence": [
+   {"id": 14, "claim": "구성원 상위 기업 유동부채/시총 0.02 이하 (PIT 재무 요약)", "source_url": "state/scans/2026-08-14/members", "date": "2026-08-14", "reliability": "medium"}
+  ]
+ }
+}

@@ -200,14 +200,16 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
 ## M7 · L3 에이전트
 > **의도적으로 늦다.** 결정론적 계층이 먼저 후보를 좁혀야 비용과 편향이 통제된다.
 
-**완료 기준**
-- [ ] 4역할(supply · catalyst · bear · referee) 구현
-- [ ] thesis 스키마 검증 (evidence·invalidations 없으면 거부)
-- [ ] `bear` 가 **L1 스코어를 못 보는** 독립 컨텍스트로 실행
-- [ ] 하드 게이트 자동 적용 + 기각 사유 기록
-- [ ] 재실행 시 이전 thesis diff 출력
+**완료 기준** (2026-08-23 — 프레임워크 구현 `src/msa/l3/`, `msa research <theme>`. 구현 노트는 `05-agent-research.md` §7)
+- [x] 4역할(supply · catalyst · bear · referee) 구현 — 프롬프트·출력 스키마·오케스트레이션.
+      **실제 LLM 호출은 미검증**: 런타임에 `ANTHROPIC_API_KEY` 와 웹 검색 도구가 없어 Mock/Fixture 제공자로만 돌렸다
+- [x] thesis 스키마 검증 (evidence·invalidations 없으면 거부) — `05` §4 규약 전 행이 검증기·테스트
+- [x] `bear` 가 **L1 스코어를 못 보는** 독립 컨텍스트로 실행 — `BearInputs` 계약 + 프롬프트 토큰 전수 검사 테스트
+- [x] 하드 게이트 자동 적용 + 기각 사유 기록 — `04` §3·§3.1 기계 적용, 기각도 저장, `rejections-pending.yaml` 행
+- [x] 재실행 시 이전 thesis diff 출력 — 필드별 diff + 무효화 제거 의심 표시
 - [ ] **M6 에서 작성된 케이스 스터디 6건을 에이전트 프롬프트에 few-shot 으로 투입**
-      (작성은 M6, 투입은 M7 — 두 일은 다르다)
+      (작성은 M6, 투입은 M7 — 두 일은 다르다). 로더(`state/cases/*.md`)는 연결돼 있고 파일이 없으면
+      프롬프트에 "few-shot 없음" 을 적는다 — **케이스 파일이 아직 없어 미완료**
 
 ## M8 · 운영
 **완료 기준**

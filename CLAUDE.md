@@ -1,8 +1,8 @@
 # macro-sector-agent — 작업 규약
 
 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 하향식 리서치 파이프라인.
-**현재 M3 까지 구현** (`src/msa/` — L0 데이터 · 테마 유니버스 · L1 스캐너 `msa scan`). 이후 단계는
-`docs/11-roadmap.md`. 어느 계층이든 손대기 전에 해당 `docs/` 를 먼저 읽는다.
+**현재 M3 까지 구현 + M7 L3 프레임워크** (`src/msa/` — L0 데이터 · 테마 유니버스 · L1 스캐너 `msa scan` ·
+L3 에이전트 `msa research`). 이후 단계는 `docs/11-roadmap.md`. 어느 계층이든 손대기 전에 해당 `docs/` 를 먼저 읽는다.
 
 ## 절대 규칙
 
@@ -107,9 +107,12 @@ msa scan              # L1 사이클 스캐너 → 테마 스코어보드 (M3). 
 msa portfolio --inputs <dir>   # L5 SOCP + 사다리·스탑·TP + 매매계획서 (M6). --asof --cases --capital
                       #   --cluster-cap name=cap --no-write · 입력 계약: src/msa/l5/inputs.py
                       #   산출물 state/portfolio/<date>/ (weights.csv·plan.md·diagnostics.json)
+msa research <theme>  # L3 에이전트 4역할(supply·catalyst·bear·referee) → thesis 객체 (M7)
+                      #   실제 실행은 ANTHROPIC_API_KEY 필요 (--provider anthropic, 기본값)
+                      #   오프라인: --dry-run (Mock) · --provider fixture (tests/fixtures/l3/)
+                      #   산출물 state/theses/<date>/ (thesis.yaml·report.md·rejections-pending·contested)
 # 아래는 미구현 — 호출하면 NotImplementedError
 msa macro             # L2 거시 국면 + 드라이버 상태
-msa research <theme>  # L3 에이전트 (베어 포함) → thesis 객체
 msa picks <theme>     # L4 종목 랭킹
 msa check             # 주간 트리거/무효화 점검
 ```

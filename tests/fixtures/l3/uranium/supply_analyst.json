@@ -1,0 +1,30 @@
+{
+ "model": "claude-sonnet-5",
+ "usage": {"input_tokens": 6200, "output_tokens": 1900, "search_queries": 9},
+ "output": {
+  "findings": [
+   {"topic": "capacity_and_closures", "summary": "2026년 1차 생산 약 155M lb U3O8 vs 원자로 소요 약 185M lb — 2차 공급으로 차액을 메운다. 2020-2023 Cigar Lake·McArthur River 감산/휴지 이력.", "evidence_ids": [1, 2], "not_found": false},
+   {"topic": "pipeline_3y", "summary": "FID 완료 증설은 McArthur River 재가동 확대와 카자흐 신규 광구 2곳(2027~). Kazatomprom 2025 가이던스는 황산 부족으로 하향.", "evidence_ids": [3], "not_found": false},
+   {"topic": "inventories", "summary": "거래소 재고 개념 없음. 유틸리티 재고 약 2~2.5년치(미국 EIA 기준), 10년 백분위 하위권. SPUT 보유 약 66M lb.", "evidence_ids": [4], "not_found": false},
+   {"topic": "lead_time", "summary": "신규 광산 7~10년(인허가 포함), ISR 재가동 1~2년.", "evidence_ids": [1], "not_found": false},
+   {"topic": "cost_curve", "summary": "장기계약가 $80 내외에서 P90 생산자 다수 수익권. 현물 $70 내외면 고원가 미국 ISR 일부가 한계. 2025년 미국 ISR 감산 발표 2건.", "evidence_ids": [5], "not_found": false},
+   {"topic": "unit_demand_series", "summary": "WNA 원자로 소요량(tU) 2015-2025 연간 시계열 확보 — 2015 66,883 tU → 2025 약 69,000 tU, 완만한 증가.", "evidence_ids": [6], "not_found": false}
+  ],
+  "unit_demand_series": {
+   "found": true,
+   "unit": "tU (원자로 소요량)",
+   "scope": "global",
+   "source": "World Nuclear Association — World Nuclear Power Reactors & Uranium Requirements",
+   "years": [[2015, 66883], [2016, 63404], [2017, 64497], [2018, 63807], [2019, 67351], [2020, 66300], [2021, 62496], [2022, 65650], [2023, 65650], [2024, 67517], [2025, 69000]],
+   "evidence_ids": [6]
+  },
+  "evidence": [
+   {"id": 1, "claim": "1차 생산 ~155M lb vs 소요 ~185M lb (2026E)", "source_url": "https://www.world-nuclear.org/information-library/nuclear-fuel-cycle/uranium-resources/supply-of-uranium.aspx", "date": "2026-05-15", "reliability": "high"},
+   {"id": 2, "claim": "Cigar Lake·McArthur River 2020-2023 휴지·감산", "source_url": "https://www.cameco.com/invest/markets", "date": "2026-02-10", "reliability": "high"},
+   {"id": 3, "claim": "Kazatomprom 2025 생산 가이던스 하향(황산 부족)", "source_url": "https://www.kazatomprom.kz/en/investors/", "date": "2025-08-01", "reliability": "high"},
+   {"id": 4, "claim": "미국 유틸리티 재고 2~2.5년치, SPUT 보유 66M lb", "source_url": "https://www.eia.gov/uranium/marketing/", "date": "2026-06-30", "reliability": "medium"},
+   {"id": 5, "claim": "미국 ISR 감산 발표 2건, 현물 $70 부근에서 한계", "source_url": "https://www.example-industry-news.org/uranium-isr-cuts", "date": "2026-07-20", "reliability": "medium"},
+   {"id": 6, "claim": "WNA 원자로 소요량 2015-2025 연간 tU", "source_url": "https://www.world-nuclear.org/information-library/facts-and-figures/world-nuclear-power-reactors-and-uranium-requireme.aspx", "date": "2026-07-01", "reliability": "high"}
+  ]
+ }
+}

@@ -1,0 +1,22 @@
+{
+ "model": "claude-opus-5",
+ "usage": {"input_tokens": 5100, "output_tokens": 2300, "search_queries": 11},
+ "output": {
+  "bear_case": "우라늄 강세 서사는 2023년 Sprott 매집과 함께 컨센서스가 됐고, 2024년 초 현물 $100 돌파 뒤 이미 한 차례 가격에 반영됐다. 1차 공급 부족은 사실이지만 그 차액은 20년 넘게 2차 공급(재고·농축 언더피딩·해체 핵탄두)으로 메워져 왔고, 카자흐 증산 여력과 나미비아 신규 광구가 2027년부터 들어온다. 원자로 소요량은 연 0.5% 안팎으로 사실상 정체이며 SMR 은 2030년대 전이라 수요 증가분이 아니다. 광산주는 현물 대비 레버리지가 크지만 구성원 상위 기업의 유동부채와 자사주 희석(ISR 신생사)이 사이클 회복 전에 주주가치를 깎을 수 있다. 즉 이 논지는 '공급 부족'이 아니라 '2차 공급 고갈 시점'에 대한 베팅이며 그 시점은 증명되지 않았다.",
+  "attacks": {
+   "unit_demand": {"argument": "WNA 소요량은 2015-2025 CAGR 약 +0.3% — 성장이 아니라 정체. 독일 탈원전·일본 저가동률이 선진국 수요를 눌렀다.", "evidence_ids": [1], "strength": "moderate"},
+   "substitution": {"argument": "원전 자체의 대체(재생에너지+저장)는 신규 건설 경쟁에서 진행 중이나 기존 원자로의 연료 대체는 없다. 침투율 개념이 연료에는 적용 불가 — 대체 위협은 신규 수요 쪽에만 있다.", "evidence_ids": [2], "strength": "weak"},
+   "structural_change": {"argument": "이번 사이클은 2007 과 달리 금융 수요(SPUT·ETF)가 현물을 직접 흡수한다 — 물리적 부족이 아니라 금융 매집이 가격을 만든 부분을 분리할 수 없다.", "evidence_ids": [3], "strength": "moderate"},
+   "omitted_facts": {"argument": "강세론은 2차 공급(언더피딩·재고 매각)과 카자흐 증산 여력을 빼놓는다.", "evidence_ids": [4], "strength": "strong"},
+   "priced_in": {"argument": "2023년 하반기부터 컨센서스. 2024-01 현물 $106 고점 후 조정은 이미 한 번 반영됐음을 보여준다.", "evidence_ids": [3], "strength": "strong"},
+   "terminal_risk": {"argument": "카자흐(세계 생산 40%+) 지리 집중, 러시아 농축 의존 — 제재 우회 시 2차 공급이 오히려 늘 수 있다.", "evidence_ids": [4], "strength": "moderate"}
+  },
+  "consensus_since": "2023년 하반기 (SPUT 매집·현물 $80 돌파 시점부터 주요 IB 커버리지 전원 강세)",
+  "evidence": [
+   {"id": 1, "claim": "WNA 소요량 2015→2025 CAGR ≈ +0.3%", "source_url": "https://www.world-nuclear.org/information-library/facts-and-figures/world-nuclear-power-reactors-and-uranium-requireme.aspx", "date": "2026-07-01", "reliability": "high"},
+   {"id": 2, "claim": "신규 발전 경쟁에서 재생+저장 LCOE 우위 (기존 원자로 연료 대체는 없음)", "source_url": "https://www.lazard.com/research-insights/levelized-cost-of-energyplus/", "date": "2025-06-15", "reliability": "medium"},
+   {"id": 3, "claim": "2024-01 현물 $106 고점과 이후 조정; SPUT 매집 규모", "source_url": "https://sprott.com/investment-strategies/physical-commodity-funds/uranium/", "date": "2026-06-30", "reliability": "medium"},
+   {"id": 4, "claim": "2차 공급 비중·카자흐 증산 여력·러시아 농축 의존", "source_url": "https://www.world-nuclear.org/information-library/nuclear-fuel-cycle/uranium-resources/uranium-markets.aspx", "date": "2026-04-01", "reliability": "high"}
+  ]
+ }
+}

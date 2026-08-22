@@ -1,0 +1,239 @@
+"""하드 게이트 · contested · 확신도 산술 — `docs/04` §3·§3.1·§4 를 합성 판정 집합으로 확인한다."""
+
+from __future__ import annotations
+
+import pytest
+
+from _l3_synth import axis1
+from msa.l3.gates import (
+    CONF_CAP_ON_DEATH,
+    AxisVerdicts,
+    ConfidenceInputs,
+    apply_gates,
+    cycle_confidence,
+    rejection_row,
+)
+
+
+def _v(
+    a1: str = "cycle", a2: str = "cycle", a3: str = "cycle", a4: str = "cycle", a5: str = "warning"
+) -> AxisVerdicts:
+    return AxisVerdicts(a1, a2, a3, a4, a5)
+
+
+def _ci(v: AxisVerdicts, **kw) -> ConfidenceInputs:  # type: ignore[no-untyped-def]
+    base = {
+        "capex_to_da_qtrs_below1": 10.0,
+        "axis4_strong_cycle": True,
+        "axis5_severe": False,
+        "tailwind": 0.5,
+        "small_sample": False,
+        "short_hist": False,
+    }
+    base.update(kw)
+    return ConfidenceInputs(verdicts=v, **base)
+
+
+# ---------------------------------------------------------------- 확신도
+
+
+def test_confidence_all_positive_terms_clips_to_one() -> None:
+    r = cycle_confidence(_ci(_v()))
+    # 0.5 +0.15 +0.10 +0.15 +0.10 +0.10 = 1.10 → 1.0
+    assert r.raw == pytest.approx(1.10)
+    assert r.value == 1.0
+    assert set(r.terms) == {
+        "axis1_cycle",
+        "axis2_capex_below1_8q",
+        "axis3_no_substitution",
+        "axis4_strong_cycle",
+        "macro_tailwind",
+    }
+
+
+def test_confidence_base_only() -> None:
+    r = cycle_confidence(
+        _ci(
+            _v("not_applicable", "cycle", "not_applicable", "warning", "warning"),
+            capex_to_da_qtrs_below1=3.0,
+            axis4_strong_cycle=False,
+            tailwind=0.1,
+        )
+    )
+    assert r.value == 0.5 and r.terms == {}
+
+
+def test_confidence_negative_terms() -> None:
+    r = cycle_confidence(
+        _ci(
+            _v("warning", "cycle", "warning", "warning", "death"),
+            capex_to_da_qtrs_below1=None,
+            axis4_strong_cycle=False,
+            tailwind=None,
+            small_sample=True,
+        )
+    )
+    # 0.5 −0.20 −0.15 −0.15 −0.10 = −0.10 → 0
+    assert r.raw == pytest.approx(-0.10)
+    assert r.value == 0.0
+    assert "거시 순풍 값 없음" in " ".join(r.notes)
+
+
+def test_confidence_death_cap() -> None:
+    r = cycle_confidence(_ci(_v("death", "cycle", "cycle", "cycle", "warning")))
+    # 0.5 +0.10 +0.15 +0.10 +0.10 = 0.95 → cap 0.35
+    assert r.raw == pytest.approx(0.95)
+    assert r.cap == CONF_CAP_ON_DEATH and r.value == CONF_CAP_ON_DEATH
+    r3 = cycle_confidence(_ci(_v("cycle", "cycle", "death", "cycle", "warning")))
+    assert r3.value == CONF_CAP_ON_DEATH
+
+
+def test_confidence_axis4_requires_strong_and_cycle() -> None:
+    r = cycle_confidence(_ci(_v(a4="warning"), axis4_strong_cycle=True))
+    assert "axis4_strong_cycle" not in r.terms
+    r = cycle_confidence(_ci(_v(a4="cycle"), axis4_strong_cycle=False))
+    assert "axis4_strong_cycle" not in r.terms
+
+
+def test_confidence_contested_axis1_no_penalty() -> None:
+    a = cycle_confidence(_ci(_v("contested")))
+    b = cycle_confidence(_ci(_v("not_applicable")))
+    assert a.terms == b.terms and "axis1_cycle" not in a.terms and "axis1_warning" not in a.terms
+
+
+def test_confidence_short_hist_or_small_sample_once() -> None:
+    r = cycle_confidence(_ci(_v(), small_sample=True, short_hist=True))
+    assert r.terms["small_sample_or_short_hist"] == -0.10
+
+
+# ---------------------------------------------------------------- 게이트
+
+
+def _gate(v: AxisVerdicts, a1kind: str = "cycle", **kw):  # type: ignore[no-untyped-def]
+    base = {
+        "confidence": 0.7,
+        "referee_ruling": None,
+        "referee_evidence_refs": (),
+        "referee_refs_valid": True,
+        "secular_risk": False,
+        "debt_24m_over_half": False,
+    }
+    base.update(kw)
+    return apply_gates(v, axis1(a1kind), **base)
+
+
+def test_gate_passed_and_eligible() -> None:
+    g = _gate(_v())
+    assert g.status == "passed" and g.portfolio_eligible and g.path is None
+    assert g.axis_verdicts["terminal_risk"] == "warning"
+
+
+def test_gate_passed_but_confidence_below_floor() -> None:
+    g = _gate(_v(), confidence=0.45)
+    assert g.status == "passed" and not g.portfolio_eligible
+    assert "07 C6" in g.rule
+
+
+def test_gate_auto_reject_axis1_death_and_axis3_warning() -> None:
+    g = _gate(_v("death", a3="warning"), a1kind="death")
+    assert g.status == "rejected" and g.path == "hard_gate" and not g.portfolio_eligible
+    g2 = _gate(_v("death", a3="death"), a1kind="death")
+    assert g2.status == "rejected"
+
+
+def test_gate_cap_path_axis1_death_alone() -> None:
+    g = _gate(_v("death", a3="cycle"), a1kind="death", confidence=0.35)
+    assert g.status == "passed" and not g.portfolio_eligible and "상한" in g.rule
+    g3 = _gate(_v("cycle", a3="death"), confidence=0.35)
+    assert g3.status == "passed" and not g3.portfolio_eligible
+
+
+def test_gate_contested_with_ruling_is_held() -> None:
+    g = _gate(
+        _v("contested"), a1kind="contested", referee_ruling="산업 축소", referee_evidence_refs=(4,)
+    )
+    assert g.status == "contested" and not g.portfolio_eligible and g.path is None
+    assert g.referee_ruling == "산업 축소"
+
+
+def test_gate_contested_without_ruling_closes_rejected() -> None:
+    g = _gate(_v("contested"), a1kind="contested")
+    assert g.status == "rejected" and g.path == "hard_gate"
+    assert "서술 못 하면 기각" in g.rule
+    g2 = _gate(
+        _v("contested"), a1kind="contested", referee_ruling="서술만", referee_evidence_refs=()
+    )
+    assert g2.status == "rejected" and "비어 있음" in g2.reason
+    g3 = _gate(
+        _v("contested"),
+        a1kind="contested",
+        referee_ruling="서술",
+        referee_evidence_refs=(99,),
+        referee_refs_valid=False,
+    )
+    assert g3.status == "rejected" and "증거 목록에 없음" in g3.reason
+
+
+def test_gate_contested_precedes_death_rejection() -> None:
+    """선행 관문: 보정 전후 뒤집힘이면 사망 기각보다 먼저 contested 로 간다."""
+    g = _gate(
+        _v("contested", a3="warning"),
+        a1kind="contested",
+        referee_ruling="x",
+        referee_evidence_refs=(1,),
+    )
+    assert g.status == "contested"
+
+
+def test_gate_sign_split_is_contested() -> None:
+    a = axis1("split")
+    assert a.contested and a.verdict == "contested"
+
+
+def test_gate_secular_risk_requires_proof() -> None:
+    g = _gate(_v(a3="warning"), secular_risk=True)
+    assert g.status == "passed" and not g.portfolio_eligible and "secular_risk" in g.rule
+    g2 = _gate(_v(), secular_risk=True)
+    assert g2.portfolio_eligible
+
+
+def test_gate_debt_flag_keeps_theme() -> None:
+    g = _gate(_v(), debt_24m_over_half=True)
+    assert g.status == "passed" and g.l4_survival_filter
+    assert any("생존 필터" in n for n in g.notes)
+    assert g.as_dict()["l4_survival_filter"] is True
+
+
+def test_gate_axis1_not_applicable_not_treated_as_pass_for_secular() -> None:
+    g = _gate(_v("not_applicable"), a1kind="na", secular_risk=True)
+    assert not g.portfolio_eligible
+
+
+def test_rejection_row_format() -> None:
+    g = _gate(_v("death", a3="warning"), a1kind="death")
+    row = rejection_row(
+        theme_id="coal",
+        rejected_at="2026-08-14",
+        gate=g,
+        cycle_confidence=0.31,
+        scoreboard_rank=3,
+        scan_dir="state/scans/2026-08-14",
+    )
+    assert list(row) == [
+        "theme",
+        "rejected_at",
+        "path",
+        "reason",
+        "cycle_confidence",
+        "scoreboard_rank",
+        "journal",
+        "scan",
+        "r_12m",
+        "r_24m",
+    ]
+    assert row["path"] == "hard_gate" and row["r_12m"] is None and row["journal"] is None
+
+
+def test_axis_verdict_enum_enforced() -> None:
+    with pytest.raises(ValueError):
+        AxisVerdicts("cycle", "cycle", "strong", "cycle", "cycle")
