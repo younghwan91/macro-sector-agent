@@ -75,39 +75,32 @@ LLM 이 파이프라인의 **좁은 허리**에만 있는 것이 설계 의도�
 - §4 규칙으로 `cycle_confidence` 기계적 산출
 - **triggers 와 invalidations 를 쓴다** — 여기가 산출물의 핵심
 
-#### `axis1_contested` 판정 절차
+#### `axis1_contested` — `referee` 의 계약
 
-축 1 판정이 동일 구성원 보정 전후로 뒤집히거나 `unit_cagr_10y` 와 `unit_cagr_10y_median` 의
-부호가 갈리면, 게이트는 기각도 통과도 아닌 **보류** 상태로 `referee` 에 온다
-(`04-value-trap.md` §3.1). 절차는 04 가 이미 규정한 것을 그대로 따른다.
+**판정 규칙 본문은 `04-value-trap.md` §3.1 에 있다.** 여기에는 계약만 적는다 —
+`referee` 가 무엇을 입력받아 무엇을 산출하는가. 규칙을 두 곳에 적으면 한쪽이 바뀔 때
+조용히 어긋나므로, 조건·해석·근거는 04 를 읽는다.
 
 **입력** — 다음을 함께 받는다. 하나라도 빠지면 판정하지 않는다.
 
 | 입력 | 출처 |
 |---|---|
 | `verdict_pre_ss` · `verdict_post_ss` (보정 전/후 두 산출) | 축 1 (`02-cycle-state.md` §F 계산) |
-| `unit_cagr_10y` · `unit_cagr_10y_median` 과 두 값의 부호 | 좌동 |
+| `unit_cagr_10y` · `unit_cagr_10y_median` 과 `sign_split` | 좌동 |
 | `ss_n` · `ss_coverage` | 좌동 |
 | `ma_flag` | 좌동 |
 | `exit_count` | 축 2 (`02-cycle-state.md` §E) |
 
-**판정** — 물음은 하나다. **물량 감소가 산업 축소인가, 수요 소멸인가.**
-합산이 줄어도 중앙값이 유지되고 `exit_count` 가 높으면 남은 기업의 몫이 늘어난 것이므로
-산업 축소이고, 이는 사이클 저점의 모습이다. 합산과 중앙값이 함께 줄면 남은 기업의 물량도
-줄고 있으므로 수요 소멸이다. `ss_coverage` 가 낮거나 `ma_flag` 가 켜져 있으면 두 산출의
-차이가 실물이 아니라 표본·편향에서 왔을 수 있다는 뜻이므로, 그 사실을 판정문에 적는다.
-결과는 **서술**로 쓴다 — 점수를 매기지 않는다.
+**산출**
 
-**닫는 규칙**
+| 산출 | 내용 |
+|---|---|
+| `referee_ruling` | **물량 감소가 산업 축소인가, 수요 소멸인가** 에 대한 서술 판정. 점수를 매기지 않는다 |
+| `referee_evidence_refs` | 위 판정의 근거 (`CLAUDE.md` §3) |
+| `gate_result.status` | `passed` · `contested` · `rejected` 중 하나로 닫는다 (`specs/thesis.schema.yaml`) |
 
-- 판정 근거는 `evidence` 배열을 갖춰야 한다 (`CLAUDE.md` §3).
-  **서술할 수 없으면 기각 쪽으로 닫는다** — 보류는 판단 유보이지 면제가 아니다.
-- 보류가 유지되는 동안 **포트 편입 불가**. 관찰 목록에만 올린다 (`04-value-trap.md` §3.1).
-- 산출은 `gate_result.status: contested` + `referee_ruling` + `referee_evidence_refs`,
-  축 쪽은 `unit_demand.axis1_contested: true` 와 `verdict: contested` 다
-  (`specs/thesis.schema.yaml`). 리포트에 반드시 표시한다.
-- **임계값을 재해석하지 않는다.** 이 절차는 04 의 판정 규칙을 옮긴 것이지 고친 것이 아니다
-  (`CLAUDE.md` §1).
+**증거를 갖추지 못하면 기각으로 닫는다** — 보류는 판단 유보이지 면제가 아니다
+(`04-value-trap.md` §3.1).
 
 ## 3. thesis 객체 스키마
 
