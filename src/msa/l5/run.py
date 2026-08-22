@@ -12,10 +12,9 @@
 from __future__ import annotations
 
 import csv
-import json
 import logging
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
 
@@ -24,7 +23,9 @@ import pandas as pd
 
 from msa import __version__
 from msa.config import paths
-from msa.l5.inputs import PortfolioInputs, ThesisInput, load_inputs
+from msa.dates import asof_or_today
+from msa.io import write_snapshot
+from msa.l5.inputs import Pick, PortfolioInputs, ThesisInput, load_inputs
 from msa.l5.ladders import PositionPlan, build_position_plan
 from msa.l5.optimize import (
     LAMBDA_COMPRESS,
@@ -49,7 +50,7 @@ from msa.l5.risk import (
     stock_covariance_from_returns,
     theme_covariance,
 )
-from msa.themes import ThemeSet, load_themes
+from msa.themes import Theme, ThemeSet, load_themes
 
 log = logging.getLogger(__name__)
 
@@ -149,16 +150,148 @@ class PortfolioResult:
         }
 
 
-def _asof_date(asof: str | None) -> date:
-    return date.fromisoformat(asof) if asof else date.today()
-
-
 def _eligibility(t: ThesisInput) -> tuple[bool, str | None]:
     if not t.portfolio_eligible:
         return False, f"gate_result: portfolio_eligible=false (status={t.gate_status})"
     if t.cycle_confidence < MIN_CONFIDENCE:
         return False, f"C6 최소 확신도 미달 (c={t.cycle_confidence:.2f} < {MIN_CONFIDENCE})"
     return True, None
+
+
+def _eligibility_and_c_tilde(
+    inputs: PortfolioInputs, cand_themes: Sequence[str], warnings: list[str]
+) -> tuple[dict[str, str | None], dict[str, float]]:
+    """C6·게이트 → (테마별 제외 사유; None 이면 편입 후보) 와 편입 후보의 압축 확신도 `c̃`."""
+    excl_reason: dict[str, str | None] = {}
+    for t in cand_themes:
+        _ok, why = _eligibility(inputs.theses[t])
+        excl_reason[t] = why
+        if why is not None:
+            warnings.append(f"{t}: 편입 제외 — {why}")
+    elig = [t for t in cand_themes if excl_reason[t] is None]
+    c_raw = {t: inputs.theses[t].cycle_confidence for t in elig}
+    return excl_reason, compress_confidence(c_raw, LAMBDA_COMPRESS)
+
+
+def _covariance(
+    picks: Sequence[Pick],
+    elig_themes: Sequence[str],
+    *,
+    daily_ew: pd.DataFrame | None,
+    stock_returns: pd.DataFrame | None,
+    ts_asof: pd.Timestamp,
+    warnings: list[str],
+) -> CovarianceResult:
+    """종목 수익률이 있으면 그것으로, 없으면 테마 EW 지수 사상(β=1) 으로 `Σ`."""
+    tickers = [p.ticker for p in picks]
+    if stock_returns is not None:
+        return stock_covariance_from_returns(stock_returns, tickers, asof=ts_asof)
+    if daily_ew is None:
+        raise ValueError("테마 EW 수익률도 종목 수익률도 없다 — 공분산을 만들 수 없다")
+    tcov = theme_covariance(monthly_returns(daily_ew), elig_themes, asof=ts_asof)
+    cov = map_theme_cov_to_stocks(
+        tcov, [p.theme for p in picks], [p.idio_vol_ann for p in picks], tickers
+    )
+    if not any(p.idio_vol_ann for p in picks):
+        warnings.append(
+            "공분산: 종목 수익률 없음 → 테마 EW 지수 사상(β=1) · 고유분산 0 — "
+            "같은 테마의 종목은 상관 1 로 들어간다 (ENB 가 테마 수를 넘지 않는다)"
+        )
+    return cov
+
+
+def _solve_and_report(
+    inputs: PortfolioInputs,
+    picks: Sequence[Pick],
+    *,
+    by_id: Mapping[str, Theme],
+    c_tilde: Mapping[str, float],
+    losses: Mapping[str, ScenarioLoss],
+    cov: CovarianceResult,
+    warnings: list[str],
+) -> tuple[Solution, ENBResult]:
+    """SOCP 를 풀고 완화·상태·C4·C1·경계 상한을 경고로 적는다. ENB 도 여기서."""
+    stock_themes = [p.theme for p in picks]
+    prob = Problem(
+        tickers=tuple(p.ticker for p in picks),
+        themes=tuple(stock_themes),
+        classes=tuple(by_id[t].cycle_class for t in stock_themes),
+        clusters=tuple(by_id[t].correlation_cluster for t in stock_themes),
+        coef=tuple(c_tilde[t] * 1.0 for t in stock_themes),  # μ=1
+        sigma=cov.sigma,
+        scenario_loss=tuple(losses[t].value for t in stock_themes),
+        adv20_usd=tuple(p.adv20_usd for p in picks),
+        min_weight=tuple(p.min_weight for p in picks),
+        capital_usd=inputs.capital_usd,
+        cluster_caps=inputs.cluster_caps,
+    )
+    solution = solve(prob)
+    if solution.stage > 0:
+        warnings.append(
+            f"infeasible → 완화 {solution.stage}단: {', '.join(solution.relaxed)} "
+            "(순서 C3 → C1 고정, docs/09 §5)"
+        )
+    if solution.status != "optimal":
+        warnings.append(f"솔버 상태 {solution.status} — 해의 정밀도를 의심하라")
+    if inputs.capital_usd is None:
+        warnings.append("C4 유동성: 자본(--capital) 미지정 → 적용 안 됨")
+    elif solution.c4_skipped:
+        warnings.append(f"C4 유동성: ADV 없어 적용 못 한 종목 {list(solution.c4_skipped)}")
+    wv = np.array([solution.weights[p.ticker] for p in picks], dtype=np.float64)
+    enb = effective_number_of_bets(cov.sigma, wv)
+    if solution.mdd_scenario is None:
+        warnings.append("C1: 시나리오 기반(ii) 계산 불가 — 변동성 기반(i) 만 구속")
+    if solution.binding_caps:
+        warnings.append(f"경계에 붙은 상한: {list(solution.binding_caps)}")
+    return solution, enb
+
+
+def _theme_rows(
+    inputs: PortfolioInputs,
+    cand_themes: Sequence[str],
+    picks: Sequence[Pick],
+    *,
+    by_id: Mapping[str, Theme],
+    c_tilde: Mapping[str, float],
+    excl_reason: Mapping[str, str | None],
+    losses: Mapping[str, ScenarioLoss],
+    weights: Mapping[str, float],
+    warnings: list[str],
+) -> tuple[ThemeRow, ...]:
+    """계획서의 테마 블록 머리 — 편입 여부와 무관하게 전 후보 테마. 축 1 경고도 여기서."""
+    rows: list[ThemeRow] = []
+    for t in cand_themes:
+        th = by_id[t]
+        ti = inputs.theses[t]
+        rows.append(
+            ThemeRow(
+                theme=t,
+                name_ko=th.name_ko,
+                cycle_class=th.cycle_class,
+                cluster=th.correlation_cluster,
+                c=ti.cycle_confidence,
+                c_tilde=c_tilde.get(t),
+                c_source=ti.confidence_source,
+                tailwind=ti.tailwind,
+                axis1_declared=th.axis1_declared,
+                axis1_available=ti.axis1_available,
+                eligible=excl_reason[t] is None,
+                excluded_reason=excl_reason[t],
+                weight=sum(weights.get(p.ticker, 0.0) for p in picks if p.theme == t),
+                scenario=losses[t],
+            )
+        )
+    for r in rows:
+        if r.eligible and not r.axis1_declared:
+            warnings.append(
+                f"{r.theme}: 축 1 적용 불가 (physical_ref 없음) — M6 운영 범위 밖이다 "
+                "(docs/11 '첫 실전 사용 시점'). 판정은 축 3 쪽으로 넘어가 있다"
+            )
+        if r.eligible and r.axis1_declared and r.axis1_available is False:
+            warnings.append(
+                f"{r.theme}: physical_ref 는 있으나 thesis 가 axis1_available=false 로 적었다"
+            )
+    return tuple(rows)
 
 
 def build_portfolio(
@@ -178,20 +311,9 @@ def build_portfolio(
     if unknown:
         raise ValueError(f"themes.yaml 에 없는 테마: {unknown}")
 
-    # --- C6 · 게이트
-    eligible: dict[str, bool] = {}
-    excl_reason: dict[str, str | None] = {}
-    for t in cand_themes:
-        ok, why = _eligibility(inputs.theses[t])
-        eligible[t] = ok
-        excl_reason[t] = why
-        if not ok:
-            warnings.append(f"{t}: 편입 제외 — {why}")
-    elig_themes = [t for t in cand_themes if eligible[t]]
-
-    # --- 확신도 압축 (편입 후보 평균 기준)
-    c_raw = {t: inputs.theses[t].cycle_confidence for t in elig_themes}
-    c_tilde = compress_confidence(c_raw, LAMBDA_COMPRESS)
+    # --- C6 · 게이트 · 확신도 압축 (편입 후보 평균 기준)
+    excl_reason, c_tilde = _eligibility_and_c_tilde(inputs, cand_themes, warnings)
+    elig_themes = [t for t in cand_themes if excl_reason[t] is None]
 
     # --- L_i (전 후보 테마에 대해 — 제외된 테마도 표기는 한다)
     clusters = {t: by_id[t].correlation_cluster for t in cand_themes}
@@ -210,61 +332,25 @@ def build_portfolio(
             "계산되지 않았다. MDD 예산은 변동성 한 축으로만 지켜진다 (docs/11 '순서' 3)."
         )
 
-    picks = [p for p in inputs.picks if eligible[p.theme]]
+    # --- 공분산 · SOCP · ENB
+    picks = [p for p in inputs.picks if excl_reason[p.theme] is None]
     solution: Solution | None = None
     cov: CovarianceResult | None = None
     enb: ENBResult | None = None
     weights: dict[str, float] = {}
     if picks:
-        tickers = [p.ticker for p in picks]
-        stock_themes = [p.theme for p in picks]
-        # --- 공분산
-        if stock_returns is not None:
-            cov = stock_covariance_from_returns(stock_returns, tickers, asof=ts_asof)
-        else:
-            if daily_ew is None:
-                raise ValueError("테마 EW 수익률도 종목 수익률도 없다 — 공분산을 만들 수 없다")
-            tcov = theme_covariance(monthly_returns(daily_ew), elig_themes, asof=ts_asof)
-            cov = map_theme_cov_to_stocks(
-                tcov, stock_themes, [p.idio_vol_ann for p in picks], tickers
-            )
-            if not any(p.idio_vol_ann for p in picks):
-                warnings.append(
-                    "공분산: 종목 수익률 없음 → 테마 EW 지수 사상(β=1) · 고유분산 0 — "
-                    "같은 테마의 종목은 상관 1 로 들어간다 (ENB 가 테마 수를 넘지 않는다)"
-                )
-        prob = Problem(
-            tickers=tuple(tickers),
-            themes=tuple(stock_themes),
-            classes=tuple(by_id[t].cycle_class for t in stock_themes),
-            clusters=tuple(by_id[t].correlation_cluster for t in stock_themes),
-            coef=tuple(c_tilde[t] * 1.0 for t in stock_themes),  # μ=1
-            sigma=cov.sigma,
-            scenario_loss=tuple(losses[t].value for t in stock_themes),
-            adv20_usd=tuple(p.adv20_usd for p in picks),
-            min_weight=tuple(p.min_weight for p in picks),
-            capital_usd=inputs.capital_usd,
-            cluster_caps=inputs.cluster_caps,
+        cov = _covariance(
+            picks,
+            elig_themes,
+            daily_ew=daily_ew,
+            stock_returns=stock_returns,
+            ts_asof=ts_asof,
+            warnings=warnings,
         )
-        solution = solve(prob)
+        solution, enb = _solve_and_report(
+            inputs, picks, by_id=by_id, c_tilde=c_tilde, losses=losses, cov=cov, warnings=warnings
+        )
         weights = solution.weights
-        if solution.stage > 0:
-            warnings.append(
-                f"infeasible → 완화 {solution.stage}단: {', '.join(solution.relaxed)} "
-                "(순서 C3 → C1 고정, docs/09 §5)"
-            )
-        if solution.status != "optimal":
-            warnings.append(f"솔버 상태 {solution.status} — 해의 정밀도를 의심하라")
-        if inputs.capital_usd is None:
-            warnings.append("C4 유동성: 자본(--capital) 미지정 → 적용 안 됨")
-        elif solution.c4_skipped:
-            warnings.append(f"C4 유동성: ADV 없어 적용 못 한 종목 {list(solution.c4_skipped)}")
-        wv = np.array([weights[t] for t in tickers], dtype=np.float64)
-        enb = effective_number_of_bets(cov.sigma, wv)
-        if solution.mdd_scenario is None:
-            warnings.append("C1: 시나리오 기반(ii) 계산 불가 — 변동성 기반(i) 만 구속")
-        if solution.binding_caps:
-            warnings.append(f"경계에 붙은 상한: {list(solution.binding_caps)}")
     else:
         warnings.append("편입 가능한 후보가 0개 — 포트폴리오를 만들지 않았다")
 
@@ -281,44 +367,22 @@ def build_portfolio(
         anchor_share = sum(weights.get(p.ticker, 0.0) for p in picks if p.is_anchor) / gross
 
     # --- 테마 행
-    rows: list[ThemeRow] = []
-    for t in cand_themes:
-        th = by_id[t]
-        ti = inputs.theses[t]
-        rows.append(
-            ThemeRow(
-                theme=t,
-                name_ko=th.name_ko,
-                cycle_class=th.cycle_class,
-                cluster=th.correlation_cluster,
-                c=ti.cycle_confidence,
-                c_tilde=c_tilde.get(t),
-                c_source=ti.confidence_source,
-                tailwind=ti.tailwind,
-                axis1_declared=th.axis1_declared,
-                axis1_available=ti.axis1_available,
-                eligible=eligible[t],
-                excluded_reason=excl_reason[t],
-                weight=sum(weights.get(p.ticker, 0.0) for p in picks if p.theme == t),
-                scenario=losses[t],
-            )
-        )
-    for r in rows:
-        if r.eligible and not r.axis1_declared:
-            warnings.append(
-                f"{r.theme}: 축 1 적용 불가 (physical_ref 없음) — M6 운영 범위 밖이다 "
-                "(docs/11 '첫 실전 사용 시점'). 판정은 축 3 쪽으로 넘어가 있다"
-            )
-        if r.eligible and r.axis1_declared and r.axis1_available is False:
-            warnings.append(
-                f"{r.theme}: physical_ref 는 있으나 thesis 가 axis1_available=false 로 적었다"
-            )
-
+    rows = _theme_rows(
+        inputs,
+        cand_themes,
+        picks,
+        by_id=by_id,
+        c_tilde=c_tilde,
+        excl_reason=excl_reason,
+        losses=losses,
+        weights=weights,
+        warnings=warnings,
+    )
     n_axis1 = sum(1 for th in themes if th.axis1_declared)
     return PortfolioResult(
         asof=asof,
         inputs_dir=inputs_dir,
-        theme_rows=tuple(rows),
+        theme_rows=rows,
         positions=positions,
         solution=solution,
         cov=cov,
@@ -378,11 +442,10 @@ def write_outputs(res: PortfolioResult, out_dir: Path) -> PortfolioResult:
                     str(p.time_stop),
                 ]
             )
-    (out_dir / "plan.md").write_text(render_plan(res), encoding="utf-8")
-    (out_dir / "diagnostics.json").write_text(
-        json.dumps(res.diagnostics(), ensure_ascii=False, indent=1, default=str), encoding="utf-8"
+    write_snapshot(
+        out_dir, texts={"plan.md": render_plan(res)}, jsons={"diagnostics.json": res.diagnostics()}
     )
-    return PortfolioResult(**{**res.__dict__, "out_dir": out_dir})
+    return replace(res, out_dir=out_dir)
 
 
 def run_portfolio(
@@ -400,12 +463,13 @@ def run_portfolio(
     """CLI 진입점. 캐시의 테마 EW 수익률을 읽고, `<inputs>/returns.csv` 가 있으면 종목 공분산에
     쓴다."""
     p = paths()
+    out_root = replace(p, state=Path(state_dir)).portfolio if state_dir is not None else p.portfolio
     d = Path(inputs_dir)
     cases = Path(cases_path) if cases_path is not None else p.cases
     inputs = load_inputs(d, cases_path=cases, capital_usd=capital_usd, cluster_caps=cluster_caps)
     themes = load_themes(themes_path)
     cdir = Path(cache_dir) if cache_dir is not None else p.cache
-    daily = load_theme_ew_returns(cdir)
+    daily = load_theme_ew_returns(cdir, inputs.themes())
     returns: pd.DataFrame | None = None
     rp = d / "returns.csv"
     if rp.exists():
@@ -413,15 +477,14 @@ def run_portfolio(
         returns.columns = [str(c).upper() for c in returns.columns]
     res = build_portfolio(
         inputs,
-        asof=_asof_date(asof),
+        asof=asof_or_today(asof),
         themes=themes,
         daily_ew=daily,
         stock_returns=returns,
         inputs_dir=str(d),
     )
     if write:
-        sdir = Path(state_dir) if state_dir is not None else p.state
-        res = write_outputs(res, sdir / "portfolio" / str(res.asof))
+        res = write_outputs(res, out_root / str(res.asof))
     return res
 
 

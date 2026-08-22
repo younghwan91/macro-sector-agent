@@ -10,7 +10,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from msa.l5.ladders import PositionPlan
+from msa import fmt
+from msa.l5.ladders import RUNNER_MA_WEEKS, PositionPlan
 from msa.l5.risk import ScenarioLoss
 
 if TYPE_CHECKING:
@@ -20,7 +21,8 @@ RULE = "─" * 78
 
 
 def _pct(x: float | None, nd: int = 1) -> str:
-    return "—" if x is None else f"{x * 100:.{nd}f}%"
+    """비율 → `12.3%` (부호 없음), 없으면 `—`."""
+    return fmt.pct(x, sign=False, na="—", nd=nd)
 
 
 def _px(x: float | None) -> str:
@@ -106,7 +108,7 @@ def _position_block(p: PositionPlan) -> list[str]:
         ) + f"{_px(p.tp2_r_price)} (고점 50% 회복)"
     if p.tp2_p75_price is None and p.tp2_r_price is None:
         tp2 += "$— (P75·직전 고점 입력 없음)"
-    lines.append(f"         {tp1}  {tp2}  러너 트레일 {p.runner_trail:.0%} / 10주선")
+    lines.append(f"         {tp1}  {tp2}  러너 트레일 {p.runner_trail:.0%} / {RUNNER_MA_WEEKS}주선")
     if p.triggers:
         lines.append(f"         트리거  {' / '.join(p.triggers)}")
     return lines
