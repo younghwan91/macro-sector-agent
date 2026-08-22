@@ -62,32 +62,45 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
 `08-data-contract.md` §6 절차 실행.
 
 **완료 기준**
-- [ ] Sharadar 스토어 접속, 행수·기간이 벌크 원본과 일치 (조용한 절단 없음)
-- [ ] `ACTIONS` · `SFP` · `TICKERS.industry` 적재
-- [ ] FRED 시리즈 **24종** 적재 + **발표 지연 실측 표** 작성 (§3 "확인 필요" 3건 해소)
+- [x] Sharadar 스토어 접속, 행수·기간이 벌크 원본과 일치 (조용한 절단 없음) — `msa data status` · `src/msa/data/store.py` (M1)
+- [x] `ACTIONS` · `TICKERS.industry` 적재. `SFP` 는 스토어에 없어 벌크 `funds.csv.zip` 을 직접 읽는다 (`etf_prices`, M1 실측)
+- [ ] FRED 시리즈 **24종** 적재 + **발표 지연 실측 표** 작성 (§3 "확인 필요" 3건 해소) — 어댑터·`msa data fred-lag` 는 있으나 **`FRED_API_KEY` 가 없어 실측 미완**
 - [ ] `hyperscaler_capex` 파생값이 5사 공개 capex 와 일치
-- [ ] `msa data status` 가 전 소스의 최신 시점과 결측률을 출력
+- [x] `msa data status` 가 전 소스의 최신 시점과 결측률을 출력
 
 ## M2 · 테마 유니버스 확정
 **완료 기준**
-- [ ] `state/themes.yaml` 버킷 확정 (초안 109개를 Sharadar `industry` 실측 분포와 대조 — 병합·분할로 수가 바뀐다)
-- [ ] 커버리지 감사 6항목 전부 통과 (`01-theme-universe.md` §5)
-- [ ] 폐지 종목이 자기이력 구간에 포함됨을 검증 (**생존 편향 없음**)
-- [ ] ETF 프록시 vs 자체지수 12M 상관 > 0.85 인 버킷 비율 리포트
-- [ ] **`physical_ref`(실물/가격 참조) 보유 버킷 수를 집계해 문서화** — 이 수가 곧
+- [x] `state/themes.yaml` 버킷 확정 — **134개** (초안 109 − 폐기 6 + 신설 31, `docs/theme-coverage-audit.md`)
+- [x] 커버리지 감사 6항목 — 1·2 PASS, 3·4 경고 표기, 5 는 M3 에서 실행(17/44 > 0.85), 6 은 기준선 확보 (`docs/theme-coverage-audit.md`)
+- [x] 폐지 종목이 자기이력 구간에 포함됨을 검증 — 배정 17,917 중 폐지 다수 포함, 큐레이션 4개 버킷에 잔존 편향 기록
+- [x] ETF 프록시 vs 자체지수 12M 상관 > 0.85 인 버킷 비율 리포트 — **17/44 (38.6%)**, 중앙값 0.805. 매 스캔 `coverage.csv` 에 재계산 (M3)
+- [x] **`physical_ref`(실물/가격 참조) 보유 버킷 수를 집계해 문서화** — 45/134. M3 에서 `kind`(price 19 · volume 25 · nominal 1) 추가 — 이 수가 곧
       가치함정 축 1(물량 추세)을 계산할 수 있는 테마의 수이고, 그것이 **M6 시점의 실제 운영 범위**다
       (`04-value-trap.md` 축 1, 아래 "첫 실전 사용 시점"). M6 에서 알면 늦으므로 M2 에서 센다
 - [ ] `01-theme-universe.md` §6 의 열린 질문 4건 결정 및 문서 반영
 
 ## M3 · L1 사이클 스캐너
 **완료 기준**
-- [ ] 6블록 전 지표 계산, M2 에서 확정된 전 버킷 스코어보드 산출
-- [ ] `momentum` 의 VCP·Stage 를 **지수 레벨로 승격**한 래퍼 동작
-- [ ] 브레드스 3종(`breadth_200`·`nh6m`·`nhnl`)과 `breadth_lead` 산출
-- [ ] 적자 기업 제외 비율이 리포트에 표기됨 (조용한 절단 금지)
-- [ ] 소표본·짧은이력 버킷에 경고 플래그
-- [ ] **육안 검증**: 2026-08 시점 스코어보드에 원자재 계열이 이미 상위에 있는가?
-      (사후 확인이지 튜닝 근거가 아니다 — 어긋나면 문서에 기록하고 넘어간다)
+- [x] 6블록 전 지표 계산, M2 에서 확정된 전 버킷 스코어보드 산출 — `msa scan`, `src/msa/l1/` (2026-08-23)
+- [x] `momentum` 의 VCP 를 **지수 레벨로 승격**한 래퍼 동작 — `vendor/vcp.py` + `blocks.vcp_index_score`.
+      Stage 분석은 `above_200`·`sma200_slope`·`breadth_200` 조합으로 대체 (별도 Stage 래퍼는 만들지 않았다)
+- [x] 브레드스 3종(`breadth_200`·`nh6m`·`nhnl`)과 `breadth_lead` 산출
+- [x] 적자 기업 제외 비율이 리포트에 표기됨 (`ebitda_nonpos_share`, 2026-08 중앙값 20%)
+- [x] 소표본·짧은이력 버킷에 경고 플래그 (`n=N 소표본` · `short_hist`)
+- [x] **육안 검증** — **어긋났다. 기록하고 넘어간다.** `docs/scan-m3-check.md`. 2026-08-14 시점 원자재
+      계열은 중·하위다 (2026-02 고점 후 −40% 급락이 "패닉" 이지 "망각" 이 아니라는 A 블록의 설계와
+      일치). 2025-03·06 시점으로 되감아도 원형 사례(`silver_miners`·`pgm_miners`·`rare_earth`·`lithium`)는
+      44~90위로 상단에 없었다 — E 블록(자본사이클)이 당시 광업 capex 확장기라 낮았다.
+      **가중치는 건드리지 않는다** (`CLAUDE.md` §1). 이것이 M3.5 가 정량으로 답해야 할 질문이다
+
+### M3 구현 메모 (2026-08-23)
+- 코드: `src/msa/themes.py`(로더·배정) · `src/msa/l1/{panel,fundamentals,physical,blocks,scoreboard,scan}.py`
+  · `src/msa/vendor/{taa_signals,vcp}.py`. 테스트 `tests/test_themes.py`·`test_l1_*.py` (합성 데이터).
+- 실행 시간: 패널 44초(DuckDB 1패스, 캐시) · 재무 22초 · 지표+VCP 약 40초 → 전체 1분 30초, 캐시 후 수 초.
+- 데이터 한계를 리포트에 적는다: `FRED_API_KEY` 없음 → CPI·FRED 참조 19개 없음 (`dd_real` 미계산),
+  manual 참조 21개는 `state/physical/manual/<SYMBOL>.csv` 가 없어 `data_missing`. 축 1 데이터 보유는
+  **선언 45 중 7** (ETF 가격 참조). `estimates` 0행 → `surprise_dir`·`guidance_rev` 미계산.
+- 문서가 정하지 않은 구현 결정은 `02-cycle-state.md` §10 에 모았다.
 
 ## M3.5 · L1 백테스트 (관문 0)
 
@@ -109,15 +122,16 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
 
 ## M4 · L2 거시 DAG
 **완료 기준**
-- [ ] `state/macro-dag.yaml` 작성 — **개수가 아니라 조건이 기준이다: 전 테마가 최소 2개의
+- [x] `state/macro-dag.yaml` 작성 — **개수가 아니라 조건이 기준이다: 전 테마가 최소 2개의
       입력 엣지를 갖는다.** 확정 버킷 수 N 에 대해 엣지 수의 하한은 2N 이고, 초안 109개
       기준이면 218 이다 (상한은 없다 — `channel` 을 쓸 수 있는 만큼). 공통 인자 엣지는
       이 하한에 세지 않는다 (전 테마에 같은 부호라 테마를 고르는 데 쓸모없다 —
       `03-macro-dag.md` §7). 이전 판의 "~150개" 는 버킷 85개 기준으로 잡힌 수치였다
-- [ ] `channel` 없는 엣지 0개 (스키마 검증)
+      — **완료**: 드라이버 26 · 테마-엣지 쌍 380 · in-degree min 2 (`docs/macro-dag-audit.md`)
+- [x] `channel` 없는 엣지 0개 (스키마 검증) — `scripts/audit_dag.py`
 - [ ] `tailwind` 계산 + 공통 인자 횡단면 중앙값 차감
 - [ ] 국면 4분면 시각화
-- [ ] 모순 감사 1회 실행, 플래그 목록 리뷰
+- [x] 모순 감사 1회 실행, 플래그 목록 리뷰 — `docs/macro-dag-audit.md` (`contradicts_when` 22개)
 - [ ] **엣지 부호 일치율 실측** (`10-validation.md` §2.1) — 선언한 `sign` 과
       36·60개월 창 상관의 부호가 맞는 비율. **불일치 엣지를 고치는 것이 아니라 세는 것**이다
 

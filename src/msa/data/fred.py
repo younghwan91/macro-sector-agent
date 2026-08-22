@@ -295,9 +295,7 @@ class FredClient:
         revised: bool | None = None
         note = ""
         if vintage_date is not None:
-            old = self.observations(
-                series_id, realtime=(vintage_date, vintage_date), min_obs=0
-            )
+            old = self.observations(series_id, realtime=(vintage_date, vintage_date), min_obs=0)
             revised, note = detect_revision(obs, old)
         return LagMeasurement(
             series_id=series_id,
@@ -326,9 +324,7 @@ class FredClient:
         failures: list[str] = []
         for sid in series:
             try:
-                out.append(
-                    self.measure_release_lag(sid, as_of=as_of, vintage_date=vintage_date)
-                )
+                out.append(self.measure_release_lag(sid, as_of=as_of, vintage_date=vintage_date))
             except FredError as e:
                 failures.append(f"{sid}: {e}")
         if failures:

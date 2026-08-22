@@ -23,7 +23,7 @@ def test_stub_commands_appear_in_help(cmd: str) -> None:
 
 @pytest.mark.parametrize(
     ("argv",),
-    [(["scan"],), (["macro"],), (["portfolio"],), (["check"],), (["picks", "solar"],)],
+    [(["macro"],), (["portfolio"],), (["check"],), (["picks", "solar"],), (["research", "solar"],)],
 )
 def test_stub_commands_raise_rather_than_return_empty(argv: list[str]) -> None:
     """빈 결과를 내는 스텁은 조용한 절단의 씨앗이다 — 명확히 던진다."""
