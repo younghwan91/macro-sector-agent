@@ -1,0 +1,494 @@
+"""DuckDB 스토어 읽기 계층.
+
+**이 모듈의 존재 이유는 조용한 절단을 구조적으로 막는 것이다** (`CLAUDE.md` §2).
+그래서 모든 조회 함수는 기대 범위를 인자로 받고, 못 미치면 `ShortRead` 를 던진다.
+빈 DataFrame 을 반환하고 호출자가 알아서 처리하기를 기대하지 않는다.
+
+## 실측 스키마 — `docs/08-data-contract.md` §2 와 다른 지점
+
+M1 에서 `~/data/us_micro.duckdb` 를 실측한 결과, 문서가 기술한 Sharadar 원본 테이블 구조와
+적재된 스토어의 구조가 여러 곳에서 다르다. 코드는 **실측에 맞춘다.**
+
+- 별도의 `daily` 테이블은 **없다.** `DAILY` 의 `marketcap`·`ev` 는 `prices` 테이블에
+  `mcap`·`ev` 컬럼으로 병합돼 있다.
+- **단위는 적재 시점에 이미 달러로 환산돼 있다.** 실측: 원본 `daily.csv` 의
+  `AAPL,2026-08-12` `marketcap=4411090.9`(백만 달러), 스토어 `prices.mcap=4.4110909e12`(달러).
+  즉 배수 10⁶ 가 이미 적용됐다 — **여기서 다시 곱하면 그때 10⁶배 왜곡이 생긴다.**
+  이 사실을 코드 한 곳(=`MCAP_UNIT`)에만 두고 다른 곳에서는 환산하지 않는다.
+- `prices.close` 는 **분할·배당 조정 종가**(원본 `closeadj`)이고, `closeunadj` 가 원가다.
+  실측: NVDA 2024-06-06 `close=120.793` / `closeunadj=1209.98` (2024-06-10 10:1 분할).
+- `DAILY` 의 `pe`·`pb`·`ps`·`evebitda`·`evebit` 은 **적재되지 않았다.** 필요하면 벌크에서
+  다시 받거나 `fundamentals` 로 계산해야 한다.
+- `tickers.is_delisted` — 문서는 `isdelisted` 로 적었다. 실제 컬럼명은 `is_delisted`.
+- `tickers` 에 `sicsector`·`firstpricedate`·`lastpricedate` 는 **없다.**
+- `fundamentals.dimension` 은 `ARQ` 한 종류뿐이다 — **`ART` 는 적재돼 있지 않다.**
+  문서 §2 가 예고한 "`assetsavg`·`equityavg` 는 ARQ 에서 전부 null" 은 실측에서
+  그대로 확인됐다 (`invcapavg` 포함 셋 다 655,000행 전부 null → 직접 계산해야 한다).
+- `prices.short_interest` 는 **컬럼만 있고 100% null** 이다. 있는 줄 알고 쓰면
+  L4 토크 축이 조용히 빈다.
+- `estimates` 테이블은 0행이다 — 컨센서스는 이 스토어에 없다.
+- ETF 가격(`SFP`)은 스토어에 **없다.** `prices` 에 있는 ETF 는 `SPY` 하나뿐이다.
+  나머지는 벌크 원본 `funds.csv.zip` 에서 읽는다 → `etf_prices()`.
+"""
+
+from __future__ import annotations
+
+import csv
+import io
+import logging
+import zipfile
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from datetime import date
+from pathlib import Path
+from typing import Any
+
+import duckdb
+import pandas as pd
+
+from msa.config import paths
+
+log = logging.getLogger(__name__)
+
+# 적재기가 원본 DAILY(백만 달러)에 이미 곱해 둔 배수. 스토어 값은 **달러**다.
+# 여기 상수는 "다시 곱하지 마라" 는 사실을 코드로 붙잡아 두기 위한 것이며,
+# 조회 결과에 적용되지 않는다. 적용하는 순간 10^6 배 왜곡이 생긴다.
+MCAP_UNIT_ALREADY_APPLIED = 1_000_000
+
+#: 스토어에 실제로 존재하는 테이블 (M1 실측).
+KNOWN_TABLES = (
+    "actions",
+    "estimates",
+    "fundamentals",
+    "insiders",
+    "institutions",
+    "prices",
+    "sp500",
+    "tickers",
+)
+
+#: 실측 결과 0행인 테이블. `table_stats()` 가 이것을 "비었음" 이 아니라 "미적재" 로 보고한다.
+EMPTY_TABLES = ("estimates",)
+
+
+class StoreError(RuntimeError):
+    """스토어 계층의 모든 예외의 최상위."""
+
+
+class ShortRead(StoreError):
+    """요청한 것보다 적게 받았다 — 조용한 절단 (`CLAUDE.md` §2)."""
+
+
+class SchemaDrift(StoreError):
+    """스토어 스키마가 코드가 기대한 것과 다르다."""
+
+
+@dataclass(frozen=True)
+class TableStat:
+    name: str
+    rows: int
+    tickers: int | None
+    start: date | None
+    end: date | None
+    loaded: bool
+
+
+def _expand(path: Path) -> Path:
+    return path.expanduser().resolve()
+
+
+class Store:
+    """읽기 전용 DuckDB 접근자.
+
+    쓰기 경로는 제공하지 않는다. `duckdb.connect(read_only=True)` 로 열기 때문에
+    실수로 DDL 을 날려도 드라이버가 거부한다.
+    """
+
+    def __init__(self, db_path: Path | str | None = None) -> None:
+        self.path = _expand(Path(db_path) if db_path is not None else paths().duckdb)
+        if not self.path.exists():
+            raise StoreError(
+                f"DuckDB 스토어가 없다: {self.path}\n"
+                "MSA_DUCKDB 환경변수로 경로를 지정하거나 "
+                "`docs/08-data-contract.md` §6 부트스트랩 절차를 먼저 밟아라."
+            )
+        self._con = duckdb.connect(str(self.path), read_only=True)
+        self._verify_schema()
+
+    # ------------------------------------------------------------------ 내부
+
+    def _verify_schema(self) -> None:
+        rows = self._con.execute(
+            "select table_name from information_schema.tables"
+        ).fetchall()
+        present = {r[0] for r in rows}
+        missing = [t for t in KNOWN_TABLES if t not in present]
+        if missing:
+            raise SchemaDrift(
+                f"스토어에 기대한 테이블이 없다: {missing}. 있는 것: {sorted(present)}"
+            )
+
+    def _df(self, sql: str, params: Sequence[Any] | None = None) -> pd.DataFrame:
+        return self._con.execute(sql, list(params or [])).fetch_df()
+
+    def columns(self, table: str) -> list[str]:
+        if table not in KNOWN_TABLES:
+            raise SchemaDrift(f"모르는 테이블: {table}")
+        rows = self._con.execute(
+            "select column_name from information_schema.columns "
+            "where table_name = ? order by ordinal_position",
+            [table],
+        ).fetchall()
+        return [r[0] for r in rows]
+
+    def close(self) -> None:
+        self._con.close()
+
+    def __enter__(self) -> Store:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
+
+    # ------------------------------------------------------------------ 조회
+
+    def prices(
+        self,
+        tickers: Iterable[str] | None = None,
+        start: date | str | None = None,
+        end: date | str | None = None,
+        *,
+        min_rows: int,
+        expect_tickers: int | None = None,
+    ) -> pd.DataFrame:
+        """일별 가격·시총. **폐지 종목을 포함한다** (생존 편향 방지, `docs/01` §5).
+
+        반환 컬럼: `ticker, date, open, high, low, close, closeunadj, volume,
+        dividends, mcap, ev, short_interest`.
+
+        - `close` 는 **조정 종가**, `closeunadj` 가 미조정 원가다.
+        - `mcap`·`ev` 는 **달러**다. 적재 시점에 백만→달러 환산이 이미 끝났다
+          (`MCAP_UNIT_ALREADY_APPLIED`). 다시 곱하지 마라.
+        - PIT: 가격은 개정되지 않으므로 PIT 구분이 필요 없다.
+
+        Args:
+            min_rows: 이 행수 미만이면 `ShortRead`. 호출자는 반드시 기대치를 밝힌다 —
+                기본값을 주면 "0행이 나왔는데 아무도 몰랐다" 가 다시 가능해진다.
+            expect_tickers: 요청 티커 중 최소 몇 개가 결과에 있어야 하는지.
+                `None` 이면 검사하지 않는다.
+        """
+        where, params = _ticker_date_where(tickers, start, end)
+        df = self._df(
+            "select ticker, date, open, high, low, close, closeunadj, volume, "
+            f"dividends, mcap, ev, short_interest from prices {where} order by ticker, date",
+            params,
+        )
+        _guard(df, "prices", min_rows=min_rows, expect_tickers=expect_tickers, requested=tickers)
+        return df
+
+    def tickers_meta(
+        self,
+        categories: Sequence[str] | None = None,
+        *,
+        min_rows: int,
+        include_delisted: bool = True,
+    ) -> pd.DataFrame:
+        """티커 메타 전체.
+
+        `categories` 의 **기본값은 `None` = 필터 없음**이다. 보통주만 보고 싶으면
+        호출자가 명시한다 (`msa.data.universe.common_stock`). 여기서 조용히 걸러 두면
+        "왜 우선주가 안 보이지" 를 6개월 뒤에 디버깅하게 된다.
+
+        `include_delisted=True` 가 기본인 것도 같은 이유다 — 폐지 종목을 빼면
+        자기이력 백분위가 낙관 방향으로 왜곡된다 (`docs/01` §5).
+
+        컬럼: `ticker, name, category, sector, industry, siccode, location, is_delisted`.
+        문서 §2 는 `isdelisted` 로 적었지만 실제 컬럼명은 `is_delisted` 다.
+        `sicsector`·`firstpricedate`·`lastpricedate` 는 스토어에 없다.
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        if categories is not None:
+            cats = list(categories)
+            if not cats:
+                raise ValueError("categories=[] 는 전부 거르라는 뜻이 된다. 필터 없음은 None 이다.")
+            clauses.append(f"category in ({','.join('?' * len(cats))})")
+            params.extend(cats)
+        if not include_delisted:
+            clauses.append("coalesce(is_delisted, 'N') <> 'Y'")
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        df = self._df(
+            "select ticker, name, category, sector, industry, siccode, location, is_delisted "
+            f"from tickers {where} order by ticker",
+            params,
+        )
+        _guard(df, "tickers", min_rows=min_rows)
+        return df
+
+    def fundamentals(
+        self,
+        tickers: Iterable[str] | None = None,
+        fields: Sequence[str] | None = None,
+        start: date | str | None = None,
+        end: date | str | None = None,
+        *,
+        min_rows: int,
+        date_column: str = "datekey",
+    ) -> pd.DataFrame:
+        """분기 재무 (`SF1`).
+
+        PIT: `datekey` 가 **공시일**, `calendardate` 가 회계기간이다. 자기이력 백분위와
+        자본 사이클 시계열은 `datekey` 로 잘라야 한다 (`CLAUDE.md` PIT 규약 — 필요 쪽).
+        오늘의 스냅샷(부채비율·런웨이)만 `calendardate` 기준이 허용된다.
+        그래서 `date_column` 을 인자로 받되 기본값은 PIT 쪽인 `datekey` 다.
+
+        실측: `dimension` 은 `ARQ` 한 종류뿐이다(`ART` 없음). 문서 §2 의 경고대로
+        `assetsavg`·`equityavg`·`invcapavg` 는 655,000행 **전부 null** 이라 직접 계산해야 한다.
+        `roic`·`grossmargin`·`evebitda`·`pb`·`ps` 도 스토어에 없다 (파생 계산 대상).
+        """
+        if date_column not in ("datekey", "calendardate"):
+            raise ValueError(f"date_column 은 datekey 또는 calendardate 여야 한다: {date_column!r}")
+        available = set(self.columns("fundamentals"))
+        base = ["ticker", "calendardate", "datekey", "dimension"]
+        if fields is None:
+            select = "*"
+        else:
+            unknown = [f for f in fields if f not in available]
+            if unknown:
+                raise SchemaDrift(
+                    f"fundamentals 에 없는 필드: {unknown}. "
+                    f"있는 것: {sorted(available - set(base))}"
+                )
+            select = ", ".join(base + [f for f in fields if f not in base])
+        where, params = _ticker_date_where(tickers, start, end, date_col=date_column)
+        df = self._df(
+            f"select {select} from fundamentals {where} order by ticker, {date_column}", params
+        )
+        _guard(df, "fundamentals", min_rows=min_rows, requested=tickers)
+        return df
+
+    def actions(
+        self,
+        kinds: Sequence[str] | None = None,
+        start: date | str | None = None,
+        end: date | str | None = None,
+        *,
+        min_rows: int,
+    ) -> pd.DataFrame:
+        """기업 액션. 자본 사이클 E 블록의 `exit_count`/`entry_count` 재료다.
+
+        실측 `action` 값 19종 — 진입: `listed`, 이탈: `delisted`·`bankruptcyliquidation`·
+        `acquisitionby`·`mergerto`·`regulatorydelisting`·`voluntarydelisting`.
+        `EXIT_ACTIONS`·`ENTRY_ACTIONS` 상수를 쓰면 오타로 조용히 0건이 되는 일이 없다.
+        """
+        clauses: list[str] = []
+        params: list[Any] = []
+        if kinds is not None:
+            ks = list(kinds)
+            if not ks:
+                raise ValueError("kinds=[] 는 전부 거르라는 뜻이 된다. 필터 없음은 None 이다.")
+            clauses.append(f"action in ({','.join('?' * len(ks))})")
+            params.extend(ks)
+        _date_clauses(clauses, params, start, end, "date")
+        where = f"where {' and '.join(clauses)}" if clauses else ""
+        df = self._df(
+            f"select ticker, date, action, value, name, contraticker from actions {where} "
+            "order by date, ticker",
+            params,
+        )
+        _guard(df, "actions", min_rows=min_rows)
+        if kinds is not None:
+            got = set(df["action"].unique())
+            absent = [k for k in kinds if k not in got]
+            if absent:
+                log.warning("actions: 요청한 종류 중 결과가 0건인 것 %s", absent)
+        return df
+
+    def table_stats(self) -> list[TableStat]:
+        """`msa data status` 의 재료. 각 테이블의 행수·기간·종목수."""
+        out: list[TableStat] = []
+        for name in KNOWN_TABLES:
+            cols = set(self.columns(name))
+            rows = int(self._con.execute(f'select count(*) from "{name}"').fetchone()[0])  # type: ignore[index]
+            date_col = next((c for c in ("date", "datekey", "calendardate") if c in cols), None)
+            start = end = None
+            if date_col and rows:
+                start, end = self._con.execute(
+                    f'select min({date_col}), max({date_col}) from "{name}"'
+                ).fetchone()  # type: ignore[misc]
+            n_tickers = None
+            if "ticker" in cols and rows:
+                n_tickers = int(
+                    self._con.execute(f'select count(distinct ticker) from "{name}"').fetchone()[0]  # type: ignore[index]
+                )
+            out.append(
+                TableStat(
+                    name=name,
+                    rows=rows,
+                    tickers=n_tickers,
+                    start=start,
+                    end=end,
+                    loaded=rows > 0,
+                )
+            )
+        return out
+
+    def null_rates(self, table: str, columns: Sequence[str]) -> dict[str, float]:
+        """결측률. `msa data status` 가 쓴다."""
+        available = set(self.columns(table))
+        unknown = [c for c in columns if c not in available]
+        if unknown:
+            raise SchemaDrift(f"{table} 에 없는 컬럼: {unknown}")
+        rows = int(self._con.execute(f'select count(*) from "{table}"').fetchone()[0])  # type: ignore[index]
+        if rows == 0:
+            return dict.fromkeys(columns, 1.0)
+        expr = ", ".join(f'count("{c}")' for c in columns)
+        counts = self._con.execute(f'select {expr} from "{table}"').fetchone()
+        assert counts is not None
+        return {c: 1.0 - (n / rows) for c, n in zip(columns, counts, strict=True)}
+
+
+#: `actions.action` 중 유니버스 이탈로 세는 값 (자본 사이클 E 블록).
+EXIT_ACTIONS = (
+    "delisted",
+    "bankruptcyliquidation",
+    "acquisitionby",
+    "mergerto",
+    "regulatorydelisting",
+    "voluntarydelisting",
+)
+#: 유니버스 진입.
+ENTRY_ACTIONS = ("listed",)
+
+
+# ---------------------------------------------------------------- ETF (SFP)
+
+#: 스토어에 적재된 유일한 ETF. 나머지는 벌크 `funds.csv.zip` 에만 있다.
+ETF_IN_STORE = ("SPY",)
+
+
+def etf_prices(
+    tickers: Sequence[str],
+    *,
+    min_rows: int,
+    raw_dir: Path | None = None,
+) -> pd.DataFrame:
+    """ETF 일별 가격 — 벌크 원본 `funds.csv.zip` 을 직접 읽는다.
+
+    **`SFP` 는 DuckDB 스토어에 적재돼 있지 않다.** 실측: `prices` 안의 ETF 는 `SPY`
+    하나뿐이고 GDX·SIL·REMX·LIT·URA·COPX·XME·XOP·TAN·ITA·JETS·SOXX·XBI·KRE·XHB·PAVE·
+    NLR·GLD·CPER 은 전부 없다. `docs/08` §6.2 가 "`SPY` 외 ETF 가 있는지" 로 물었던
+    항목의 답은 **없다** 이며, 그래서 이 함수가 벌크를 직접 읽는다.
+
+    zip 안 CSV 를 한 번 스트리밍하며 요청한 티커를 전부 걸러 낸다 (약 12초, 1회 통과).
+    티커를 하나씩 부르면 그만큼 통과 횟수가 늘어나므로 **한 번에 모아서 부른다.**
+    """
+    want = {t.upper() for t in tickers}
+    if not want:
+        raise ValueError("tickers 가 비었다.")
+    base = _expand(raw_dir or paths().sharadar_raw)
+    zip_path = next(
+        (p for p in (base / "raw" / "funds.csv.zip", base / "funds.csv.zip") if p.exists()), None
+    )
+    if zip_path is None:
+        raise StoreError(
+            f"ETF 벌크 원본을 찾을 수 없다: {base}/funds.csv.zip. "
+            "MSA_SHARADAR_RAW 로 경로를 지정해라."
+        )
+    rows = list(_scan_funds_zip(zip_path, want))
+    df = pd.DataFrame(rows, columns=["ticker", "date", "close", "closeadj", "volume"])
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+        for c in ("close", "closeadj", "volume"):
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+        df = df.sort_values(["ticker", "date"], ignore_index=True)
+    _guard(df, f"etf_prices({zip_path.name})", min_rows=min_rows, requested=sorted(want))
+    return df
+
+
+def _scan_funds_zip(zip_path: Path, want: set[str]) -> Iterable[tuple[str, str, str, str, str]]:
+    with zipfile.ZipFile(zip_path) as zf:
+        name = next((n for n in zf.namelist() if n.endswith(".csv")), None)
+        if name is None:
+            raise StoreError(f"{zip_path} 안에 csv 가 없다: {zf.namelist()}")
+        with zf.open(name) as raw:
+            reader = csv.reader(io.TextIOWrapper(raw, encoding="utf-8", newline=""))
+            header = next(reader)
+            idx = {c: i for i, c in enumerate(header)}
+            need = ("ticker", "date", "close", "closeadj", "volume")
+            missing = [c for c in need if c not in idx]
+            if missing:
+                raise SchemaDrift(f"funds.csv 헤더에 없는 컬럼 {missing}. 헤더: {header}")
+            cols = [idx[c] for c in need]
+            for row in reader:
+                if row and row[0] in want:
+                    yield tuple(row[i] for i in cols)  # type: ignore[misc]
+
+
+# ---------------------------------------------------------------- 공용 헬퍼
+
+
+def _date_clauses(
+    clauses: list[str],
+    params: list[Any],
+    start: date | str | None,
+    end: date | str | None,
+    col: str,
+) -> None:
+    if start is not None:
+        clauses.append(f"{col} >= ?")
+        params.append(str(start))
+    if end is not None:
+        clauses.append(f"{col} <= ?")
+        params.append(str(end))
+
+
+def _ticker_date_where(
+    tickers: Iterable[str] | None,
+    start: date | str | None,
+    end: date | str | None,
+    *,
+    date_col: str = "date",
+) -> tuple[str, list[Any]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if tickers is not None:
+        ts = [t.upper() for t in tickers]
+        if not ts:
+            raise ValueError("tickers=[] 는 전부 거르라는 뜻이 된다. 필터 없음은 None 이다.")
+        clauses.append(f"ticker in ({','.join('?' * len(ts))})")
+        params.extend(ts)
+    _date_clauses(clauses, params, start, end, date_col)
+    return (f"where {' and '.join(clauses)}" if clauses else ""), params
+
+
+def _guard(
+    df: pd.DataFrame,
+    what: str,
+    *,
+    min_rows: int,
+    expect_tickers: int | None = None,
+    requested: Iterable[str] | None = None,
+) -> None:
+    """기대에 못 미치면 던진다. 빈 결과를 조용히 흘려보내지 않는다."""
+    if len(df) < min_rows:
+        raise ShortRead(
+            f"{what}: {len(df):,}행 — 최소 {min_rows:,}행을 기대했다. "
+            "조용한 절단일 수 있다 (`CLAUDE.md` §2). 필터 조건과 스토어 적재 상태를 확인해라."
+        )
+    if requested is not None:
+        req = {t.upper() for t in requested}
+        got = set(df["ticker"].unique()) if "ticker" in df.columns and len(df) else set()
+        absent = sorted(req - got)
+        if absent:
+            log.warning(
+                "%s: 요청한 %d 종목 중 %d 종목이 결과에 없다: %s",
+                what,
+                len(req),
+                len(absent),
+                absent[:20],
+            )
+    if expect_tickers is not None:
+        n = df["ticker"].nunique() if "ticker" in df.columns else 0
+        if n < expect_tickers:
+            raise ShortRead(f"{what}: 종목 {n}개 — 최소 {expect_tickers}개를 기대했다.")
