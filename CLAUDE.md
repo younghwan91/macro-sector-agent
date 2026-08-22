@@ -1,9 +1,10 @@
 # macro-sector-agent — 작업 규약
 
 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 하향식 리서치 파이프라인.
-**현재 M3~M7 구현** (`src/msa/` — L0 데이터 · 테마 유니버스 · L1 스캐너 `msa scan` ·
+**현재 M3~M8 구현** (`src/msa/` — L0 데이터 · 테마 유니버스 · L1 스캐너 `msa scan` ·
 L2 거시 DAG `msa macro` · L4 종목 선정 `msa picks` · L5 포트 구성기 `msa portfolio` ·
-L3 에이전트 `msa research`). 이후 단계는 `docs/11-roadmap.md`. 어느 계층이든 손대기 전에 해당 `docs/` 를 먼저 읽는다.
+L3 에이전트 `msa research` · 운영 `msa check`/`msa journal`/`msa ops`).
+이후 단계는 `docs/11-roadmap.md`. 어느 계층이든 손대기 전에 해당 `docs/` 를 먼저 읽는다.
 
 ## 절대 규칙
 
@@ -118,8 +119,17 @@ msa research <theme>  # L3 에이전트 4역할(supply·catalyst·bear·referee)
                       #   산출물 state/theses/<date>/ (thesis.yaml·report.md·rejections-pending·contested)
 msa picks <theme>     # L4 종목 선정 — S·T·M 3축 · 하드 필터 · 바벨 (M5). --asof --top --no-write
                       #   --no-physical. 산출물 state/picks/<date>/<theme>/ (ranking·excluded·report·meta)
-# 아래는 미구현 — 호출하면 NotImplementedError
-msa check             # 주간 트리거/무효화 점검
+msa check             # 포지션 점검 (M8) — 트리거·무효화·Tier-2·사다리·시간스탑·TP. --asof --daily|--weekly
+                      #   산출물 state/checks/<date>/ (report·alerts.json·journal-draft). 주문은 내지 않는다
+msa journal new --from f.yaml   # 저널 항목 추가 (필수 필드 비면 거부 · 덮어쓰기 불가) — template <type>
+msa journal verify    # journal/ append-only 검사 (pre-commit: scripts/journal-precommit.sh · install-hook)
+msa journal diff <theme>        # 최근 두 thesis 스냅샷 필드 diff (논지 표류)
+msa ops schedule --print-cron   # 케이던스 → crontab/systemd 텍스트 (설치는 사람이) · ops due <cadence>
+msa ops calibration   # cycle_confidence 캘리브레이션 (N<20 → 결론 없음)
+msa ops rejections-update       # 기각 대장 r_12m/r_24m 갱신 + 세 질문 → state/rejections-summary.md
+msa ops reproduce <date>        # state/scans/<date>/ 스냅샷만으로 리포트 재생성·대조
 ```
+
+텔레그램 배달은 `MSA_TELEGRAM_TOKEN` · `MSA_TELEGRAM_CHAT_ID` 가 둘 다 있을 때만 — 없으면 "not configured".
 
 패키지 관리는 **uv**. `pip install` 하지 않는다.

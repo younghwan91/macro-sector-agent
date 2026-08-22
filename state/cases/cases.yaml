@@ -5,7 +5,8 @@
 #   axes{axis1..5:{value,verdict}}, gate_result, confidence_mechanical, confidence_terms, outcome_agrees, evidence[{claim,source_url,date,reliability}].
 # drawdown_peak_to_trough = L1 EW 테마 지수 고점→저점 (msa.l1.panel, ~/data/us_micro.duckdb, store_end 2026-08-14). 양수 비율 (0,1] — M6 로더 계약(src/msa/l5/inputs.py). `drawdown` 은 같은 값의 음수 표기.
 # gate_result ∈ {passed, capped, rejected, contested} — capped = docs/04 §3 의 "상한 0.35, 포트 편입 불가".
-# verified: true = 낙폭 수치와 5축 값이 모두 출처로 뒷받침됨. false 의 사유는 notes 와 각 md §7.
+# verified: true = 낙폭 수치와 5축에 실제로 쓴 값이 모두 출처로 뒷받침됨 (대안 입력의 부재는 사유가 아니다). false 의 사유는 notes 와 각 md §7.
+# L_i 사용 가능(type death · verified · sources ≥1 · 낙폭): coal-2013, offshore-drilling-2016. mall-reit-2018 은 축1 n/a 라 불가.
 # sources = 외부 URL 목록(M6 형식, url·title·date; 내부 계산은 URL 이 없어 notes 에만 적는다). evidence = 주장 단위 인용(claim·source_url·date·reliability). 미검증 수치는 둘 다에서 뺀다.
 
 schema_version: 1
@@ -399,8 +400,8 @@ cases:
   confidence_mechanical: 0.25
   confidence_terms: 0.5 -0.20(ax1 경고) +0.10(ax4) -0.15(ax5) = 0.25; ax3 사망 -> 상한 0.35. 리그 10y 검증 시 ax1 사망 -> 자동 기각 가능
   outcome_agrees: true
-  verified: false
-  notes: '오프쇼어 리그 카운트 10y 시계열 미확보 → 축1 을 보수적으로 경고. 확보 시 사망 → 자동 기각 가능. 버킷은 육상 시추 포함. 2016-17 +62% 반등이 실재했음 — 축4 의 ''반등''과 축1·3 의 ''진입 불가'' 가 동시에 맞았다. 낙폭 출처: 저장소 L1 EW 테마 지수 내부 계산(msa.l1.panel, store_end 2026-08-14) — 외부 URL 없음.'
+  verified: true
+  notes: 'verified=true 의 근거: 낙폭(L1 EW 내부 계산)과 5축에 실제로 쓴 값(IEA 해상생산 정체·IHS 리그 −20% y/y·WoodMac $62 vs Dallas Fed $54·일당 −60~70%·Seadrill 부채)이 전부 출처로 뒷받침됨. 미확보인 것은 대안 입력(오프쇼어 리그 카운트 10y 연평균 시계열)이며 판정에 쓰지 않았다 — 확보 시 축1 이 사망으로 바뀌어 자동 기각될 수 있으나 결론(편입 불가)은 같다. 버킷은 육상 시추 포함. 2016-17 +62% 반등이 실재했음 — 축4 의 ''반등''과 축1·3 의 ''진입 불가'' 가 동시에 맞았다. 낙폭 출처: 저장소 L1 EW 테마 지수 내부 계산(msa.l1.panel, store_end 2026-08-14) — 외부 URL 없음.'
   sources:
   - url: https://drillingcontractor.org/offshore-drilling-industry-must-cooperate-to-recalibrate-market-37392
     title: 오프쇼어 리그 -20% (2014-08->2015-08); 계약 플로터 280->225, 가동률 85->72%; 잭업 450->390; 건조 중 200+; 스택 150->275

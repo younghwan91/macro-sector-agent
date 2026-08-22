@@ -19,3 +19,6 @@ state/macro/
 state/portfolio/
 state/theses/
 state/picks/
+state/checks/
+state/calibration/
+state/logs/
