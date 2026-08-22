@@ -1,8 +1,9 @@
 # macro-sector-agent — 작업 규약
 
 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 하향식 리서치 파이프라인.
-**현재 M3·M5·M6·M7·M8 구현** (`src/msa/` — L0 데이터 · 테마 유니버스 · L1 스캐너 `msa scan` · L4 종목 선정 `msa picks` ·
-L5 포트 구성기 `msa portfolio` · L3 에이전트 `msa research` · 운영 `msa check`/`msa journal`/`msa ops`).
+**현재 M3~M8 구현** (`src/msa/` — L0 데이터 · 테마 유니버스 · L1 스캐너 `msa scan` ·
+L2 거시 DAG `msa macro` · L4 종목 선정 `msa picks` · L5 포트 구성기 `msa portfolio` ·
+L3 에이전트 `msa research` · 운영 `msa check`/`msa journal`/`msa ops`).
 이후 단계는 `docs/11-roadmap.md`. 어느 계층이든 손대기 전에 해당 `docs/` 를 먼저 읽는다.
 
 ## 절대 규칙
@@ -105,6 +106,10 @@ msa data status       # 스토어 상태·결측률 (M1)
 msa data audit        # 커버리지 감사 — 데이터 부분 (M1)
 msa scan              # L1 사이클 스캐너 → 테마 스코어보드 (M3). --asof --force --no-vcp
                       #   산출물 state/scans/<date>/ (scoreboard·indicators·coverage·report·meta)
+msa macro             # L2 거시 DAG (M4): 드라이버 상태·tailwind·4분면·모순 감사·부호 실측
+                      #   --asof --no-fetch --no-etf --no-store --no-write --no-sign-check --doc-out
+                      #   산출물 state/macro/<date>/ · FRED 캐시 없으면 결측 드라이버를 이름으로 보고
+msa data fred-fetch   # FRED 드라이버 24종 + physical_ref + CPI 를 state/physical/fred/ 에 캐시 (키 필요)
 msa portfolio --inputs <dir>   # L5 SOCP + 사다리·스탑·TP + 매매계획서 (M6). --asof --cases --capital
                       #   --cluster-cap name=cap --no-write · 입력 계약: src/msa/l5/inputs.py
                       #   산출물 state/portfolio/<date>/ (weights.csv·plan.md·diagnostics.json)
@@ -123,8 +128,6 @@ msa ops schedule --print-cron   # 케이던스 → crontab/systemd 텍스트 (�
 msa ops calibration   # cycle_confidence 캘리브레이션 (N<20 → 결론 없음)
 msa ops rejections-update       # 기각 대장 r_12m/r_24m 갱신 + 세 질문 → state/rejections-summary.md
 msa ops reproduce <date>        # state/scans/<date>/ 스냅샷만으로 리포트 재생성·대조
-# 아래는 미구현 — 호출하면 NotImplementedError
-msa macro             # L2 거시 국면 + 드라이버 상태
 ```
 
 텔레그램 배달은 `MSA_TELEGRAM_TOKEN` · `MSA_TELEGRAM_CHAT_ID` 가 둘 다 있을 때만 — 없으면 "not configured".

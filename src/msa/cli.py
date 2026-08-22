@@ -1,10 +1,9 @@
 """`msa` CLI.
 
-도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3) · `picks`(M5) ·
-`portfolio`(M6) · `research`(M7) · `check`·`journal *`·`ops *`(M8).
-나머지(`macro`)는 `--help` 에는 나오되
-호출하면 `NotImplementedError` 를 던진다 — 있는 척하는 스텁이 조용히 빈 결과를
-내는 것보다 낫다 (`CLAUDE.md` §2).
+도는 것: `data status`·`data audit`·`data fred-lag`·`data fred-fetch`(M1·M4) · `scan`(M3) ·
+`macro`(M4) · `picks`(M5) · `portfolio`(M6) · `research`(M7) · `check`·`journal *`·`ops *`(M8).
+남은 스텁은 없다. 새 스텁을 두게 되면 `--help` 에는 나오되 호출 시 `NotImplementedError` 를
+던지게 한다 — 있는 척하는 스텁이 조용히 빈 결과를 내는 것보다 낫다 (`CLAUDE.md` §2).
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ app = typer.Typer(
     no_args_is_help=True,
     help=(
         "macro-sector-agent — 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 "
-        "(M1~M3: 데이터·L1 스캐너 · M5~M8: L4·L5·L3·운영)"
+        "(M1~M8: 데이터·L1 스캐너·L2 거시 DAG·L4·L5·L3·운영)"
     ),
 )
 data_app = typer.Typer(no_args_is_help=True, help="L0 데이터 — 스토어 상태와 커버리지 감사")
@@ -202,13 +201,6 @@ def data_fred_lag(
     typer.echo(f"\n{len(rows)}/{len(ALL_SERIES)} 시리즈 실측 완료")
 
 
-def _todo(name: str, doc: str) -> None:
-    raise NotImplementedError(
-        f"`msa {name}` 는 아직 없다. 현재 구현 범위는 M1~M3 (데이터 계층 · L1 스캐너)이다. "
-        f"설계: {doc}"
-    )
-
-
 @app.command()
 def scan(
     asof: str = typer.Option(
@@ -249,10 +241,97 @@ def scan(
         typer.echo(f"저장: {res.out_dir}")
 
 
+@data_app.command("fred-fetch")
+def data_fred_fetch(
+    force: bool = typer.Option(False, "--force", help="이미 캐시된 시리즈도 다시 받는다"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """L2 드라이버 24종 + 테마 physical_ref FRED 심볼 + CPIAUCSL 을 state/physical/fred/ 에 캐시.
+
+    키(`FRED_API_KEY`)가 없으면 첫 시리즈에서 던진다. 실패한 시리즈는 이름을 전부 찍고 종료코드 1.
+    """
+    from msa.data.fred import ALL_SERIES
+    from msa.l1.physical import CPI_SERIES, fetch_fred_to_cache, read_fred_cache
+    from msa.themes import load_themes
+
+    _setup_logging(verbose)
+    want = [*ALL_SERIES, CPI_SERIES]
+    try:
+        themes = load_themes()
+        want += [
+            t.physical_ref.symbol
+            for t in themes
+            if t.physical_ref is not None and t.physical_ref.source == "fred"
+        ]
+    except Exception as e:  # themes.yaml 문제는 FRED 수집을 막지 않는다 — 그러나 알린다
+        typer.echo(f"themes.yaml 을 읽지 못해 physical_ref 심볼은 건너뛴다: {e}")
+    symbols = list(dict.fromkeys(want))
+    ok: list[str] = []
+    skipped: list[str] = []
+    failed: list[str] = []
+    for sym in symbols:
+        if not force and read_fred_cache(sym) is not None:
+            skipped.append(sym)
+            continue
+        try:
+            s = fetch_fred_to_cache(sym)
+            ok.append(sym)
+            typer.echo(f"  {sym:<14} {len(s):>6}개 {s.index.min().date()} ~ {s.index.max().date()}")
+        except Exception as e:
+            failed.append(f"{sym}: {type(e).__name__}: {e}")
+            typer.echo(f"  {sym:<14} 실패 — {type(e).__name__}: {e}")
+            if type(e).__name__ == "MissingApiKey":
+                break
+    typer.echo("")
+    typer.echo(
+        f"받음 {len(ok)} · 캐시 있어 건너뜀 {len(skipped)} · 실패 {len(failed)} "
+        f"/ 대상 {len(symbols)}"
+    )
+    if failed:
+        typer.echo("실패 목록:")
+        for f in failed:
+            typer.echo(f"  ! {f}")
+        raise typer.Exit(code=1)
+
+
 @app.command()
-def macro() -> None:
-    """L2 거시 국면 + 드라이버 상태. (미구현 — M4)"""
-    _todo("macro", "docs/03-macro-dag.md")
+def macro(
+    asof: str = typer.Option("", help="기준일 YYYY-MM-DD (그 이전 마지막 월말). 기본 = 오늘"),
+    no_fetch: bool = typer.Option(False, "--no-fetch", help="FRED 를 받지 않는다 (캐시만)"),
+    no_etf: bool = typer.Option(False, "--no-etf", help="ETF 벌크(GLD·CPER 프록시)를 읽지 않는다"),
+    no_store: bool = typer.Option(
+        False, "--no-store", help="DuckDB 스토어(hyperscaler_capex)를 읽지 않는다"
+    ),
+    no_write: bool = typer.Option(False, "--no-write", help="state/macro/ 에 저장하지 않는다"),
+    no_sign_check: bool = typer.Option(
+        False, "--no-sign-check", help="엣지 부호 일치율 실측을 건너뛴다"
+    ),
+    doc_out: str = typer.Option(
+        "", "--doc-out", help="부호 실측 문서를 이 경로에도 쓴다 (예: docs/macro-dag-sign-check.md)"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """L2 거시 DAG — 드라이버 상태 · tailwind · 국면 4분면 · 모순 감사 · 부호 실측 (docs/03).
+
+    산출물: state/macro/<date>/. 없는 드라이버는 이름으로 보고된다.
+    """
+    from pathlib import Path
+
+    from msa.l2.runtime import render_report, run_macro
+
+    _setup_logging(verbose)
+    res = run_macro(
+        asof=asof or None,
+        allow_fetch=not no_fetch,
+        allow_etf=not no_etf,
+        allow_store=not no_store,
+        write=not no_write,
+        sign_check=not no_sign_check,
+        doc_out=Path(doc_out) if doc_out else None,
+    )
+    typer.echo(render_report(res))
+    if res.out_dir:
+        typer.echo(f"저장: {res.out_dir}")
 
 
 @app.command()

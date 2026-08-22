@@ -5,9 +5,9 @@
 #   데이터는 반박(§6 모순 감사)에만 쓰이며, 가중치를 조정하는 데 쓰지 않는다.
 #   `channel` 이 비면 스키마 검증 실패 — 메커니즘 없는 상관은 엣지가 아니다.
 #
-# 테마 id 는 `state/themes.yaml` 이 정본이다. 이 파일은 `docs/01-theme-universe.md` §3
-# 초안(109개) 기준으로 작성됐으며, M2 에서 Sharadar industry 실측으로 테마가 확정되면
-# 반드시 대조해야 한다 (`scripts/audit_dag.py` 가 `state/themes.yaml` 존재 시 그걸 정본으로 읽는다).
+# 테마 id 는 `state/themes.yaml` 이 정본이다. 초안(109개)으로 작성된 뒤 **확정 버킷 134개에 맞춰
+# 재감사했다 (M4-134, 2026-08-23)** — `scripts/audit_dag.py` 통과, in-degree 미달 0.
+# 런타임(`msa macro`, `src/msa/l2/dag.py`)도 같은 검사를 적재 시마다 다시 한다.
 #
 # FRED 시리즈 ID 는 `docs/08-data-contract.md` §3 표를 정본으로 썼다.
 # docs/03 §2 와 docs/08 §3 의 불일치는 없었다 — 03 이 소스를 서술로만 적은 항목
@@ -306,6 +306,10 @@ edges:
     contradicts_when: >
       달러와 금이 동반 강세면 통화체계 신뢰 훼손(안전자산 동반 매수) 국면이다.
       이 엣지로 설명되지 않으므로 별도 논지가 필요 — 자동 점수에서 제외 플래그.
+    contradicts_rule:            # 위 서술의 기계 판독형 (런타임 모순 감사용 — 의미 추가 없음)
+      all_of:
+        - {driver: dollar_broad, state: 1}
+        - {driver: gold_price, state: 1}
 
   - from: dollar_broad
     to: [oil_gas_ep, intl_majors, oil_services, lumber_paper]
@@ -576,6 +580,9 @@ edges:
     evidence: "2021-2022 주거·물류 임대료의 두 자릿수 갱신"
     observable: "T10YIE 6개월 변화 > +15bp"
     contradicts_when: "실질금리 상승이 동반되면 캡레이트 경로가 임대료 경로를 압도한다"
+    contradicts_rule:            # 위 서술의 기계 판독형
+      all_of:
+        - {driver: real_rate_10y, state: 1}
 
   # ───────────────────────────────────────────────────────────────────────
   # hy_spread — 하이일드 스프레드 (부호는 −1: 확대 = 역풍)
