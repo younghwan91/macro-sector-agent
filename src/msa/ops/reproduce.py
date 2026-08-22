@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import difflib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -23,11 +24,8 @@ class Reproduction:
     rendered: str
     stored: str
     identical: bool
-    missing: tuple[str, ...]
 
     def diff_lines(self) -> list[str]:
-        import difflib
-
         return list(
             difflib.unified_diff(
                 self.stored.splitlines(),
@@ -52,7 +50,7 @@ def reproduce(scan_dir: Path) -> Reproduction:
     meta = json.loads((scan_dir / "meta.json").read_text(encoding="utf-8"))
     table = pd.read_csv(scan_dir / "scoreboard.csv", index_col=0)
     if "flags" in table.columns:
-        # CSV 왕복에서 빈 flags 가 NaN 이 된다 — 저장 시점의 "" 로 되돌린다
+        # CSV 왕복에서 빈 flags 가 NaN 이 된다 — 저장 시점의 "" 로 되돌린다 (L1 이 이 열을 유지한다)
         table["flags"] = table["flags"].fillna("").astype(str)
     ipct = pd.read_csv(scan_dir / "indicator_pct.csv", index_col=0)
     cov = pd.read_csv(scan_dir / "coverage.csv", index_col=0)
@@ -63,4 +61,4 @@ def reproduce(scan_dir: Path) -> Reproduction:
     sb = Scoreboard(date=pd.Timestamp(meta["bucket"]), table=table, indicator_pct=ipct, meta={})
     rendered = render_report(sb, cov, meta)
     stored = (scan_dir / "report.txt").read_text(encoding="utf-8")
-    return Reproduction(scan_dir, rendered, stored, rendered == stored, missing)
+    return Reproduction(scan_dir, rendered, stored, rendered == stored)

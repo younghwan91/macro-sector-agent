@@ -10,7 +10,9 @@
   `MSA_TELEGRAM_CHAT_ID` 에서 읽는다 (`telegram_config()`). **둘 다 있어야** 보낸다 —
   없으면 `None` 을 돌려주고 호출자는 "not configured" 로 보고한다. 조용히 건너뛰지 않는다.
 - `get_updates` · `me` (롱폴링 봇용) 는 운영 계층이 쓰지 않아 뺐다. `send` 본문은 원본 그대로.
-- 동기 호출자(`msa check`)를 위해 `send_sync` 래퍼를 더했다.
+- 동기 호출자(`msa check`)를 위해 `send_sync` · `send_many_sync` 래퍼를 더했다. 여러 건은
+  **한 이벤트 루프·한 클라이언트**로 차례로 보낸다 — 건마다 `asyncio.run` 을 열고 소유한
+  클라이언트를 닫는 꼴이면 두 번째 건부터 닫힌 클라이언트를 쓰게 된다.
 - mypy strict 에 맞춰 타입을 보강했다 (`dict` → `dict[str, Any]`).
 """
 
@@ -19,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from types import TracebackType
 from typing import Protocol
@@ -111,14 +114,19 @@ class TelegramNotifier:
             return False
         return bool(resp.json().get("ok"))
 
-    def send_sync(self, chat_id: str, text: str) -> bool:
-        """동기 호출자용. 이벤트 루프가 이미 돌고 있는 컨텍스트에서는 `send` 를 await 해라."""
+    def send_many_sync(self, chat_id: str, texts: Sequence[str]) -> list[bool]:
+        """동기 호출자용 — 한 루프·한 클라이언트로 `texts` 를 차례로 보내고 건별 성공 여부.
+        이벤트 루프가 이미 돌고 있는 컨텍스트에서는 `send` 를 await 해라."""
 
-        async def _run() -> bool:
+        async def _run() -> list[bool]:
             async with self:
-                return await self.send(chat_id, text)
+                return [await self.send(chat_id, t) for t in texts]
 
         return asyncio.run(_run())
+
+    def send_sync(self, chat_id: str, text: str) -> bool:
+        """한 건짜리 `send_many_sync`."""
+        return self.send_many_sync(chat_id, [text])[0]
 
 
 class ConsoleNotifier:

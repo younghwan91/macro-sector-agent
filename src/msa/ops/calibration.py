@@ -21,7 +21,7 @@ N < 20 이면 "결론 없음 (N=…)" 을 출력하고 표본은 나열한다. N
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +49,6 @@ class Sample:
     triggers_total: int
     invalidations_fired: int
     exit_via: str
-    path: str
 
     @property
     def resolved(self) -> bool:
@@ -66,9 +65,8 @@ def outcome(
         return 0.0
     if triggers_total > 0 and triggers_met * 2 > triggers_total:
         return 1.0
-    if triggers_met == 0 and exit_via in ("tier2", "tier1"):
-        # 트리거 0건 + 자본/논지 스탑 — 무효화는 없었으나 논지는 검증되지 않았다 → 미결
-        return 0.5
+    # 그 외(일부 충족 · 트리거 0건 + 자본/논지 스탑) — 무효화는 없었으나 논지는 검증되지 않았다
+    # → 미결
     return 0.5
 
 
@@ -101,7 +99,6 @@ def samples_from_journal(jdir: Path) -> list[Sample]:
                 triggers_total=tt,
                 invalidations_fired=inv,
                 exit_via=str(e.get("exit_via")),
-                path=str(e.get("_path")),
             )
         )
     return out
@@ -134,18 +131,15 @@ def _bins(samples: list[Sample]) -> list[BinStat]:
     out: list[BinStat] = []
     for lo, hi in BINS:
         xs = [s for s in samples if lo <= s.c < hi]
-        if xs:
-            out.append(
-                BinStat(
-                    lo,
-                    min(hi, 1.0),
-                    len(xs),
-                    float(np.mean([s.o for s in xs])),
-                    float(np.mean([s.c for s in xs])),
-                )
+        out.append(
+            BinStat(
+                lo,
+                min(hi, 1.0),
+                len(xs),
+                float(np.mean([s.o for s in xs])) if xs else None,
+                float(np.mean([s.c for s in xs])) if xs else None,
             )
-        else:
-            out.append(BinStat(lo, min(hi, 1.0), 0, None, None))
+        )
     return out
 
 
@@ -176,39 +170,32 @@ def calibrate(samples: list[Sample], label: str = "전체") -> Calibration:
     below = [s for s in resolved if s.c < 0.5]
     bins = _bins(resolved)
     brier = float(np.mean([(s.c - s.o) ** 2 for s in resolved])) if resolved else None
+    # 결론 없음이 기본 — 아래 두 관문을 다 지나야 기울기를 낸다
+    base = Calibration(
+        label=label,
+        n=n,
+        n_unresolved=len(unresolved),
+        brier=brier,
+        bins=bins,
+        slope=None,
+        lambda_hint=None,
+        conclusive=False,
+        reason=f"결론 없음 (N={n} < {MIN_N})",
+        samples=samples,
+    )
     if n < MIN_N:
-        return Calibration(
-            label,
-            n,
-            len(unresolved),
-            brier,
-            bins,
-            None,
-            None,
-            False,
-            f"결론 없음 (N={n} < {MIN_N})",
-            samples,
-        )
+        return base
     occupied = sum(1 for b in bins if b.n > 0)
     if occupied <= 2:
-        return Calibration(
-            label,
-            n,
-            len(unresolved),
-            brier,
-            bins,
-            None,
-            None,
-            False,
-            f"결론 없음 (N={n} 이지만 표본이 {occupied}개 구간에 몰려 있다)",
-            samples,
+        return replace(
+            base, reason=f"결론 없음 (N={n} 이지만 표본이 {occupied}개 구간에 몰려 있다)"
         )
     slope = weighted_slope(bins)
     lam = None if slope is None else float(np.clip(1.0 - slope, 0.0, 1.0))
     reason = "N ≥ 20 · 3개 이상 구간 — 기울기 산출 (λ 갱신은 사람이 근거와 함께 결정)"
     if below:
         reason += f" · c < 0.5 표본 {len(below)}개는 구간 밖 (C6 미달인데 편입됨 — 점검 필요)"
-    return Calibration(label, n, len(unresolved), brier, bins, slope, lam, True, reason, samples)
+    return replace(base, slope=slope, lambda_hint=lam, conclusive=True, reason=reason)
 
 
 def render(cals: list[Calibration]) -> str:
@@ -271,10 +258,7 @@ def to_json(cals: list[Calibration]) -> list[dict[str, Any]]:
                 "lambda_hint": c.lambda_hint,
                 "conclusive": c.conclusive,
                 "reason": c.reason,
-                "bins": [
-                    {"lo": b.lo, "hi": b.hi, "n": b.n, "hit_rate": b.hit_rate, "mean_c": b.mean_c}
-                    for b in c.bins
-                ],
+                "bins": [asdict(b) for b in c.bins],
             }
         )
     return out

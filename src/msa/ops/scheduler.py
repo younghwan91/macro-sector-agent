@@ -28,15 +28,24 @@ CADENCES = ("monthly", "weekly", "daily", "quarterly")
 class Job:
     cadence: str
     when: str  # cron 5필드
+    on_calendar: str  # systemd OnCalendar — `when` 과 같은 시각
     commands: tuple[str, ...]
     gate: str | None  # `msa ops due <cadence>` 로 거를지
     note: str
+
+    def command_chain(self, runner: str) -> str:
+        """`runner msa …` 를 `&&` 로 잇고, 게이트가 있으면 `msa ops due <gate>` 를 앞에 둔다."""
+        chain = " && ".join(f"{runner} {c}" for c in self.commands)
+        if self.gate:
+            chain = f"{runner} msa ops due {self.gate} && {chain}"
+        return chain
 
 
 JOBS: tuple[Job, ...] = (
     Job(
         "monthly",
         "0 7 1-3 * *",
+        "*-*-01..03 07:00:00",
         ("msa scan", "msa check --weekly"),
         "monthly",
         "L0 적재 → L1 전수 스캔 → (L2·L3·L4·L5 는 연결되는 대로 여기에 추가) → 사람 검토 30~60분",
@@ -44,6 +53,7 @@ JOBS: tuple[Job, ...] = (
     Job(
         "weekly",
         "30 7 * * 1",
+        "Mon *-*-* 07:30:00",
         ("msa check --weekly",),
         None,
         "보유 포지션 트리거·무효화 점검 — 사람 5~10분",
@@ -51,6 +61,7 @@ JOBS: tuple[Job, ...] = (
     Job(
         "daily",
         "30 18 * * 1-5",
+        "Mon..Fri *-*-* 18:30:00",
         ("msa check --daily",),
         None,
         "무효화·사다리·TP·시간스탑 자동 확인 — 알림 시에만 본다",
@@ -58,6 +69,7 @@ JOBS: tuple[Job, ...] = (
     Job(
         "quarterly",
         "0 8 1-3 1,4,7,10 *",
+        "*-01,04,07,10-01..03 08:00:00",
         ("msa ops calibration", "msa ops rejections-update"),
         "quarterly",
         "모순 감사(03 §6) 는 수동 · 캘리브레이션 · 기각 대장 12·24M 갱신",
@@ -99,13 +111,9 @@ def cron_lines(
         "",
     ]
     for j in JOBS:
-        cmds = [f"{runner} {c}" for c in j.commands]
-        chain = " && ".join(cmds)
-        if j.gate:
-            chain = f"{runner} msa ops due {j.gate} && {chain}"
         L.append(f"# {j.cadence}: {j.note}")
         L.append(
-            f'{j.when} cd "$MSA_REPO" && mkdir -p {log_dir} && {chain} '
+            f'{j.when} cd "$MSA_REPO" && mkdir -p {log_dir} && {j.command_chain(runner)} '
             f">> {log_dir}/{j.cadence}.log 2>&1"
         )
         L.append("")
@@ -115,12 +123,6 @@ def cron_lines(
 def systemd_units(repo: Path | None = None, runner: str = "uv run") -> str:
     """systemd 타이머 텍스트 (cron 대신 쓸 때). OnCalendar 로 1~3일 + due 게이트는 동일."""
     root = repo or REPO_ROOT
-    cal = {
-        "monthly": "*-*-01..03 07:00:00",
-        "weekly": "Mon *-*-* 07:30:00",
-        "daily": "Mon..Fri *-*-* 18:30:00",
-        "quarterly": "*-01,04,07,10-01..03 08:00:00",
-    }
     out: list[str] = [
         "# systemd --user 타이머. 각 블록을 "
         "~/.config/systemd/user/msa-<cadence>.{service,timer} 로 "
@@ -128,9 +130,6 @@ def systemd_units(repo: Path | None = None, runner: str = "uv run") -> str:
         "",
     ]
     for j in JOBS:
-        chain = " && ".join(f"{runner} {c}" for c in j.commands)
-        if j.gate:
-            chain = f"{runner} msa ops due {j.gate} && {chain}"
         out += [
             f"# --- msa-{j.cadence}.service",
             "[Unit]",
@@ -139,14 +138,14 @@ def systemd_units(repo: Path | None = None, runner: str = "uv run") -> str:
             "[Service]",
             "Type=oneshot",
             f"WorkingDirectory={root}",
-            f"ExecStart=/bin/sh -lc '{chain}'",
+            f"ExecStart=/bin/sh -lc '{j.command_chain(runner)}'",
             "",
             f"# --- msa-{j.cadence}.timer",
             "[Unit]",
             f"Description=msa {j.cadence} timer",
             "",
             "[Timer]",
-            f"OnCalendar={cal[j.cadence]}",
+            f"OnCalendar={j.on_calendar}",
             "Persistent=true",
             "",
             "[Install]",

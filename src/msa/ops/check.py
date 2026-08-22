@@ -37,22 +37,20 @@ check: {kind: drawdown_from_high, ticker: CCJ, pct: 0.30, lookback_days: 252}  #
 
 from __future__ import annotations
 
-import json
-import logging
-from dataclasses import asdict, dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 from datetime import date, timedelta
+from functools import cached_property
 from pathlib import Path
 from typing import Any, Protocol
 
 import pandas as pd
-import yaml
 
-from msa.io import to_plain
+from msa.fmt import pct
+from msa.io import dump_yaml, to_plain, write_snapshot
 from msa.ops.alerts import Alert, AlertKind, format_alert
 from msa.ops.journal import load_entries, load_snapshot
 from msa.ops.state_files import Position, PositionsFile, load_positions
-
-log = logging.getLogger(__name__)
 
 TIME_STOP_WARN_DAYS = 30
 TIER2_PCT = 0.35
@@ -82,24 +80,56 @@ class DictPriceSource:
 
 
 class StorePriceSource:
-    """DuckDB 스토어 (`msa.data.store.Store`) 래퍼. 폐지 종목도 읽힌다."""
+    """DuckDB 스토어 (`msa.data.store.Store`) 래퍼. 폐지 종목도 읽힌다.
+
+    `prefetch(tickers, end)` 를 먼저 부르면 한 질의(`ticker, date, close` 세 열)로 전부 읽어 두고
+    `closes()` 는 그 메모를 돌려준다 — `run_check` 가 포지션·DSL 티커를 모아 한 번 부른다.
+    메모에 없는 티커(또는 다른 `end`)는 종목별로 읽는다 (결과는 같다).
+    """
 
     def __init__(self, store: Any, lookback_days: int = 400) -> None:
         self.store = store
         self.lookback_days = lookback_days
+        self._memo: dict[str, pd.Series] = {}
+        self._memo_end: date | None = None
 
-    def closes(self, ticker: str, end: date) -> pd.Series:
+    def _query(self, tickers: list[str], end: date) -> pd.DataFrame:
+        """없으면 빈 프레임 — 가격이 없는 것은 `check_position` 이 problems 로 적는다."""
         from msa.data.store import StoreError
 
         start = end - timedelta(days=self.lookback_days)
         try:
-            df = self.store.prices([ticker.upper()], start, end, min_rows=1)
+            df: pd.DataFrame = self.store.prices(
+                tickers, start, end, min_rows=1, columns=["ticker", "date", "close"]
+            )
         except StoreError:
+            return pd.DataFrame(columns=["ticker", "date", "close"])
+        return df
+
+    @staticmethod
+    def _series(df: pd.DataFrame, ticker: str) -> pd.Series:
+        if df.empty:
             return pd.Series(dtype=float)
         s: pd.Series = df.set_index(pd.to_datetime(df["date"]))["close"].astype(float)
         s = s.sort_index()
-        s.name = ticker.upper()
+        s.name = ticker
         return s
+
+    def prefetch(self, tickers: Iterable[str], end: date) -> None:
+        want = sorted({t.upper() for t in tickers})
+        if not want:
+            return
+        df = self._query(want, end)
+        self._memo = {str(t): self._series(g, str(t)) for t, g in df.groupby("ticker", sort=False)}
+        for t in want:
+            self._memo.setdefault(t, pd.Series(dtype=float))
+        self._memo_end = end
+
+    def closes(self, ticker: str, end: date) -> pd.Series:
+        t = ticker.upper()
+        if end == self._memo_end and t in self._memo:
+            return self._memo[t]
+        return self._series(self._query([t], end), t)
 
 
 # ---------------------------------------------------------------------------
@@ -159,23 +189,55 @@ def _eval_check(check: dict[str, Any], prices: PriceSource, asof: date) -> tuple
     return None, f"알 수 없는 check.kind={kind!r} — manual 로 취급"
 
 
-def _prior_statuses(jdir: Path, theme: str) -> dict[tuple[str, str], str]:
-    """가장 최근 점검 저널 항목의 after 값. (kind, observable) → status."""
-    checks = [e for e in load_entries(jdir, "check") if e.get("theme") == theme]
-    if not checks:
-        return {}
-    last = checks[-1]
-    out: dict[tuple[str, str], str] = {}
-    for x in last.get("trigger_status") or []:
-        out[("trigger", str(x.get("observable")))] = str(x.get("after"))
-    for x in last.get("invalidation_status") or []:
-        out[("invalidation", str(x.get("observable")))] = str(x.get("after"))
+PriorStatuses = dict[tuple[str, str], str]
+
+
+def prior_statuses_by_theme(jdir: Path) -> dict[str, PriorStatuses]:
+    """테마별 **가장 최근** 점검 저널 항목의 after 값. theme → {(kind, observable): status}.
+
+    저널은 한 번만 읽는다 (`load_entries` 는 날짜 순이므로 마지막 항목이 최근이다).
+    """
+    last: dict[str, dict[str, Any]] = {}
+    for e in load_entries(jdir, "check"):
+        last[str(e.get("theme"))] = e
+    out: dict[str, PriorStatuses] = {}
+    for theme, e in last.items():
+        prior: PriorStatuses = {}
+        for kind, key in (("trigger", "trigger_status"), ("invalidation", "invalidation_status")):
+            for x in e.get(key) or []:
+                prior[(kind, str(x.get("observable")))] = str(x.get("after"))
+        out[theme] = prior
     return out
+
+
+def _judge(
+    kind: str, item: dict[str, Any], prior: str, prices: PriceSource, asof: date, fired_word: str
+) -> tuple[str, bool, str]:
+    """(status, machine, detail). 확정 → 유지 · DSL 없음/평가 불가 → manual · 아니면 기계 판정."""
+    if prior in ("met", "missed", "fired"):
+        # 이미 확정된 상태는 되돌리지 않는다 (사람이 저널에 적은 판정)
+        return prior, False, "확정 상태 유지"
+    check = item.get("check")
+    if not isinstance(check, dict) or check.get("kind", "manual") == "manual":
+        return "manual", False, "기계 판정 불가 — 사람이 본다"
+    ok, detail = _eval_check(check, prices, asof)
+    if ok is None:
+        return "manual", False, detail
+    status = fired_word if ok else "pending"
+    if kind == "trigger" and not ok and item.get("by"):
+        # 기한 경과 + 미충족 → missed. `by` 는 "2026-Q4" 같은 자유 문자열이라
+        # ISO 날짜일 때만 본다
+        try:
+            if date.fromisoformat(str(item["by"])) < asof:
+                status = "missed"
+        except ValueError:
+            pass
+    return status, True, detail
 
 
 def evaluate_conditions(
     thesis: dict[str, Any],
-    prior: dict[tuple[str, str], str],
+    prior: PriorStatuses,
     prices: PriceSource,
     asof: date,
 ) -> list[ConditionStatus]:
@@ -187,60 +249,7 @@ def evaluate_conditions(
         for item in thesis.get(key) or []:
             obs = str(item.get("observable"))
             p = prior.get((kind, obs), str(item.get("status", "pending")))
-            check = item.get("check")
-            if p in ("met", "missed", "fired"):
-                # 이미 확정된 상태는 되돌리지 않는다 (사람이 저널에 적은 판정)
-                out.append(
-                    ConditionStatus(
-                        kind,
-                        obs,
-                        str(item.get("source", "")),
-                        item.get("action"),
-                        p,
-                        p,
-                        False,
-                        "확정 상태 유지",
-                    )
-                )
-                continue
-            if not isinstance(check, dict) or check.get("kind", "manual") == "manual":
-                out.append(
-                    ConditionStatus(
-                        kind,
-                        obs,
-                        str(item.get("source", "")),
-                        item.get("action"),
-                        p,
-                        "manual",
-                        False,
-                        "기계 판정 불가 — 사람이 본다",
-                    )
-                )
-                continue
-            ok, detail = _eval_check(check, prices, asof)
-            if ok is None:
-                out.append(
-                    ConditionStatus(
-                        kind,
-                        obs,
-                        str(item.get("source", "")),
-                        item.get("action"),
-                        p,
-                        "manual",
-                        False,
-                        detail,
-                    )
-                )
-                continue
-            status = fired_word if ok else "pending"
-            if kind == "trigger" and not ok and item.get("by"):
-                # 기한 경과 + 미충족 → missed. `by` 는 "2026-Q4" 같은 자유 문자열이라
-                # ISO 날짜일 때만 본다
-                try:
-                    if date.fromisoformat(str(item["by"])) < asof:
-                        status = "missed"
-                except ValueError:
-                    pass
+            status, machine, detail = _judge(kind, item, p, prices, asof, fired_word)
             out.append(
                 ConditionStatus(
                     kind,
@@ -249,10 +258,21 @@ def evaluate_conditions(
                     item.get("action"),
                     p,
                     status,
-                    True,
+                    machine,
                     detail,
                 )
             )
+    return out
+
+
+def dsl_tickers(thesis: dict[str, Any]) -> set[str]:
+    """가격 DSL 이 참조하는 티커 — 가격 선적재용."""
+    out: set[str] = set()
+    for key in ("triggers", "invalidations"):
+        for item in thesis.get(key) or []:
+            check = item.get("check")
+            if isinstance(check, dict) and check.get("ticker"):
+                out.add(str(check["ticker"]).upper())
     return out
 
 
@@ -322,7 +342,7 @@ def _sma(s: pd.Series, n: int) -> float | None:
 def check_position(
     pos: Position,
     thesis: dict[str, Any],
-    prior: dict[tuple[str, str], str],
+    prior: PriorStatuses,
     prices: PriceSource,
     asof: date,
 ) -> PositionCheck:
@@ -403,7 +423,7 @@ def check_position(
             ma_hit = close is not None and ma is not None and close < ma
             dd = None if (close is None or not peak) else close / peak - 1
             det = (
-                f"고점 {peak if peak is None else round(peak, 2)} 대비 {_fmt_pct(dd)} "
+                f"고점 {peak if peak is None else round(peak, 2)} 대비 {pct(dd)} "
                 f"(기준 −{pos.runner_trail_pct:.0%}) · "
                 f"{pos.runner_ma_weeks}주선 {ma if ma is None else round(ma, 2)}"
             )
@@ -444,100 +464,59 @@ def check_position(
         tp=tps,
         problems=problems,
     )
-    pc.alerts = _alerts_for(pc, pos)
+    pc.alerts = _alerts_for(pc)
     return pc
 
 
-def _fmt_pct(x: float | None) -> str:
-    return "n/a" if x is None else f"{x:+.1%}"
-
-
-def _alerts_for(pc: PositionCheck, pos: Position) -> list[Alert]:
+def _alerts_for(pc: PositionCheck) -> list[Alert]:
     out: list[Alert] = []
+
+    def mk(kind: AlertKind, **facts: Any) -> None:
+        a = Alert(kind, pc.asof, pc.theme, pc.ticker, facts)
+        a.text = format_alert(a)
+        out.append(a)
+
     for c in pc.conditions:
         if c.kind == "invalidation" and c.status == "fired" and (c.changed or c.prior != "fired"):
-            out.append(
-                Alert(
-                    AlertKind.INVALIDATION_FIRED,
-                    pc.asof,
-                    pc.theme,
-                    pc.ticker,
-                    {
-                        "observable": c.observable,
-                        "source": c.source,
-                        "action": c.action,
-                        "detail": c.detail,
-                    },
-                )
+            mk(
+                AlertKind.INVALIDATION_FIRED,
+                observable=c.observable,
+                source=c.source,
+                action=c.action,
+                detail=c.detail,
             )
     for ls in pc.ladder:
         if ls.both:
-            out.append(
-                Alert(
-                    AlertKind.LADDER_STEP_MET,
-                    pc.asof,
-                    pc.theme,
-                    pc.ticker,
-                    {
-                        "step": ls.step,
-                        "move_from_entry": pc.move_from_entry,
-                        "trigger_pct_neg": ls.trigger_price / pc.entry_price - 1.0,
-                        "close": pc.close,
-                        "invalidations_fired": pc.invalidations_fired,
-                        "triggers_met": pc.triggers_met,
-                        "triggers_total": pc.triggers_total,
-                    },
-                )
+            mk(
+                AlertKind.LADDER_STEP_MET,
+                step=ls.step,
+                move_from_entry=pc.move_from_entry,
+                trigger_pct_neg=ls.trigger_price / pc.entry_price - 1.0,
+                close=pc.close,
+                invalidations_fired=pc.invalidations_fired,
+                triggers_met=pc.triggers_met,
+                triggers_total=pc.triggers_total,
             )
     if pc.time_stop_warning or pc.time_stop_due:
-        out.append(
-            Alert(
-                AlertKind.TIME_STOP_WARNING,
-                pc.asof,
-                pc.theme,
-                pc.ticker,
-                {
-                    "days_left": pc.days_to_time_stop,
-                    "time_stop_date": pc.time_stop_date.isoformat(),
-                    "triggers_met": pc.triggers_met,
-                    "triggers_total": pc.triggers_total,
-                },
-            )
+        mk(
+            AlertKind.TIME_STOP_WARNING,
+            days_left=pc.days_to_time_stop,
+            time_stop_date=pc.time_stop_date.isoformat(),
+            triggers_met=pc.triggers_met,
+            triggers_total=pc.triggers_total,
         )
     for t in pc.tp:
         if t.met and not t.filled:
-            out.append(
-                Alert(
-                    AlertKind.TP_MET,
-                    pc.asof,
-                    pc.theme,
-                    pc.ticker,
-                    {
-                        "level": t.level,
-                        "condition": t.detail,
-                        "detail": t.detail,
-                        "close": pc.close,
-                    },
-                )
-            )
+            mk(AlertKind.TP_MET, level=t.level, condition=t.detail, detail=t.detail, close=pc.close)
     if pc.tier2_hit:
-        out.append(
-            Alert(
-                AlertKind.TIER2_STOP_HIT,
-                pc.asof,
-                pc.theme,
-                pc.ticker,
-                {
-                    "close": pc.close,
-                    "stop_price": round(pc.tier2_stop_price, 4),
-                    "basis": pc.tier2_basis,
-                    "move_from_avg": pc.move_from_avg,
-                    "move_from_entry": pc.move_from_entry,
-                },
-            )
+        mk(
+            AlertKind.TIER2_STOP_HIT,
+            close=pc.close,
+            stop_price=round(pc.tier2_stop_price, 4),
+            basis=pc.tier2_basis,
+            move_from_avg=pc.move_from_avg,
+            move_from_entry=pc.move_from_entry,
         )
-    for a in out:
-        a.text = format_alert(a)
     return out
 
 
@@ -556,6 +535,11 @@ class CheckReport:
     problems: list[str]
 
     def render(self) -> str:
+        """리포트 본문. 한 번 만들면 재사용한다 (`run_check` 가 쓰고 CLI 가 또 찍는다)."""
+        return self.text
+
+    @cached_property
+    def text(self) -> str:
         L = [
             f"포지션 점검 · {self.asof} · {self.mode} · 포지션 {len(self.positions)}개 · "
             f"알림 {len(self.alerts)}건",
@@ -567,9 +551,9 @@ class CheckReport:
             L += [
                 "=" * 78,
                 f"{p.ticker} ({p.theme})  종가 {p.close}  초기가 {p.entry_price:.2f} "
-                f"({_fmt_pct(p.move_from_entry)})  "
+                f"({pct(p.move_from_entry)})  "
                 f"평단 {'—' if p.avg_price is None else f'{p.avg_price:.2f}'} "
-                f"({_fmt_pct(p.move_from_avg)})",
+                f"({pct(p.move_from_avg)})",
                 f"  트리거 {p.triggers_met}/{p.triggers_total} 충족 · "
                 f"무효화 {p.invalidations_fired}건 발동 · manual {p.manual_count}건",
             ]
@@ -619,30 +603,27 @@ def _journal_draft(
     for pc in checks:
         for c in pc.conditions:
             seen.setdefault((c.kind, c.observable), c)
+
+    def rows(kind: str) -> list[dict[str, str]]:
+        # manual 은 기계가 판정하지 못한 것 — 이전 상태를 그대로 두고 사람이 고친다
+        return [
+            {
+                "observable": c.observable,
+                "before": c.prior,
+                "after": (c.status if c.status != "manual" else c.prior),
+            }
+            for (k, _), c in seen.items()
+            if k == kind
+        ]
+
     return {
         "type": "check",
         "date": asof.isoformat(),
         "theme": theme,
         "cadence": mode,
         "check_report": report_path,
-        "trigger_status": [
-            {
-                "observable": c.observable,
-                "before": c.prior,
-                "after": (c.status if c.status != "manual" else c.prior),
-            }
-            for (k, _), c in seen.items()
-            if k == "trigger"
-        ],
-        "invalidation_status": [
-            {
-                "observable": c.observable,
-                "before": c.prior,
-                "after": (c.status if c.status != "manual" else c.prior),
-            }
-            for (k, _), c in seen.items()
-            if k == "invalidation"
-        ],
+        "trigger_status": rows("trigger"),
+        "invalidation_status": rows("invalidation"),
         "thesis": None,
         "notes": "기계 초안 — manual 항목은 사람이 판정해 after 를 고친 뒤 저장한다",
         "links": [],
@@ -662,7 +643,8 @@ def run_check(
 ) -> CheckReport:
     pf = positions if positions is not None else load_positions(positions_path)
     problems: list[str] = []
-    checks: list[PositionCheck] = []
+    # 1) thesis 스냅샷 로드 — 없는 포지션은 점검하지 않고 문제로 적는다
+    todo: list[tuple[Position, dict[str, Any]]] = []
     for pos in pf.open_positions():
         snap = repo_root / pos.thesis_snapshot
         if not snap.exists():
@@ -671,27 +653,30 @@ def run_check(
                 "이 포지션은 점검하지 않았다"
             )
             continue
-        thesis = load_snapshot(snap)
-        prior = _prior_statuses(journal_dir, pos.theme)
-        checks.append(check_position(pos, thesis, prior, prices, asof))
+        todo.append((pos, load_snapshot(snap)))
+    # 2) 가격 선적재 (소스가 지원하면) — 포지션 티커 + DSL 티커를 한 질의로
+    prefetch = getattr(prices, "prefetch", None)
+    if callable(prefetch):
+        prefetch(
+            {pos.ticker for pos, _ in todo} | {t for _, th in todo for t in dsl_tickers(th)}, asof
+        )
+    # 3) 점검 — 저널의 이전 상태는 한 번만 읽는다
+    prior_by_theme = prior_statuses_by_theme(journal_dir)
+    checks = [
+        check_position(pos, thesis, prior_by_theme.get(pos.theme, {}), prices, asof)
+        for pos, thesis in todo
+    ]
     alerts = [a for pc in checks for a in pc.alerts]
-    out_dir = None
     report = CheckReport(
         asof=asof, mode=mode, positions=checks, alerts=alerts, out_dir=None, problems=problems
     )
     if out_root is not None:
         out_dir = out_root / asof.isoformat()
-        out_dir.mkdir(parents=True, exist_ok=True)
         report.out_dir = out_dir
-        (out_dir / "report.txt").write_text(report.render(), encoding="utf-8")
-        (out_dir / "positions.json").write_text(
-            json.dumps(
-                [to_plain(asdict(pc), drop=_DROP_ALERTS) for pc in checks],
-                ensure_ascii=False,
-                indent=1,
-                default=str,
-            ),
-            encoding="utf-8",
+        write_snapshot(
+            out_dir,
+            texts={"report.txt": report.render()},
+            jsons={"positions.json": [to_plain(pc, drop=_DROP_ALERTS) for pc in checks]},
         )
         rel_report = (
             str((out_dir / "report.txt").relative_to(repo_root))
@@ -702,9 +687,7 @@ def run_check(
             draft = _journal_draft(
                 theme, [pc for pc in checks if pc.theme == theme], asof, mode, rel_report
             )
-            (out_dir / f"journal-draft-{theme}.yaml").write_text(
-                yaml.safe_dump(draft, allow_unicode=True, sort_keys=False), encoding="utf-8"
-            )
+            dump_yaml(out_dir / f"journal-draft-{theme}.yaml", draft)
     return report
 
 
