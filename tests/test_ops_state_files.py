@@ -9,12 +9,12 @@ from pathlib import Path
 import pytest
 import yaml
 
+from _synth_ops import make_position
+from _synth_ops import make_rejection as _rej
 from msa.ops.state_files import (
     ImmutableRowChanged,
-    LadderStep,
     Position,
     PositionsFile,
-    Rejection,
     StateFileError,
     TpLevel,
     load_positions,
@@ -26,23 +26,9 @@ from msa.ops.state_files import (
 
 
 def _pos() -> Position:
-    return Position(
+    # 소문자 티커 — 로드 시 대문자로 정규화되는지 본다
+    return make_position(
         ticker="ccj",
-        theme="uranium",
-        role="anchor",
-        target_weight=0.16,
-        opened_at=date(2026, 9, 1),
-        entry_price=50.0,
-        ladder=[
-            LadderStep(1, 0.5, 0.0, 50.0, date(2026, 9, 1), 50.0),
-            LadderStep(2, 0.3, 0.13, 43.5),
-            LadderStep(3, 0.2, 0.23, 38.5),
-        ],
-        tier2_stop_price=32.5,
-        time_stop_date=date(2028, 3, 1),
-        horizon_months=(6, 18),
-        thesis_snapshot="journal/2026-09-01-uranium-entry.thesis.yaml",
-        journal_entry="journal/2026-09-01-uranium-entry.md",
         tp=[TpLevel("tp1", 1 / 3, "+2R", price=85.0), TpLevel("runner", 1 / 3, "트레일")],
     )
 
@@ -68,6 +54,22 @@ def test_positions_schema_violations_raise(tmp_path: Path) -> None:
     p.write_text(yaml.safe_dump({"nope": 1}))
     with pytest.raises(StateFileError):
         load_positions(p)
+    # 틀린 날짜 문자열은 조용히 date.min 이 되지 않는다
+    raw = {"asof": "2026-09-01", "positions": [{"ticker": "X", "theme": "t", "role": "anchor"}]}
+    raw["positions"][0].update(
+        target_weight=0.1,
+        opened_at="2026/09/01",
+        entry_price=1.0,
+        ladder=[{"step": 1, "weight": 1.0, "trigger_pct": 0.0}],
+        tier2_stop_price=0.5,
+        time_stop_date="2027-01-01",
+        horizon_months=[6, 18],
+        thesis_snapshot="j",
+        journal_entry="j",
+    )
+    p.write_text(yaml.safe_dump(raw))
+    with pytest.raises(StateFileError, match="날짜 형식"):
+        load_positions(p)
 
 
 def test_watchlist_requires_waiting_condition(tmp_path: Path) -> None:
@@ -90,21 +92,6 @@ def test_watchlist_requires_waiting_condition(tmp_path: Path) -> None:
     with pytest.raises(StateFileError, match="waiting_condition"):
         load_watchlist(p)
     assert load_watchlist(tmp_path / "none.yaml") == []
-
-
-def _rej(**over: object) -> Rejection:
-    kw: dict[str, object] = {
-        "theme": "offshore_drilling",
-        "rejected_at": date(2026, 8, 3),
-        "path": "hard_gate",
-        "reason": "축1 사망 AND 축3 경고",
-        "cycle_confidence": 0.31,
-        "scoreboard_rank": 3,
-        "journal": "journal/2026-08-03-offshore_drilling-reject.md",
-        "scan": "state/scans/2026-08-03/",
-    }
-    kw.update(over)
-    return Rejection(**kw)  # type: ignore[arg-type]
 
 
 def test_rejections_append_only_rows(tmp_path: Path) -> None:
