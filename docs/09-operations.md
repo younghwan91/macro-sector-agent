@@ -41,6 +41,9 @@ journal/
 
 **진입 항목이 담는 것** (하나라도 빠지면 항목이 불완전):
 - thesis 객체 전문 (claim · mechanism · triggers · invalidations · evidence · `cycle_confidence`)
+  — `cycle_confidence` 는 **누가 산출했는지**(사람 / `referee`)를 함께 적는다. M6 구간에는
+  사람이 `04-value-trap.md` §4 규칙을 적용해 산출하며(`11-roadmap.md` "M6 구간에 `c` 를
+  누가 만드는가"), 그 표본도 `10-validation.md` §3 캘리브레이션에 들어간다
 - `bear_case` 원문
 - L1 블록 6개 값 + L2 tailwind + 가치함정 5축 판정
 - 종목 · 비중 · 사다리 3단 가격 · Tier1/2 스탑 · 시간 스탑 날짜 · TP 3단
@@ -52,7 +55,9 @@ journal/
 - thesis 재실행 시 **이전 버전과의 diff** (논지 표류 추적 — `05-agent-research.md` §6)
 
 **기각 항목이 담는 것** (편입하지 않은 것도 결정이다 — `10-validation.md` §4 기각 대장의 입력):
-- 기각 경로 — 하드 게이트 / 확신도 상한 → C6 미달 / `secular_risk` 기본 게이트 / 상위 K 진입 실패 / 사람의 판단
+- 기각 경로 — **분류 목록은 여기서 다시 적지 않는다.** 정본은 `10-validation.md` §4 의
+  기각 대장 표이고, 기계 판독용 값은 `specs/thesis.schema.yaml` `gate_result.path` 의 enum 이다
+  (§4 `rejections.yaml` 의 `path` 열과 같은 값). 저널 항목에는 그중 **어느 경로였는지**를 적는다
 - thesis 의 `value_trap_axes` 전문 (`05-agent-research.md` §3) — 5축 판정과 그 근거 `evidence_refs`
   (`04-value-trap.md` §3 이 이미 "리포트에 기각 사유 기재" 를 요구한다. 저널은 그 사유의 원본이다)
 - 기각 시점의 `cycle_confidence` (산출된 경우) 와 스코어보드 순위
