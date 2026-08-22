@@ -180,27 +180,70 @@ final(t) = 0.70 · cycle_score(t)  +  0.30 · normalize(tailwind(t))
 이 절차가 "학습" 과 다른 점: **변경이 사람의 서술을 거치고, 커밋에 흔적이 남고,
 성과가 좋아지는 방향인지를 보지 않는다.** 성과를 보는 순간 그게 오버피팅이다.
 
-## 7. DAG 초기 엣지 (발췌)
+## 7. DAG 엣지 (발췌)
 
-전체는 `specs/macro-dag.example.yaml`. 여기서는 밀도가 높은 부분만.
+전체는 `state/macro-dag.yaml` (스키마 예시는 `specs/macro-dag.example.yaml`).
+감사 결과는 `macro-dag-audit.md`.
+
+**현황** — 드라이버 26개 · 엣지 레코드 72개(개별 69 + 공통 인자 3) ·
+**테마-엣지 쌍 380개** (공통 인자 제외, 하한 220).
+테마 in-degree **min 2 · median 3 · max 6**. 입력 엣지 2개를 못 채운 테마는 **없다.**
+강도 분포 strong 20 · moderate 31 · weak 21, 부호 +1 37 · −1 35,
+`contradicts_when` 을 가진 엣지 22개.
+
+> 테마 id 의 정본은 `state/themes.yaml` 이다. 위 수치는 `01-theme-universe.md` §3
+> 초안(109개) 기준이며, M2 에서 테마가 확정되면 `scripts/audit_dag.py` 를 다시 돌려
+> 하한을 재확인해야 한다.
+
+밀도가 높은 부분과 부호가 갈리는 부분만 옮긴다.
 
 | from | to | sign | strength | 채널 요약 |
 |---|---|---|---|---|
-| `dollar_broad` | 모든 `commodity_supply` | −1 | strong | 달러 표시 가격 + 현지통화 원가 |
-| `real_rate_10y` | `gold_miners`, `silver_miners` | −1 | strong | 무이자 자산의 기회비용 |
-| `real_rate_10y` | `biotech_clinical` | −1 | strong | 장기 현금흐름 할인 + 자금조달 창구 |
-| `real_rate_10y` | `homebuilders`, `reit_*` | −1 | strong | 모기지·캡레이트 |
-| `term_spread` | `banks_regional`, `banks_large` | +1 | strong | 순이자마진 |
-| `hy_spread` | `oil_gas_ep`, `biotech_clinical`, `shipping_*` | −1 | strong | 고레버리지 재융자 |
-| `china_credit_impulse` | `copper_miners`, `steel_iron`, `shipping_drybulk` | +1 | strong | 중국 고정자산투자가 한계 수요 |
-| `inventory_sales` | `semi_*`, `industrial_automation`, `trucking_logistics` | −1 | strong | 재고 소진 → 재주문 |
-| `hyperscaler_capex` | `grid_equipment`, `datacenter_hw`, `networking_optical`, `utility_ipp` | +1 | strong | 발주처 capex 가 직접 매출 |
-| `defense_outlays` | `defense`, `aerospace_commercial`, `rare_earth` | +1 | strong | 예산 집행 → 수주 |
-| `capex_orders_core` | `construction_machinery`, `epc_engineering`, `industrial_automation` | +1 | moderate | 기업 투자 사이클 |
-| `oil_wti` | `oil_services`, `offshore_drilling` | +1 | strong | 발주처 예산 |
-| `oil_wti` | `airlines`, `trucking_logistics`, `refiners`(복잡) | −1 | moderate | 연료비. 정유는 크랙스프레드라 부호가 단순치 않음 |
-| `housing_starts` | `lumber_paper`, `home_improvement`, `cement_aggregates` | +1 | strong | |
-| `usd_liquidity` | 전 테마 (공통 인자) | +1 | moderate | 위험 선호 전반 — 테마 선택엔 무력, 시점엔 유효 |
+| `dollar_broad` | 광물 12종 (`gold_miners`…`fertilizer_potash`) | −1 | strong | 달러 표시 가격 + 현지통화 원가의 이중 확대 |
+| `dollar_broad` | `apparel_footwear` | **+1** | weak | 매출은 달러·소싱 원가는 아시아 — 소비재와 부호 반대 |
+| `real_rate_10y` | `gold_miners`, `silver_miners`, `pgm_miners` | −1 | strong | 무이자 자산의 캐리 코스트 |
+| `real_rate_10y` | `biotech_clinical` | −1 | strong | 원거리 현금흐름 할인 + 2차 발행 창구 |
+| `real_rate_10y` | REIT 7종 | −1 | strong | 캡레이트 = 실질금리 + 리스크 프리미엄 |
+| `real_rate_10y` | 프로젝트 파이낸싱 9종 (`solar`…`lng`) | −1 | strong | 자본비용이 곧 LCOE — 밸류가 아니라 발주 물량이 준다 |
+| `real_rate_10y` | `insurance_pc`, `insurance_life`, `reinsurance` | **+1** | moderate | 플로트 재투자 수익 — 차입자가 아니라 대여자다 |
+| `real_rate_10y` | `banks_regional` | −1 | moderate | AFS 평가손 → 자본. `term_spread` 엣지와 부호 충돌(국면 의존) |
+| `term_spread` | `banks_large`, `banks_regional` | +1 | strong | 만기 변환 마진 |
+| `hy_spread` | 고레버리지 9종 (`oil_gas_ep`…`biotech_clinical`) | −1 | strong | 리파이낸싱 가능 여부가 생존 조건 |
+| `ig_spread` | 규제·대형 9종 (`utility_regulated`…`defense`) | −1 | moderate | 요금기저 투자의 자본비용은 IG 시장에서 온다 |
+| `china_credit_impulse` | 기저금속·벌크 10종 | +1 | strong | 중국 고정자산투자가 한계 수요 |
+| `china_property` | `steel_iron`, `copper_miners`, `shipping_drybulk` 등 | +1 | strong | 착공 면적이 실제 물량 (신용은 자금 조건) |
+| `inventory_sales` | `semi_*`, `industrial_automation`, `railroads` 등 8종 | −1 | strong | 재고 소진 → 재주문 |
+| `hyperscaler_capex` | `grid_equipment`, `datacenter_hw`, `semi_*` 등 8종 | +1 | strong | 발주처 capex 가 직접 매출 |
+| `hyperscaler_capex` | `epc_engineering`, `hvac_building`, `nuclear_smr` 등 8종 | +1 | moderate | 데이터센터 건설의 2차 수혜 |
+| `defense_outlays` | `defense`, `shipbuilding`, `space_satellite`, `aerospace_commercial` | +1 | strong | 예산 → 계약 → 수주잔고 (CR 구간은 발동 안 함) |
+| `capex_orders_core` | `construction_machinery`, `epc_engineering` 등 11종 | +1 | moderate | 기업 투자 사이클 |
+| `oil_wti` | `oil_gas_ep`, `oil_services`, `shipbuilding` 등 | +1 | strong | 매출 = 유가, 하류는 발주처 예산 |
+| `oil_wti` | `airlines`, `trucking_logistics`, `cruise_lines` 등 | −1 | moderate | 연료비 20~35% |
+| `oil_wti` | `refiners` | −1 | **weak** | 손익은 크랙 스프레드다 — 유가는 대리 변수일 뿐 |
+| `nat_gas` | `oil_gas_ep`, `midstream`, `utility_ipp`, `coal` | +1 | strong | 판가·처리량·도매전력가·급전 대체 |
+| `nat_gas` | `fertilizer_potash`, `commodity_chem`, `aluminum`, `lng` 등 6종 | **−1** | moderate | 같은 드라이버가 여기서는 원가다 |
+| `housing_starts` | `lumber_paper`, `cement_aggregates` 등 8종 | +1 | strong | 착공이 자재 물량을 정의 |
+| `housing_starts` | `reit_residential` | **−1** | moderate | 착공은 임대 시장의 신규 **공급**이다 |
+| `employment` | 재량소비 20종 | +1 | strong | 임금 소득 총액 = 재량 지출 능력 |
+| `employment` | `hospitals_providers`, `managed_care`, `medtech_devices` | +1 | moderate | 미국 의료보험은 고용주 기반 |
+| `cpi_yoy` | 유통·재량 8종 | −1 | moderate | 필수 지출이 실질 가처분소득을 잠식 |
+| `cpi_yoy` | `waste_services`, `fintech_payments`, `advertising` | **+1** | weak | 매출이 명목 금액에 연동 |
+| `ppi_yoy` | `insurance_pc`, `reinsurance` | −1 | moderate | 수리·재건축비가 곧 손해액 |
+| `policy_events` | 정책 수요 11종 (`solar`…`lithium`) | +1 | strong | 수요 자체가 정책으로 만들어진다 |
+| `policy_events` | 규제 리스크 10종 (`coal`…`casinos_gaming`) | **−1** | moderate | 규제가 물량·판가의 상한을 정한다 |
+| `usd_liquidity` · `fed_policy_path` · `m2_growth` | 전 테마 (공통 인자) | +1 / −1 / +1 | moderate·moderate·weak | 위험 선호·할인율 기준선·명목 성분 |
 
 > 마지막 줄이 중요하다. **공통 인자는 테마를 고르는 데 쓸모없다** (전부에 같은 부호).
 > `tailwind` 계산에서 공통 인자는 **횡단면 중앙값을 빼고** 사용한다 — 상대 순풍만 남긴다.
+> 세 드라이버는 테마의 "입력 엣지 최소 2개" 하한 계산에서도 제외된다.
+
+**부호가 갈리는 드라이버가 이 표의 핵심이다.** `nat_gas` 는 생산자에겐 매출이고
+화학·제련엔 원가다. `real_rate_10y` 는 차입자에겐 비용이고 보험사에겐 수익이다.
+`housing_starts` 는 자재엔 수요이고 주거 리츠엔 공급이다. `cpi_yoy` 는 소비자에겐
+구매력 잠식이고 정률 과금 사업엔 매출이다. 이런 분기를 담을 수 없다는 것이
+§5 의 4분면을 점수 계산에 쓰지 않는 이유이며, 회귀 한 벌로 부호를 뽑을 수 없는 이유다.
+
+**집중도 경고**: `real_rate_10y` 하나에 테마-엣지 쌍 54개(전체의 14%)가 걸려 있다.
+공통 인자로 돌리지 않은 이유는 보험 3종에서 부호가 갈리기 때문이지만, 실질금리가
+한 방향으로 움직이면 tailwind 가 광범위하게 같은 방향으로 밀린다는 사실은
+리포트에 표기한다 (`macro-dag-audit.md` §5).
