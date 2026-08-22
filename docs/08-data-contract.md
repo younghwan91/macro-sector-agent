@@ -28,35 +28,38 @@
 
 ## 3. FRED 시리즈
 
-| id | FRED | 확인 상태 |
-|---|---|---|
-| `real_rate_10y` | `DFII10` | 확인됨 |
-| `term_spread` | `T10Y2Y` | 확인됨 |
-| `breakeven_10y` | `T10YIE` | 확인됨 |
-| `dollar_broad` | `DTWEXBGS` | 확인됨 |
-| `hy_spread` | `BAMLH0A0HYM2` | 확인됨 |
-| `ig_spread` | `BAMLC0A0CM` | 확인됨 |
-| `industrial_production` | `INDPRO` | 확인됨 |
-| `new_orders_mfg` | `AMTMNO` | 확인됨 |
-| `capex_orders_core` | `NEWORDER` | 확인됨 |
-| `inventory_sales` | `ISRATIO` | 확인됨 |
-| `housing_starts` | `HOUST` | 확인됨 |
-| `employment` | `PAYEMS`, `UNRATE` | 확인됨 |
-| `cpi_yoy` | `CPIAUCSL` | 확인됨 |
-| `ppi_yoy` | `PPIACO` | 확인됨 |
-| `oil_wti` | `DCOILWTICO` | 확인됨 |
-| `nat_gas` | `DHHNGSP` | 확인됨 |
-| `m2_growth` | `M2SL` | 확인됨 |
-| `usd_liquidity` | `WALCL − WTREGEN − RRPONTSYD` | 파생 — 세 시리즈 주기(주간/주간/일간) 정렬 필요 |
-| `defense_outlays` | `FDEFX` | **M1 에서 실측 확인 필요** |
-| `copper_price` | `PCOPPUSDM` | **M1 에서 실측 확인 필요.** 폴백 ETF `CPER` |
-| `gold_price` | — | FRED 직접 시리즈 불안정 → **ETF `GLD` 프록시 사용** |
-| `china_credit_impulse` | 없음 | 수동/에이전트 월 갱신 |
-| `hyperscaler_capex` | 없음 | **Sharadar SF1 에서 직접 계산** (MSFT·GOOGL·AMZN·META·ORCL `capex` 합, YoY) |
+| id | FRED | 확인 상태 | 발표지연 | 개정 |
+|---|---|---|---|---|
+| `real_rate_10y` | `DFII10` | 확인됨 | M1 실측 | M1 실측 |
+| `term_spread` | `T10Y2Y` | 확인됨 | M1 실측 | M1 실측 |
+| `breakeven_10y` | `T10YIE` | 확인됨 | M1 실측 | M1 실측 |
+| `dollar_broad` | `DTWEXBGS` | 확인됨 | M1 실측 | M1 실측 |
+| `hy_spread` | `BAMLH0A0HYM2` | 확인됨 | M1 실측 | M1 실측 |
+| `ig_spread` | `BAMLC0A0CM` | 확인됨 | M1 실측 | M1 실측 |
+| `industrial_production` | `INDPRO` | 확인됨 | M1 실측 | **큼** — M1 실측 |
+| `new_orders_mfg` | `AMTMNO` | 확인됨 | M1 실측 | M1 실측 |
+| `capex_orders_core` | `NEWORDER` | 확인됨 | M1 실측 | M1 실측 |
+| `inventory_sales` | `ISRATIO` | 확인됨 | M1 실측 | M1 실측 |
+| `housing_starts` | `HOUST` | 확인됨 | M1 실측 | M1 실측 |
+| `employment` | `PAYEMS`, `UNRATE` | 확인됨 | M1 실측 | **큼** — M1 실측 |
+| `cpi_yoy` | `CPIAUCSL` | 확인됨 | M1 실측 | M1 실측 |
+| `ppi_yoy` | `PPIACO` | 확인됨 | M1 실측 | M1 실측 |
+| `oil_wti` | `DCOILWTICO` | 확인됨 | M1 실측 | M1 실측 |
+| `nat_gas` | `DHHNGSP` | 확인됨 | M1 실측 | M1 실측 |
+| `m2_growth` | `M2SL` | 확인됨 | M1 실측 | M1 실측 |
+| `usd_liquidity` | `WALCL − WTREGEN − RRPONTSYD` | 파생 — 세 시리즈 주기(주간/주간/일간) 정렬 필요 | M1 실측 | M1 실측 |
+| `defense_outlays` | `FDEFX` | **M1 에서 실측 확인 필요** | M1 실측 | M1 실측 |
+| `copper_price` | `PCOPPUSDM` | **M1 에서 실측 확인 필요.** 폴백 ETF `CPER` | M1 실측 | M1 실측 |
+| `gold_price` | — | FRED 직접 시리즈 불안정 → **ETF `GLD` 프록시 사용** | M1 실측 | M1 실측 |
+| `china_credit_impulse` | 없음 | 수동/에이전트 월 갱신 | M1 실측 | M1 실측 |
+| `hyperscaler_capex` | 없음 | **Sharadar SF1 에서 직접 계산** (MSFT·GOOGL·AMZN·META·ORCL `capex` 합, YoY). 재무제표라 늦고 정확하다 — 시점은 가이던스가 준다 (`03-macro-dag.md` §2) | **분기말 +4~8주** (실적발표 종료 시점) | M1 실측 |
 
 > "확인됨" 은 시리즈 ID 가 존재한다는 뜻이지, **주기·개정 이력·PIT 특성을 검증했다는 뜻이 아니다.**
-> M1 에서 각 시리즈의 발표 지연(release lag)과 개정 여부를 실측해 이 표에 열을 추가한다.
-> 특히 `INDPRO`·`PAYEMS` 는 개정이 크고, 개정 전 값으로 국면을 판정해야 실시간 판단과 일치한다.
+> 그래서 `발표지연`·`개정` 두 열을 표에 두고 전부 `M1 실측` 으로 채웠다 — 값을 채워 넣는 대신
+> **아직 모른다는 사실을 표 안에서 보이게** 하는 것이 목적이다. 각주로만 두면 표를 읽는 사람이 놓친다.
+> M1 에서 각 시리즈의 발표 지연(release lag)과 개정 여부를 실측해 두 열을 채운다.
+> 이미 아는 것 하나: `INDPRO`·`PAYEMS` 는 개정이 크고, 개정 전 값으로 국면을 판정해야
+> 실시간 판단과 일치한다 (§4 의 "FRED 국면 판정 PIT 권장" 이 여기서 나온다).
 
 ## 4. PIT 정책 — `portfolio-research` 와 갈리는 지점
 
@@ -129,6 +132,7 @@ echo "${SHARADAR_API_KEY:+SHARADAR ok}" "${FRED_API_KEY:+FRED ok}"
 - [ ] 스토어 접속 · 행수·기간이 벌크 원본과 일치 (조용한 절단 없음)
 - [ ] `ACTIONS`·`SFP`·`TICKERS.industry` 적재 완료
 - [ ] FRED 25종 적재 + 발표 지연 실측 표 작성 (§3 의 "확인 필요" 3건 해소)
+- [ ] **§3 표의 `발표지연`·`개정` 두 열에 `M1 실측` 이 하나도 남지 않음** (전 시리즈 실측 완료)
 - [ ] `hyperscaler_capex` 파생 계산 검증 (5사 capex 합이 공개 수치와 일치)
 - [ ] 커버리지 감사(`01-theme-universe.md` §5) 전 항목 통과
 
