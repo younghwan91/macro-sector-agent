@@ -73,12 +73,13 @@ from typing import Any
 from msa import coerce
 from msa.errors import RefusedInput
 from msa.io import load_yaml_mapping
+from msa.thesis import CONFIDENCE_PROVENANCE
 
 log = logging.getLogger(__name__)
 
 PICK_ROLES: tuple[str, ...] = ("anchor", "torque", "royalty", "midstream", "etf")
-# TODO(rf-d): → msa.thesis 의 확신도 출처 enum 으로 교체 (L3 머지 후)
-CONFIDENCE_SOURCES: tuple[str, ...] = ("human", "referee")
+#: 확신도 산출 주체 — 단일 소유자는 `msa.thesis` (값: human | referee).
+CONFIDENCE_SOURCES: tuple[str, ...] = CONFIDENCE_PROVENANCE
 CASE_TYPES: tuple[str, ...] = ("cycle", "death")
 
 PICKS_REQUIRED_COLUMNS: tuple[str, ...] = ("theme", "ticker", "role")
