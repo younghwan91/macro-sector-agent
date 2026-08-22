@@ -50,6 +50,7 @@ import numpy as np
 import pandas as pd
 
 from msa.l1.blocks import Indicators
+from msa.status import Axis1Status
 from msa.themes import BLOCK_WEIGHTS, ThemeSet
 
 BLOCKS = ("A", "B", "C", "D", "E", "F")
@@ -130,10 +131,69 @@ def xs_pct(values: pd.Series, orientation: int) -> pd.Series:
     v = values.astype(float)
     if orientation < 0:
         v = -v
-    n = v.notna().sum()
-    if n == 0:
-        return pd.Series(np.nan, index=values.index)
     return v.rank(method="average", pct=True)
+
+
+def _rowsum_sequential(f: np.ndarray) -> np.ndarray:
+    acc: np.ndarray = f[:, 0].copy()
+    for j in range(1, f.shape[1]):
+        acc = acc + f[:, j]
+    return acc
+
+
+def _rowsum_pairwise(f: np.ndarray) -> np.ndarray:
+    """numpy 연속축 합산 순서 (`pairwise_sum`, 열 ≤ 128): 누산기 8개 → 쌍별 결합 → 나머지 순차."""
+    k = f.shape[1]
+    if k < 8:
+        return _rowsum_sequential(f)
+    r = [f[:, j].copy() for j in range(8)]
+    i = 8
+    while i + 8 <= k:
+        for j in range(8):
+            r[j] = r[j] + f[:, i + j]
+        i += 8
+    res: np.ndarray = ((r[0] + r[1]) + (r[2] + r[3])) + ((r[4] + r[5]) + (r[6] + r[7]))
+    for j in range(i, k):
+        res = res + f[:, j]
+    return res
+
+
+def _row_mean_as_per_date(df: pd.DataFrame) -> pd.Series:
+    """행 평균 (NaN 제외) — 월말별 `DataFrame.mean(axis=1)` 과 **비트 단위로 같은** 값.
+
+    `build_scoreboard` 는 월말마다 (테마 × 지표) 표의 `mean(axis=1)` 을 구한다. pandas 는 그 표에
+    NaN 이 하나라도 있으면 C-순서 사본을 만들어 numpy 가 연속축 쌍별 합산을 쓰고, 없으면 F-순서
+    원본을 순차 합산한다 — 지표 8개 이상인 블록(C)에서 두 순서는 마지막 비트가 다르고, 그 1 ulp 가
+    블록 점수 동률을 깨 횡단면 순위를 바꾼다. 그래서 월말(인덱스 0 수준)마다 NaN 유무로 같은
+    순서를 고른다. 수학은 단순 평균이며 바뀐 것은 없다."""
+    vals = df.to_numpy(dtype=float)
+    if vals.shape[1] == 0 or vals.shape[0] == 0:
+        return pd.Series(np.nan, index=df.index)
+    mask = np.isnan(vals)
+    filled = np.where(mask, 0.0, vals)
+    cnt = (~mask).sum(axis=1)
+    dates = df.index.get_level_values(0)
+    nan_in_date = pd.Series(mask.any(axis=1), index=dates).groupby(level=0).transform("any")
+    use_pw = nan_in_date.to_numpy(dtype=bool)
+    total = np.where(use_pw, _rowsum_pairwise(filled), _rowsum_sequential(filled))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        mean = np.where(cnt > 0, total / np.where(cnt > 0, cnt, 1), np.nan)
+    return pd.Series(mean, index=df.index)
+
+
+def _weights(classes: pd.Series) -> pd.DataFrame:
+    """테마 → 블록 가중치 행렬 (index 는 `classes` 의 index, 열 A..F) — `BLOCK_WEIGHTS` 조회."""
+    return pd.DataFrame(
+        {b: classes.map(lambda c, b=b: BLOCK_WEIGHTS[c][b]) for b in BLOCKS}, index=classes.index
+    )
+
+
+def _weighted_score(BP: pd.DataFrame, W: pd.DataFrame) -> tuple[pd.Series, pd.DataFrame]:
+    """`score = Σ w × block_pct` — 블록이 빠지면 남은 가중치로 재정규화. 반환 (score, avail)."""
+    avail = BP.notna()
+    w_sum = W.where(avail).sum(axis=1)
+    score = (BP.fillna(0.0) * W).sum(axis=1) / w_sum.replace(0.0, np.nan)
+    return score, avail
 
 
 @dataclass(frozen=True)
@@ -204,12 +264,9 @@ def build_scoreboard(
     block_pct = {b: xs_pct(s, +1) for b, s in block_scores.items()}
 
     cls = pd.Series({t: by_id[t].cycle_class for t in tids})
-    W = pd.DataFrame({b: cls.map(lambda c, b=b: BLOCK_WEIGHTS[c][b]) for b in BLOCKS})
+    W = _weights(cls)
     BP = pd.DataFrame(block_pct)[list(BLOCKS)]
-    avail = BP.notna()
-    w_eff = W.where(avail)
-    w_sum = w_eff.sum(axis=1)
-    score = (BP.fillna(0.0) * W).sum(axis=1) / w_sum.replace(0.0, np.nan)
+    score, avail = _weighted_score(BP, W)
 
     tab = pd.DataFrame(index=pd.Index(tids, name="theme"))
     tab["cycle_class"] = cls
@@ -219,10 +276,7 @@ def build_scoreboard(
         tab[f"{b}_pct"] = BP[b]
         tab[f"{b}_n_ind"] = n_ind[b]
     tab["blocks_missing"] = [",".join(b for b in BLOCKS if not avail.loc[t, b]) for t in tids]
-    if n_live is not None:
-        tab["n_live"] = n_live.reindex(tids)
-    else:
-        tab["n_live"] = np.nan
+    tab["n_live"] = n_live.reindex(tids) if n_live is not None else np.nan
     tab["min_constituents"] = [by_id[t].min_constituents for t in tids]
     tab["small_sample"] = tab["n_live"].notna() & (tab["n_live"] < tab["min_constituents"])
     tab["secular"] = cls.str.startswith("secular")
@@ -240,11 +294,9 @@ def build_scoreboard(
     tab["cpi_missing"] = (
         row["cpi_missing"].fillna(False).astype(bool) if "cpi_missing" in row else False
     )
-    tab["flags"] = [_flags(tab.loc[t]) for t in tids]
+    tab["flags"] = tab.apply(render_flags, axis=1) if len(tab) else ""
     tab = tab.sort_values("score", ascending=False, na_position="last")
-    tab["rank"] = np.where(tab["score"].notna(), np.arange(1, len(tab) + 1), np.nan)
-    cols = ["rank"] + [c for c in tab.columns if c != "rank"]
-    tab = tab[cols]
+    tab.insert(0, "rank", np.where(tab["score"].notna(), np.arange(1, len(tab) + 1), np.nan))
     meta = {
         "date": str(pd.Timestamp(actual_date).date()),
         "requested": str(pd.Timestamp(date).date()),
@@ -255,7 +307,11 @@ def build_scoreboard(
     )
 
 
-def _flags(r: pd.Series) -> str:
+_AXIS1_OK = {Axis1Status.OK_EXTERNAL, Axis1Status.OK_FALLBACK}
+
+
+def render_flags(r: pd.Series) -> str:
+    """스코어보드 한 행의 구조화 열 → `flags` 문자열 (CSV·리포트 표시 전용 파생값)."""
     f: list[str] = []
     if r["small_sample"]:
         f.append(f"n={int(r['n_live'])} 소표본")
@@ -264,9 +320,9 @@ def _flags(r: pd.Series) -> str:
     if pd.notna(r["breadth_lead"]) and r["breadth_lead"] > 0:
         f.append(f"breadth_lead={int(r['breadth_lead'])}m")
     st = r["axis1_status"]
-    if isinstance(st, str) and st != "not_declared":
+    if isinstance(st, str) and st != Axis1Status.NOT_DECLARED:
         v = r["verdict_post_ss"]
-        f.append(f"axis1:{st}" + (f"/{v}" if isinstance(v, str) and st.startswith("ok") else ""))
+        f.append(f"axis1:{st}" + (f"/{v}" if isinstance(v, str) and st in _AXIS1_OK else ""))
         if r["axis1_contested"] == 1.0:
             f.append("axis1_contested")
     if r["short_hist"]:
@@ -281,14 +337,33 @@ def _flags(r: pd.Series) -> str:
 def scoreboard_history(ind: Indicators, themes: ThemeSet) -> pd.DataFrame:
     """전 월말의 스코어보드를 쌓은 긴 표 — M3.5 백테스트 입력.
 
-    열: score, A..F, A_pct..F_pct, cycle_class.
+    열: score, cycle_class, A..F, A_pct..F_pct. 월말마다 `build_scoreboard` 를 부른 것과 같은 값을
+    한 번의 벡터 연산으로 만든다 (횡단면 백분위 = 월말별 `groupby(level="date").rank(pct=True)`).
     """
-    dates = ind.monthly.index.get_level_values("date").unique().sort_values()
-    frames = []
-    for d in dates:
-        sb = build_scoreboard(ind, themes, d)
-        t = sb.table[["score", "cycle_class", *BLOCKS, *[f"{b}_pct" for b in BLOCKS]]].copy()
-        t["date"] = d
-        frames.append(t.reset_index())
-    out = pd.concat(frames, ignore_index=True).set_index(["date", "theme"]).sort_index()
-    return out
+    by_id = themes.by_id()
+    themes_idx = ind.monthly.index.get_level_values("theme")
+    m = ind.monthly.loc[themes_idx.isin(list(by_id))]
+
+    block_scores: dict[str, pd.Series] = {}
+    for b, inds in SCORED.items():
+        cols = [i for i in inds if i in m.columns]
+        if not cols:
+            block_scores[b] = pd.Series(np.nan, index=m.index)
+            continue
+        signed = m[cols].astype(float) * pd.Series({i: ORIENTATION[i] for i in cols})
+        pct = signed.groupby(level="date", sort=False).rank(method="average", pct=True)
+        block_scores[b] = _row_mean_as_per_date(pct)
+    bs = pd.DataFrame(block_scores)[list(BLOCKS)]
+    BP = bs.groupby(level="date", sort=False).rank(method="average", pct=True)
+    cls = pd.Series(
+        [by_id[t].cycle_class for t in m.index.get_level_values("theme")], index=m.index
+    )
+    score, _avail = _weighted_score(BP, _weights(cls))
+
+    out = pd.DataFrame({"score": score, "cycle_class": cls}, index=m.index)
+    for b in BLOCKS:
+        out[b] = bs[b]
+    for b in BLOCKS:
+        out[f"{b}_pct"] = BP[b]
+    out.index.names = ["date", "theme"]
+    return out.sort_index()
