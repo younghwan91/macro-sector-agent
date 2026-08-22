@@ -53,6 +53,9 @@
 | `gold_price` | — | FRED 직접 시리즈 불안정 → **ETF `GLD` 프록시 사용** | M1 실측 | M1 실측 |
 | `china_credit_impulse` | 없음 | 수동/에이전트 월 갱신 | M1 실측 | M1 실측 |
 | `hyperscaler_capex` | 없음 | **Sharadar SF1 에서 직접 계산** (MSFT·GOOGL·AMZN·META·ORCL `capex` 합, YoY). 재무제표라 늦고 정확하다 — 시점은 가이던스가 준다 (`03-macro-dag.md` §2) | **분기말 +4~8주** (실적발표 종료 시점) | M1 실측 |
+| `fed_policy_path` | `DFEDTARU` | 확인됨 — 다만 **선물 곡선은 FRED 에 없다**. 정책 경로의 시장 기대는 외부 소스 또는 에이전트 | M1 실측 | M1 실측 |
+| `china_property` | 없음 | 수동/에이전트 월 갱신 (착공·판매). `china_credit_impulse` 와 같은 경로 | 해당 없음 | 해당 없음 |
+| `policy_events` | 없음 | 에이전트 이벤트 캘린더 (IRA·관세·수출통제·원전 승인). 시계열이 아니라 **날짜 목록**이라 `state_rule` 이 다른 드라이버와 다르다 | 해당 없음 | 해당 없음 |
 
 > "확인됨" 은 시리즈 ID 가 존재한다는 뜻이지, **주기·개정 이력·PIT 특성을 검증했다는 뜻이 아니다.**
 > 그래서 `발표지연`·`개정` 두 열을 표에 두고 전부 `M1 실측` 으로 채웠다 — 값을 채워 넣는 대신
@@ -120,7 +123,7 @@ echo "${SHARADAR_API_KEY:+SHARADAR ok}" "${FRED_API_KEY:+FRED ok}"
 | `ACTIONS` 테이블 | 자본 사이클 E 블록의 `exit_count`/`entry_count` | 스토어에 테이블 존재 여부 |
 | `SFP` (ETF 가격) | 테마 ETF 프록시 ~60종 | `SPY` 외 ETF 가 있는지 |
 | `TICKERS.industry` 전체 | 테마 버킷 매칭 | `select count(distinct industry) from tickers` |
-| FRED 시리즈 ~25종 | L2 | 신규 |
+| FRED 시리즈 24종 | L2 | 신규 (§3) |
 | 1997년 이전 | 사이클 2바퀴를 보려면 부족할 수 있음 | Sharadar SEP 는 1997-12-31 시작 — **한계로 수용**하고 문서화 |
 
 > **마지막 항목이 이 저장소의 근본적 제약이다.** SEP 가 1998년부터라
@@ -131,7 +134,9 @@ echo "${SHARADAR_API_KEY:+SHARADAR ok}" "${FRED_API_KEY:+FRED ok}"
 ### 6.3 M1 완료 판정
 - [ ] 스토어 접속 · 행수·기간이 벌크 원본과 일치 (조용한 절단 없음)
 - [ ] `ACTIONS`·`SFP`·`TICKERS.industry` 적재 완료
-- [ ] FRED 25종 적재 + 발표 지연 실측 표 작성 (§3 의 "확인 필요" 3건 해소)
+- [ ] FRED 시리즈 24종 적재 + 발표 지연 실측 표 작성 (§3 의 "확인 필요" 3건 해소)
+      — 24 = §3 표의 FRED 직접 시리즈 20 + `usd_liquidity` 파생 3(`WALCL`·`WTREGEN`·`RRPONTSYD`) + `DFEDTARU`.
+      드라이버 26개 중 나머지 2개(`china_property`·`policy_events`)와 `china_credit_impulse`·`gold_price`·`hyperscaler_capex` 는 FRED 밖이다
 - [ ] **§3 표의 `발표지연`·`개정` 두 열에 `M1 실측` 이 하나도 남지 않음** (전 시리즈 실측 완료)
 - [ ] `hyperscaler_capex` 파생 계산 검증 (5사 capex 합이 공개 수치와 일치)
 - [ ] 커버리지 감사(`01-theme-universe.md` §5) 전 항목 통과
