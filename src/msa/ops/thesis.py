@@ -14,27 +14,33 @@ from typing import Any
 
 from msa.errors import RefusedInput
 
-# TODO(rf-d): 아래 enum 들은 `msa.thesis` 가 단일 소유자가 되면 거기서 import 로 바꾼다 (값은 같다).
-#: `gate_result.path` / `rejections.yaml` 의 `path` 열 — 두 곳이 같은 값을 쓴다 (docs/09 §4).
-REJECTION_PATHS: tuple[str, ...] = (
-    "hard_gate",
-    "conf_floor",
-    "secular_risk",
-    "rank_cutoff",
-    "human",
+# enum 의 단일 소유자는 `msa.thesis` 다 — 기존 importer(`ops.journal`·`ops.state_files`·테스트)를
+# 위해 같은 이름으로 재-export 한다.
+from msa.thesis import (
+    AXES,
+    AXIS_VERDICTS,
+    CONFIDENCE_PROVENANCE,
+    INVALIDATION_ACTIONS,
+    INVALIDATION_STATUS,
+    REJECTION_PATHS,
+    TRIGGER_STATUS,
 )
-AXES: tuple[str, ...] = (
-    "unit_demand",
-    "capital_cycle",
-    "substitution",
-    "cost_curve",
-    "terminal_risk",
-)
-AXIS_VERDICTS: tuple[str, ...] = ("cycle", "warning", "death", "contested", "not_applicable")
-TRIGGER_STATUS: tuple[str, ...] = ("pending", "met", "missed")
-INVALIDATION_STATUS: tuple[str, ...] = ("pending", "fired")
-INVALIDATION_ACTIONS: tuple[str, ...] = ("exit", "halve", "freeze_ladder")
-CONFIDENCE_PROVENANCE: tuple[str, ...] = ("human", "referee")
+
+__all__ = [
+    "AXES",
+    "AXIS_VERDICTS",
+    "CONFIDENCE_PROVENANCE",
+    "INVALIDATION_ACTIONS",
+    "INVALIDATION_STATUS",
+    "REJECTION_PATHS",
+    "TRIGGER_STATUS",
+    "FieldChange",
+    "ThesisInvalid",
+    "diff_thesis",
+    "flatten",
+    "render_diff",
+    "validate_thesis",
+]
 
 _REQUIRED_TOP = (
     "theme_id",
@@ -118,7 +124,8 @@ def validate_thesis(t: dict[str, Any]) -> None:
 
 # ---------------------------------------------------------------------------
 # 필드 단위 diff — 논지 표류 추적 (docs/05 §6, docs/09 §2)
-# TODO(rf-d): `msa.thesis.thesis_diff` 가 생기면 flatten/diff/render 를 그쪽 재-export 로 바꾼다.
+# `msa.thesis.thesis_diff` 는 L3 리포트용 구조화 diff(필드 7개 + 축 판정) 이고, 여기 것은 저널
+# 스냅샷 두 개를 점 경로로 평탄화해 전부 대조하는 diff 다 — 용도가 달라 합치지 않는다.
 # ---------------------------------------------------------------------------
 
 

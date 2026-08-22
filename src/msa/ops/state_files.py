@@ -27,7 +27,7 @@ import yaml
 from msa.coerce import opt_date, require
 from msa.errors import Immutable, RefusedInput
 from msa.io import dump_yaml, to_plain
-from msa.ops.thesis import REJECTION_PATHS
+from msa.thesis import REJECTION_PATHS
 
 # 열거형은 `Literal` 타입 한 곳에만 적고, 런타임 검사는 `get_args` 로 같은 값을 본다.
 Role = Literal["anchor", "torque"]

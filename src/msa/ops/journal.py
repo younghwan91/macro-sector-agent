@@ -29,21 +29,20 @@ from msa.dates import parse_date
 from msa.errors import Immutable, RefusedInput
 from msa.io import to_plain, yaml_text
 from msa.ops.state_files import ROLES, TP_LEVELS
-from msa.ops.thesis import (
+from msa.ops.thesis import ThesisInvalid, diff_thesis, render_diff, validate_thesis
+from msa.thesis import (
     AXES,
     AXIS_VERDICTS,
     CONFIDENCE_PROVENANCE,
     REJECTION_PATHS,
-    ThesisInvalid,
-    diff_thesis,
-    render_diff,
-    validate_thesis,
+    THESIS_SUFFIX,
+    read_thesis_yaml,
 )
 
 BLOCKS = ("A", "B", "C", "D", "E", "F")
 ENTRY_TYPES = ("entry", "check", "add", "tp", "exit", "reject")
 # 열거형은 `Literal` 에 한 번 적고 런타임 검사는 `get_args` 로 같은 값을 본다 (역할·TP 단계는
-# `state_files` 의 것을 쓴다). TODO(rf-d): `msa.thesis` 가 생기면 그쪽 enum 으로 바꾼다.
+# `state_files`, thesis 쪽 enum 은 `msa.thesis` 의 것을 쓴다).
 ExitVia = Literal["tier1", "tier2", "time_stop", "tp_complete", "human"]
 CheckCadence = Literal["weekly", "monthly", "daily"]
 LadderStepNo = Literal[2, 3]
@@ -648,14 +647,16 @@ class Written:
 
 def list_snapshots(jdir: Path, theme: str) -> list[Path]:
     """테마의 thesis 스냅샷을 날짜 순으로 (파일명 앞의 날짜로 정렬)."""
-    return sorted(jdir.glob(f"*-{_theme_tag(theme)}-*.thesis.yaml"))
+    return sorted(jdir.glob(f"*-{_theme_tag(theme)}-*{THESIS_SUFFIX}"))
 
 
 def load_snapshot(path: Path) -> dict[str, Any]:
-    d = _yaml_load(path.read_text(encoding="utf-8"))
-    if not isinstance(d, dict):
-        raise ThesisInvalid(f"{path}: thesis 스냅샷이 dict 가 아니다")
-    return d
+    """저널 thesis 스냅샷 — `msa.thesis.read_thesis_yaml` 의 `ValueError` 를 `ThesisInvalid` 로
+    (CLI 가 MsaError 로 종료 코드 1 을 내도록)."""
+    try:
+        return read_thesis_yaml(path)
+    except ValueError as e:
+        raise ThesisInvalid(f"{path}: thesis 스냅샷이 dict 가 아니다") from e
 
 
 def write_record(rec: JournalRecord, jdir: Path, *, suffix: str = "") -> Written:
@@ -673,7 +674,7 @@ def write_record(rec: JournalRecord, jdir: Path, *, suffix: str = "") -> Written
     snap_path: Path | None = None
     diff_text: str | None = None
     if thesis_obj is not None:
-        snap_path = md_path.with_suffix("").with_suffix(".thesis.yaml")
+        snap_path = md_path.with_suffix("").with_suffix(THESIS_SUFFIX)
         if snap_path.exists():
             raise JournalImmutable(f"{snap_path.name} 이 이미 있다 (append-only).")
         prev = list_snapshots(jdir, rec.theme)
