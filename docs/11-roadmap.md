@@ -140,10 +140,25 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
 
 ## M5 · L4 종목 선정
 **완료 기준**
-- [ ] S·T·M 3축 + 하드 제외 필터
-- [ ] `fin-checkup` 레드플래그 이식 동작
-- [ ] 앵커/토크 바벨 분류
-- [ ] **사후 대조**: 2026-08 시점 `rare_earth`·`silver_miners` 에서 MP·AG 가 토크 상위에 오는가
+- [x] S·T·M 3축 + 하드 제외 필터 — `src/msa/l4/` (`features`·`axes`·`barbell`·`picks`), `msa picks`.
+      **입력이 없어 적용하지 못한 것**: `going_concern`(감사의견 — 스토어에 없음),
+      `maturity_wall_24m`(SF1 에 만기 스케줄 없음 → `debtc`/시총 12개월 대용). 둘 다 리포트와
+      `meta.json` 에 매번 적힌다 (`06-stock-selection.md` §8)
+- [x] `fin-checkup` 레드플래그 이식 동작 — `src/msa/vendor/redflags.py`. 4종 계산
+      (완전자본잠식·3년 연속 영업손실·흑자인데 영업현금 유출·3년 연속 이자보상 < 1),
+      `partial_capital_impairment` 는 SF1 에 자본금이 없어 **계산 불가**로 표기
+- [x] 앵커/토크 바벨 분류 — `barbell.classify`. 앵커 수 비중을 리포트에 명시
+- [x] **사후 대조** 실행 — `docs/picks-m5-check.md`. **결과는 그대로 적었고 값을 바꾸지 않았다**:
+      MP 는 `rare_earth` 토크 축 **T̃ 1.00 (1위)** — 다만 T 를 계산할 수 있는 구성원이 2개(MP·USAR)뿐이고,
+      바벨 규칙("S̃ 상위에서 T̃ 최고" 를 앵커가 먼저 집는다)상 **앵커**로 분류된다.
+      AG 는 `silver_miners` 토크 축 **T̃ 1.00 (1위)** — 역시 계산 가능 2개(AG·SVM), 앵커로 분류.
+      2026-08 시점 AG 의 `margin_headroom` 은 −22pp (마진이 이미 테마 P75 위) — 토크를 끌어올린 것은
+      `price_beta_hist` 1.21·opleverage 다. SBSW 는 SF1 미수록(20-F)이라 **판정 불가**, ALM 은
+      `rare_earth` 에서 S̃ 1.00 이지만 분기 6개뿐이라 T 계산 불가. 표본이 2개인 "1위" 는 검정이
+      아니다 — **M3.5 와 같은 종류의 관문이며, 맞지 않는 것을 맞게 고치지 않았다** (`CLAUDE.md` §1)
+- [ ] 로열티/스트리밍·미드스트림 옵션 그룹 태깅 (§5) — Sharadar 라벨이 없어 미구현
+- [ ] L4 스코어 백테스트 (축별 rank-IC) — `10-validation.md` §2 경로. 특성 함수는 `asof` 만
+      바꾸면 PIT 로 돈다 (`features.build_features`)
 
 ## M6 · L5 포트 구성기
 > **구현 상태 (2026-08-23)** — 최적화기·사다리·계획서 절반은 `src/msa/l5/` · `msa portfolio` 로 서 있다

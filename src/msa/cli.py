@@ -1,8 +1,8 @@
 """`msa` CLI.
 
-도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3) · `portfolio`(M6) ·
-`research`(M7).
-나머지(`macro`·`picks`·`check`)는 `--help` 에는 나오되
+도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3) · `picks`(M5) ·
+`portfolio`(M6) · `research`(M7).
+나머지(`macro`·`check`)는 `--help` 에는 나오되
 호출하면 `NotImplementedError` 를 던진다 — 있는 척하는 스텁이 조용히 빈 결과를
 내는 것보다 낫다 (`CLAUDE.md` §2).
 """
@@ -22,7 +22,7 @@ app = typer.Typer(
     no_args_is_help=True,
     help=(
         "macro-sector-agent — 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 "
-        "(M1~M3: 데이터·L1 스캐너 · M7: L3 리서치)"
+        "(M1~M3: 데이터·L1 스캐너 · M5~M7: L4 종목 선정·L5 포트·L3 리서치)"
     ),
 )
 data_app = typer.Typer(no_args_is_help=True, help="L0 데이터 — 스토어 상태와 커버리지 감사")
@@ -323,9 +323,34 @@ def research(
 
 
 @app.command()
-def picks(theme: str) -> None:
-    """L4 종목 랭킹. (미구현 — M6)"""
-    _todo("picks", "docs/06-stock-selection.md")
+def picks(
+    theme: str,
+    asof: str = typer.Option("", help="기준일 YYYY-MM-DD. 기본 = 스토어 최종일"),
+    top: int = typer.Option(4, help="바벨 종목 수 (앵커 max(1, top//2) + 토크)"),
+    no_write: bool = typer.Option(False, "--no-write", help="state/picks/ 에 저장하지 않는다"),
+    no_physical: bool = typer.Option(
+        False,
+        "--no-physical",
+        help="상품가 탄력성(price_beta_hist) 계산 생략 — ETF 벌크 스캔 ~12초",
+    ),
+    no_fetch: bool = typer.Option(False, "--no-fetch", help="FRED 를 받지 않는다 (캐시만)"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """L4 종목 선정 — 3축(S·T·M)·하드 필터·바벨 (docs/06). 산출물: state/picks/<date>/<theme>/"""
+    from msa.l4.picks import run_picks
+
+    _setup_logging(verbose)
+    res = run_picks(
+        theme,
+        asof=asof or None,
+        top=top,
+        write=not no_write,
+        allow_fetch=not no_fetch,
+        with_physical=not no_physical,
+    )
+    typer.echo(res.report)
+    if res.out_dir:
+        typer.echo(f"저장: {res.out_dir}")
 
 
 @app.command()

@@ -23,7 +23,7 @@ def test_stub_commands_appear_in_help(cmd: str) -> None:
 
 @pytest.mark.parametrize(
     ("argv",),
-    [(["macro"],), (["check"],), (["picks", "solar"],)],
+    [(["macro"],), (["check"],)],
 )
 def test_stub_commands_raise_rather_than_return_empty(argv: list[str]) -> None:
     """빈 결과를 내는 스텁은 조용한 절단의 씨앗이다 — 명확히 던진다."""
@@ -48,3 +48,8 @@ def test_portfolio_is_not_a_stub() -> None:
     r = runner.invoke(app, ["portfolio", "--inputs", "/nonexistent/dir", "--no-write"])
     assert r.exit_code != 0
     assert not isinstance(r.exception, NotImplementedError)
+def test_picks_registered_with_options() -> None:
+    r = runner.invoke(app, ["picks", "--help"])
+    assert r.exit_code == 0
+    for opt in ("--asof", "--top", "--no-write", "--no-physical"):
+        assert opt in r.stdout
