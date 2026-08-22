@@ -39,14 +39,24 @@
   exclude_tickers: []                  # 큐레이션 제외 — 이유 필수
   etf_proxy: SIL                       # 1차 지수 프록시
   etf_proxy_alt: [SILJ, SLVP]          # 검증용
-  physical_ref: SILVER                 # 실물/원자재 가격 참조 (있으면)
+  physical_ref: {source: etf, symbol: SLV}   # 실물/원자재 참조. 객체 또는 null (아래 규정)
   min_constituents: 5                  # 이하면 중앙값 통계 신뢰 불가 → 경고 표시
   notes: >
     은은 통화 수요와 산업 수요(태양광 페이스트)가 겹친다.
     금광과 상관 0.8 이상이므로 L5 유효 베팅 수 계산에서 같은 클러스터로 묶인다.
 ```
 
-## 3. 버킷 목록 초안 (85개)
+**`physical_ref` 는 스칼라가 아니라 객체다.** 형식은 `{source, symbol}` 이며 `source` 의
+허용값은 `etf`(예: `SLV`) · `fred`(예: `PCOALAUUSDM`) · `manual`(예: `UXC_SPOT` — 수동 갱신)
+셋이다. 시리즈 가용성이 불확실하면 `verify: true` 를 덧붙여 M2 실측 확인 대상으로 표시한다
+(`specs/themes.example.yaml` 참조). 티커만 적는 스칼라 표기는 어느 소스에서 받는지를
+잃어버리므로 쓰지 않는다.
+
+> **`physical_ref: null` 은 "축 1 을 쓸 수 없다"는 뜻이다.** 이 필드가 `04-value-trap.md`
+> 축 1 의 적용 가능 여부를 결정하는 스위치이며, `null` 이면 `axis1_available = false` 로
+> 내려가 판별의 중심이 축 3(LLM 판정)으로 넘어간다. 그래서 값을 비워 두는 것 자체가 선언이다.
+
+## 3. 버킷 목록 초안 (109개)
 
 > 이 목록은 **출발점**이지 완성이 아니다. 구현 M2 에서 Sharadar `industry` 실측 분포와
 > 대조해 확정한다. `cycle_class` 는 §4, ETF 는 대표 1개만 표기.
@@ -74,11 +84,13 @@
 `industrial_gas` 산업가스 (secular_growth) · `coatings_adhesives` 도료·접착 ·
 `cement_aggregates` 시멘트·골재 (capex_program, PAVE)
 
-### Energy — 에너지 (8)
+### Energy — 에너지 (7)
 `oil_gas_ep` 셰일 E&P (commodity_supply, XOP) · `oil_services` 유전서비스 (OIH) ·
 `offshore_drilling` 오프쇼어 드릴링 (**secular_risk**) · `refiners` 정유 (CRAK) ·
 `midstream` 미드스트림 (AMLP) · `lng` LNG (자체) ·
-`intl_majors` 국제 메이저 (XLE) · `coal_met` → Materials 로 통합
+`intl_majors` 국제 메이저 (XLE)
+
+> 제철용 석탄(`coal_met`)은 별도 버킷이 아니다 — Materials 의 `coal`(연료탄·제철용) 로 통합됐고, 개수에서도 뺐다.
 
 ### Energy Transition — 전환 (6)
 `solar` 태양광 (policy_program, TAN) · `wind` 풍력 (FAN) ·
@@ -150,7 +162,11 @@
 `utility_regulated` 규제전력 (credit_rate) · `utility_ipp` IPP·발전 (**capex_program** — AI 전력) ·
 `water_utility` 수도 · `gas_utility` 가스유틸
 
-> 합계 ≈ 85. `secular_risk` 표기(6개)는 **기본값이 사양 의심**이라는 뜻이며,
+> 합계 109. 초안 작성 시 이 자리에 합계가 85 로 잘못 적혀 있었다 — 실제 항목 수는 109 다.
+> **109 는 초안의 항목 수이지 확정 버킷 수가 아니다.** 위에 적었듯 M2 에서 Sharadar `industry`
+> 실측 분포와 대조해 확정하며, 그 과정의 병합·분할로 수는 바뀐다.
+>
+> `secular_risk` 표기(6개)는 **기본값이 사양 의심**이라는 뜻이며,
 > `04-value-trap.md` 의 하드 게이트를 통과해야만 후보가 된다. 사양 낙인이 아니라
 > **입증 책임의 전환**이다 — 담배와 케이블은 실제로 훌륭한 현금흐름 자산이었던 시기가 있다.
 
