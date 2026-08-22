@@ -73,12 +73,13 @@ from typing import Any
 from msa import coerce
 from msa.errors import RefusedInput
 from msa.io import load_yaml_mapping
+from msa.thesis import CONFIDENCE_PROVENANCE, read_thesis_yaml
 
 log = logging.getLogger(__name__)
 
 PICK_ROLES: tuple[str, ...] = ("anchor", "torque", "royalty", "midstream", "etf")
-# TODO(rf-d): → msa.thesis 의 확신도 출처 enum 으로 교체 (L3 머지 후)
-CONFIDENCE_SOURCES: tuple[str, ...] = ("human", "referee")
+#: 확신도를 누가 만들었는가 — L3 스키마의 enum 과 같은 값 (`msa.thesis`).
+CONFIDENCE_SOURCES: tuple[str, ...] = CONFIDENCE_PROVENANCE
 CASE_TYPES: tuple[str, ...] = ("cycle", "death")
 
 PICKS_REQUIRED_COLUMNS: tuple[str, ...] = ("theme", "ticker", "role")
@@ -309,7 +310,11 @@ def load_theses(dir_path: Path | str) -> dict[str, ThesisInput]:
     if not files:
         raise InputError(f"{d}: thesis 파일이 0개다")
     for f in files:
-        t = parse_thesis(load_yaml_mapping(f, err=InputError), where=str(f))
+        try:
+            raw = read_thesis_yaml(f)
+        except ValueError as e:
+            raise InputError(str(e)) from None
+        t = parse_thesis(raw, where=str(f))
         if t.theme in out:
             raise InputError(
                 f"{f}: 테마 {t.theme} 의 thesis 가 둘이다 ({out[t.theme].source_path})"
