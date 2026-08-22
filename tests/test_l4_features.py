@@ -240,14 +240,13 @@ def _px(ticker: str, n: int = 300, *, trend: float = 0.001, seed: int = 0) -> pd
     )
 
 
-def test_price_features_shapes_and_rs() -> None:
+def test_price_features_shapes() -> None:
     up = _px("UP", trend=0.004)
     down = _px("DN", trend=-0.003, seed=1)
     short = _px("SH", n=100)
     pf = F.price_features(pd.concat([up, down, short]), pd.Timestamp("2026-08-14"))
     assert set(pf.index) == {"UP", "DN", "SH"}
-    assert pf.loc["UP", "rs_raw"] > pf.loc["DN", "rs_raw"]
-    assert np.isnan(pf.loc["SH", "rs_raw"])
+    assert list(pf.columns) == list(F.PRICE_FEATURE_COLUMNS)
     assert pf.loc["SH", "stage2"] is None
     assert pf.loc["UP", "stage2"] in (True, False)
     assert pf.loc["UP", "adv20_usd"] == pytest.approx(
@@ -259,11 +258,101 @@ def test_price_features_shapes_and_rs() -> None:
     assert pf2.loc["UP", "last_price_date"] <= pd.Timestamp("2026-06-30").date()
 
 
-def test_rs_rating_percentile_range() -> None:
+def _ref_price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
+    """벡터화 전의 종목별 루프 구현 (참조). `price_features` 가 이것과 같은 값을 내야 한다."""
+    p = px.copy()
+    p["date"] = pd.to_datetime(p["date"])
+    p = p.loc[p["date"] <= pd.Timestamp(asof)].sort_values(["ticker", "date"])
+    rows: dict[str, dict[str, object]] = {}
+    for tk, g in p.groupby("ticker", sort=True):
+        g = g.tail(252)
+        c = g["close"].astype(float).reset_index(drop=True)
+        cu = g["closeunadj"].astype(float).reset_index(drop=True)
+        v = g["volume"].astype(float).reset_index(drop=True)
+        n = len(c)
+        last_mcap = g["mcap"].dropna()
+        r: dict[str, object] = {
+            "price": float(cu.iloc[-1]) if n else np.nan,
+            "mcap": float(last_mcap.iloc[-1]) if len(last_mcap) else np.nan,
+            "last_price_date": g["date"].iloc[-1].date() if n else None,
+            "adv20_usd": float((cu * v).tail(20).mean()) if n >= 5 else np.nan,
+        }
+        sma50 = c.tail(50).mean() if n >= 50 else np.nan
+        sma150 = c.tail(150).mean() if n >= 150 else np.nan
+        sma200 = c.tail(200).mean() if n >= 200 else np.nan
+        sma200_prev = c.iloc[:-21].tail(200).mean() if n >= 221 else np.nan
+        lo = c.min() if n >= 120 else np.nan
+        hi = c.max() if n >= 120 else np.nan
+        last = float(c.iloc[-1]) if n else np.nan
+        r["from_52w_low"] = last / lo - 1 if n >= 120 else np.nan
+        r["from_52w_high"] = last / hi - 1 if n >= 120 else np.nan
+        r["above_50d"] = bool(last > sma50) if n >= 50 else None
+        r["sma200_up_1m"] = bool(sma200 > sma200_prev) if n >= 221 else None
+        r["stage2"] = (
+            bool(
+                last > sma150 > sma200
+                and sma200 > sma200_prev
+                and r["from_52w_low"] >= 0.30  # type: ignore[operator]
+                and r["from_52w_high"] >= -0.25  # type: ignore[operator]
+            )
+            if n >= 221
+            else None
+        )
+        r["rvol_expansion"] = (
+            float(v.tail(20).mean() / v.tail(50).mean())
+            if n >= 50 and v.tail(50).mean() > 0
+            else np.nan
+        )
+        r["vcp_base"] = F.vcp_base(c, v) if n >= 60 else None
+        rows[str(tk)] = r
+    return pd.DataFrame.from_dict(rows, orient="index")
+
+
+def test_price_features_vectorized_equals_reference() -> None:
+    """길이 혼합(300·221·120·60·30·3) · NaN 종가/거래량/시총 · 거래량 0 · 기준일 이후 행."""
+    rng = np.random.default_rng(3)
+    parts = []
+    for i, n in enumerate((320, 300, 221, 220, 120, 119, 60, 30, 3)):
+        df = _px(f"T{i}", n=n, trend=rng.normal(0, 0.003), seed=10 + i)
+        if i == 0:  # NaN 종가·시총이 섞여도 같은 값이어야 한다
+            df.loc[df.index[::37], "close"] = np.nan
+            df.loc[df.index[-5:], "mcap"] = np.nan
+        if i == 1:  # 거래량 0 → RVOL 분모 0
+            df["volume"] = 0.0
+        if i == 2:  # 마지막 거래량 NaN
+            df.loc[df.index[-3:], "volume"] = np.nan
+        parts.append(df)
+    px = pd.concat(parts, ignore_index=True)
+    asof = pd.Timestamp("2026-08-10")  # 이후 행 4개는 버려진다
+    got = F.price_features(px, asof)
+    ref = _ref_price_features(px, asof)
+    assert list(got.index) == list(ref.index)
+    for col in F.PRICE_FEATURE_COLUMNS:
+        g, r = got[col], ref[col].reindex(got.index)
+        if col in ("above_50d", "sma200_up_1m", "stage2", "vcp_base", "last_price_date"):
+            assert g.tolist() == r.tolist(), col
+        else:
+            np.testing.assert_allclose(
+                g.to_numpy(dtype=float), r.to_numpy(dtype=float), rtol=0, atol=0, err_msg=col
+            )
+
+
+def _ref_rs_rating(universe_rs_raw: pd.Series) -> pd.Series:
+    s = universe_rs_raw.dropna()
+    pct = s.rank(pct=True, method="average")
+    return (pct * 98 + 1).round().clip(1, 99)
+
+
+def test_rs_rating_percentile_range_and_matches_reference() -> None:
     rs = pd.Series(np.linspace(-1, 1, 200), index=[f"T{i}" for i in range(200)])
     r = F.rs_rating_from_universe(rs)
     assert r.min() >= 1 and r.max() <= 99
     assert r.iloc[-1] == 99 and r.iloc[0] == 1
+    # 동률·NaN 이 섞여도 옛 구현과 같다
+    rs2 = pd.Series(
+        [0.1, 0.1, np.nan, -0.5, 0.3, 0.3, 0.3, np.nan, 2.0], index=[f"U{i}" for i in range(9)]
+    )
+    pd.testing.assert_series_equal(F.rs_rating_from_universe(rs2), _ref_rs_rating(rs2))
 
 
 def test_price_beta_hist_window_and_sign() -> None:
