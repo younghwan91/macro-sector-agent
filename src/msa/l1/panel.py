@@ -38,18 +38,17 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 from dataclasses import dataclass
 from datetime import date
+from functools import cached_property
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-import duckdb
 import pandas as pd
 
-from msa.config import paths
 from msa.data.store import Store, StoreError
+from msa.l1.cache import FingerprintCache, newest_fingerprint
 from msa.themes import Membership
 
 log = logging.getLogger(__name__)
@@ -84,34 +83,67 @@ class ThemePanel:
     spy: pd.DataFrame  # index: date / columns: close, dv
     built_from: dict[str, Any]
 
+    @cached_property
+    def _wide_all(self) -> pd.DataFrame:
+        """전 컬럼을 한 번에 unstack 한 (date × (column, theme)) 행렬 — `wide()` 가 잘라 쓴다."""
+        return cast(pd.DataFrame, self.frame.unstack("theme")).sort_index()
+
     def wide(self, column: str) -> pd.DataFrame:
         """`column` 을 date × theme 행렬로."""
         if column not in self.frame.columns:
             raise KeyError(f"패널에 없는 컬럼: {column}. 있는 것: {list(self.frame.columns)}")
-        return self.frame[column].unstack("theme").sort_index()
+        out = cast(pd.DataFrame, self._wide_all[column])
+        out.columns.name = "theme"
+        return out
 
-    def index_level(self, weighting: str = "ew") -> pd.DataFrame:
-        """`P_t` — 수익률 누적 지수 (시작 1.0). 수익률이 NaN 인 날은 지수가 정체한다."""
-        col = {"ew": "ret_ew", "cw": "ret_cw"}[weighting]
+    @cached_property
+    def _level_ew(self) -> pd.DataFrame:
+        return self._cum_index("ret_ew")
+
+    @cached_property
+    def _level_cw(self) -> pd.DataFrame:
+        return self._cum_index("ret_cw")
+
+    def _cum_index(self, col: str) -> pd.DataFrame:
         r = self.wide(col)
         return (1.0 + r.fillna(0.0)).cumprod().where(r.notna().cummax())
 
-    @property
-    def themes(self) -> list[str]:
-        return sorted(self.frame.index.get_level_values("theme").unique())
+    def index_level(self, weighting: str = "ew") -> pd.DataFrame:
+        """`P_t` — 수익률 누적 지수 (시작 1.0). 수익률이 NaN 인 날은 지수가 정체한다.
 
-    def summary(self) -> str:
-        f = self.frame
-        capped = int(f["n_capped"].sum())
-        return (
-            f"패널: 테마 {len(self.themes)} · {f.index.get_level_values('date').min()} ~ "
-            f"{f.index.get_level_values('date').max()} · 행 {len(f):,} · "
-            f"상·하한 적용 종목-일 {capped:,}"
-        )
+        가중 방식별로 한 번만 계산해 둔다 (`compute_indicators`·백테스트가 여러 번 부른다)."""
+        return {"ew": self._level_ew, "cw": self._level_cw}[weighting]
+
+    def save(self, cache_dir: Path | None = None) -> FingerprintCache:
+        """`state/cache/l1_panel_<지문>.parquet` · `l1_spy_…` · `l1_panel_….json` 으로 쓴다."""
+        fc = FingerprintCache.at(self.built_from["fingerprint"], cache_dir)
+        self.frame.to_parquet(fc.panel)
+        self.spy.to_parquet(fc.spy)
+        fc.write_meta(fc.panel_meta, self.built_from)
+        log.info("panel: 저장 %s (%d행)", fc.panel.name, len(self.frame))
+        return fc
 
 
-def _members_sql(members: pd.DataFrame) -> str:
-    return "select ticker, theme from members"
+def load_cached_panel(cache_dir: Path | None = None, fingerprint: str | None = None) -> ThemePanel:
+    """캐시된 패널을 읽는다. `fingerprint=None` 이면 수정시각이 가장 최근인 패널.
+
+    세 파일(frame·spy·json) 중 하나라도 없으면 `StoreError` — 다른 계층(L2·L5·ops)이 스토어 없이
+    테마 지수를 쓸 때의 진입점이다.
+    """
+    fc = FingerprintCache.at(fingerprint or "", cache_dir)
+    if fingerprint is None:
+        fp = newest_fingerprint(fc.cache_dir)
+        if fp is None:
+            raise StoreError(f"캐시된 L1 패널이 없다: {fc.cache_dir} (먼저 `msa scan` 을 돌려라)")
+        fc = FingerprintCache(fc.cache_dir, fp)
+    if not fc.has(fc.panel, fc.spy, fc.panel_meta):
+        raise StoreError(f"L1 패널 캐시가 불완전하다: {fc.panel} (frame·spy·json 셋 다 필요)")
+    log.info("panel: 캐시 사용 %s", fc.panel.name)
+    return ThemePanel(
+        frame=fc.read_frame(fc.panel),
+        spy=fc.read_frame(fc.spy),
+        built_from=fc.read_meta(fc.panel_meta),
+    )
 
 
 _PANEL_SQL = f"""
@@ -211,17 +243,9 @@ def build_panel(
         raise StoreError("구성원이 0개다 — 테마 배정이 비었다.")
     store_end = store.store_end()
     fp = _fingerprint(members, store_end)
-    cdir = cache_dir if cache_dir is not None else paths().cache
-    cdir.mkdir(parents=True, exist_ok=True)
-    panel_path = cdir / f"l1_panel_{fp}.parquet"
-    spy_path = cdir / f"l1_spy_{fp}.parquet"
-    meta_path = cdir / f"l1_panel_{fp}.json"
-    if not force and panel_path.exists() and spy_path.exists() and meta_path.exists():
-        log.info("panel: 캐시 사용 %s", panel_path.name)
-        frame = pd.read_parquet(panel_path)
-        spy = pd.read_parquet(spy_path)
-        built = json.loads(meta_path.read_text())
-        return ThemePanel(frame=frame, spy=spy, built_from=built)
+    fc = FingerprintCache.at(fp, cache_dir)
+    if not force and fc.has(fc.panel, fc.spy, fc.panel_meta):
+        return load_cached_panel(fc.cache_dir, fp)
 
     store.configure(threads=threads, memory_limit=memory_limit)
     log.info(
@@ -267,11 +291,9 @@ def build_panel(
         "n_capped_total": int(frame["n_capped"].sum()),
         "rows": len(frame),
     }
-    frame.to_parquet(panel_path)
-    spy.to_parquet(spy_path)
-    meta_path.write_text(json.dumps(built, ensure_ascii=False, indent=1))
-    log.info("panel: 저장 %s (%d행)", panel_path.name, len(frame))
-    return ThemePanel(frame=frame, spy=spy, built_from=built)
+    panel = ThemePanel(frame=frame, spy=spy, built_from=built)
+    panel.save(fc.cache_dir)
+    return panel
 
 
 def panel_from_frames(frame: pd.DataFrame, spy: pd.DataFrame) -> ThemePanel:
@@ -285,7 +307,3 @@ def panel_from_frames(frame: pd.DataFrame, spy: pd.DataFrame) -> ThemePanel:
     return ThemePanel(
         frame=frame.sort_index(), spy=spy.sort_index(), built_from={"synthetic": True}
     )
-
-
-def register_duckdb(path: Path | str) -> duckdb.DuckDBPyConnection:
-    return duckdb.connect(str(path), read_only=True)
