@@ -1,0 +1,129 @@
+# 거시 인과 DAG — 스키마 예시
+# 실제 파일은 state/macro-dag.yaml (M4 에서 ~150 엣지)
+# 규약: 엣지 가중치를 데이터로 학습하지 않는다. 데이터는 반박(모순 감사)에만 쓴다.
+
+schema_version: 1
+
+drivers:
+
+  - id: dollar_broad
+    source: {provider: fred, series: DTWEXBGS}
+    measure: change_6m
+    state_rule:
+      favorable_when: "change_6m < -0.02"     # 이 드라이버 자체의 '위험자산 우호' 방향
+      neutral_band: [-0.02, 0.02]
+    common_factor: false
+
+  - id: real_rate_10y
+    source: {provider: fred, series: DFII10}
+    measure: change_6m_bp
+    state_rule:
+      favorable_when: "change_6m_bp < -25"
+      neutral_band: [-25, 25]
+    common_factor: false
+
+  - id: usd_liquidity
+    source:
+      provider: derived
+      formula: "WALCL - WTREGEN - RRPONTSYD"
+      note: "주기 불일치(주간/주간/일간) — 주간으로 정렬 후 계산"
+    measure: change_3m
+    state_rule: {favorable_when: "change_3m > 0"}
+    common_factor: true        # 전 테마에 같은 부호 → tailwind 계산 시 횡단면 중앙값 차감
+
+  - id: hyperscaler_capex
+    source:
+      provider: sharadar_derived
+      formula: "sum(capex) over [MSFT, GOOGL, AMZN, META, ORCL], TTM"
+      note: "SF1 ARQ. 뉴스가 아니라 재무제표에서 직접 합산한다"
+    measure: yoy
+    state_rule: {favorable_when: "yoy > 0.10"}
+    common_factor: false
+
+  - id: china_credit_impulse
+    source: {provider: manual, note: "PBoC 사회융자총량(TSF) 12개월 변화 / GDP. 월 1회 갱신"}
+    measure: level
+    state_rule: {favorable_when: "level > 0"}
+    common_factor: false
+
+  - id: inventory_sales
+    source: {provider: fred, series: ISRATIO}
+    measure: change_6m
+    state_rule:
+      favorable_when: "change_6m < 0"          # 재고 소진 → 재주문
+    common_factor: false
+
+edges:
+
+  - from: dollar_broad
+    to: [gold_miners, silver_miners, copper_miners, steel_iron, oil_gas_ep, agribusiness]
+    sign: -1
+    lag_months: [0, 3]
+    strength: strong
+    channel: >
+      달러 표시 원자재 가격의 역수 관계에 더해, 비미국 생산자의 원가가 현지통화이므로
+      달러 약세 시 매출은 달러·원가는 현지통화로 마진이 이중 확대된다.
+    evidence: "1971-1980, 2001-2011, 2019-2020, 2024-2026 국면에서 일관"
+    observable: "DTWEXBGS 6개월 변화 < -2%"
+    contradicts_when: >
+      달러와 금이 동반 강세면 통화체계 신뢰 훼손(안전자산 동반 매수) 국면이다.
+      이 엣지로 설명되지 않으므로 별도 논지가 필요 — 자동 점수에서 제외 플래그.
+
+  - from: real_rate_10y
+    to: [gold_miners, silver_miners]
+    sign: -1
+    lag_months: [0, 2]
+    strength: strong
+    channel: "무이자 자산 보유의 기회비용. 실질금리가 곧 금의 캐리 코스트다"
+    evidence: "2003-2011, 2019-2020, 2024-2026"
+    observable: "DFII10 6개월 변화 < -25bp"
+
+  - from: real_rate_10y
+    to: [biotech_clinical]
+    sign: -1
+    lag_months: [0, 3]
+    strength: strong
+    channel: >
+      임상단계 기업은 현금흐름이 전부 원거리라 할인율 민감도가 극단적이고,
+      동시에 자금조달(2차 발행) 창구가 금리에 직접 좌우된다. 두 경로가 같은 방향.
+    evidence: "2021-2022 XBI -60%, 2023Q4 금리 피크아웃 직후 급반등"
+    observable: "DFII10 6개월 변화 < -25bp"
+
+  - from: china_credit_impulse
+    to: [copper_miners, steel_iron, shipping_drybulk, cement_aggregates, construction_machinery]
+    sign: +1
+    lag_months: [3, 9]
+    strength: strong
+    channel: "중국 고정자산투자가 이들 원자재의 한계 수요를 결정한다"
+    evidence: "2009, 2016, 2020 신용 확장 국면마다 3~9개월 시차로 반영"
+    observable: "TSF 12개월 변화/GDP 가 양수 전환"
+    contradicts_when: >
+      2021년 이후 부동산 부문 축소로 신용임펄스와 원자재 수요의 연결이 약화되었다는
+      견해가 있다. 모순 감사에서 60개월 창의 상관을 특히 주시할 엣지.
+
+  - from: inventory_sales
+    to: [semi_memory, semi_analog_power, industrial_automation, trucking_logistics, ems_pcb]
+    sign: -1
+    lag_months: [0, 6]
+    strength: strong
+    channel: "재고/출하 비율 하락 = 소진 완료 → 재주문 재개. 재고 사이클의 정의"
+    evidence: "2016, 2019, 2023 반도체 재고 사이클"
+    observable: "ISRATIO 6개월 변화 < 0"
+
+  - from: hyperscaler_capex
+    to: [grid_equipment, datacenter_hw, networking_optical, utility_ipp, reit_datacenter]
+    sign: +1
+    lag_months: [0, 6]
+    strength: strong
+    channel: "발주처의 자본지출이 이들의 매출로 직접 전환된다 (수주 → 인식 시차만 존재)"
+    evidence: "2023-2026 AI 데이터센터 투자 사이클"
+    observable: "5사 TTM capex YoY > 10%"
+    contradicts_when: "capex 가 GPU 로 편중되면 전력·네트워크 하류로 전이되지 않을 수 있다"
+
+  - from: usd_liquidity
+    to: ["*"]                  # 공통 인자 — 테마 선택엔 무력, 시점엔 유효
+    sign: +1
+    lag_months: [0, 3]
+    strength: moderate
+    channel: "위험 선호 전반. 상대 순위를 만들지 않으므로 횡단면 중앙값 차감 후 사용"
+    observable: "(WALCL - WTREGEN - RRPONTSYD) 3개월 변화 > 0"

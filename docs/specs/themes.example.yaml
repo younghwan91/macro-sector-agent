@@ -1,0 +1,94 @@
+# 테마 버킷 정의 — 스키마 예시
+# 실제 파일은 state/themes.yaml (M2 에서 85개 확정)
+# 규약: id 는 영구 불변 (결정 저널이 이걸로 참조한다)
+
+schema_version: 1
+
+defaults:
+  min_constituents: 5
+  index_weighting: [equal, cap]     # 둘 다 계산하고 괴리를 브레드스 신호로 사용
+
+themes:
+
+  - id: silver_miners
+    name_ko: 은광
+    parent_sector: Basic Materials
+    cycle_class: commodity_supply
+    industry_match: ["Silver"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: SIL
+    etf_proxy_alt: [SILJ, SLVP]
+    physical_ref: {source: etf, symbol: SLV}    # FRED 은 시리즈 불안정 → ETF 프록시
+    correlation_cluster: precious_metals        # L5 ENB 계산의 클러스터 힌트
+    notes: >
+      통화 수요와 산업 수요(태양광 페이스트)가 겹친다. 금광과 상관 0.8+ 이므로
+      L5 유효 베팅 수 계산에서 gold_miners 와 같은 클러스터로 묶인다.
+
+  - id: rare_earth
+    name_ko: 희토류·전략금속
+    parent_sector: Basic Materials
+    cycle_class: policy_program
+    industry_match: ["Other Industrial Metals & Mining"]
+    include_tickers: [MP, LYSDY, TMC, UUUU]
+    exclude_tickers: []
+    etf_proxy: REMX
+    etf_proxy_alt: []
+    physical_ref: null
+    correlation_cluster: strategic_materials
+    notes: >
+      Sharadar 에 '희토류' industry 라벨이 없다 — 자동 매칭만으로는 분리 불가라
+      include_tickers 로 명시 구성한다. 이 버킷은 큐레이션 의존도가 가장 높고
+      따라서 생존 편향 위험도 가장 크다. 폐지 종목(MCP/Molycorp 2015 파산)을
+      자기이력 구간에 반드시 포함시킬 것 — 빼면 "역사적 저점" 판정이 낙관 왜곡된다.
+      cycle_class 가 commodity_supply 가 아니라 policy_program 인 이유:
+      가격이 아니라 수출통제·방산 조달이 수요를 만든다.
+
+  - id: uranium
+    name_ko: 우라늄
+    parent_sector: Energy
+    cycle_class: commodity_supply
+    industry_match: ["Uranium"]
+    include_tickers: []
+    exclude_tickers: [SRUUF]         # 물리적 신탁 — 광산주가 아니라 상품 노출
+    etf_proxy: URA
+    etf_proxy_alt: [URNM, NLR]
+    physical_ref: {source: manual, symbol: UXC_SPOT}
+    correlation_cluster: nuclear
+    notes: >
+      URA 상장 2010 — ETF 이력이 사이클 한 바퀴를 못 담는다.
+      자체 구성 지수를 1998년까지 소급하되 소급 구간을 리포트에 표시.
+      exclude 근거: 물리적 신탁은 원가·부채 구조가 없어 L4 3축이 정의되지 않는다.
+
+  - id: coal
+    name_ko: 석탄
+    parent_sector: Energy
+    cycle_class: secular_risk        # 기본 가정이 사양 — 04 하드 게이트 자동 적용
+    industry_match: ["Coking Coal", "Thermal Coal"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null                  # KOL 상폐 — 자체 구성만
+    etf_proxy_alt: []
+    physical_ref: {source: fred, symbol: PCOALAUUSDM, verify: true}
+    correlation_cluster: fossil
+    notes: >
+      secular_risk 는 사양 낙인이 아니라 입증 책임의 전환이다.
+      2021-2022 제철용 석탄 급반등이 실제로 있었다 — 사양 산업도 공급이 충분히
+      파괴되면 반등한다. 다만 그 반등은 늦고 짧고, 진입 시점을 몇 년 틀리면
+      그 전에 파산한다. 04-value-trap 축1(물량 추세)이 판정의 중심.
+
+  - id: grid_equipment
+    name_ko: 변압기·전력기기
+    parent_sector: Industrials
+    cycle_class: capex_program
+    industry_match: ["Electrical Equipment & Parts", "Specialty Industrial Machinery"]
+    include_tickers: []
+    exclude_tickers: []
+    etf_proxy: null
+    etf_proxy_alt: [XLI]
+    physical_ref: null
+    correlation_cluster: ai_power
+    notes: >
+      상류 드라이버가 hyperscaler_capex — Sharadar SF1 에서 직접 계산한다.
+      industry_match 가 넓어 오탐이 많을 버킷. M2 에서 큐레이션 필수.
+      cycle_class 가 capex_program 이므로 L1 망각 가중치는 0.05 — 낙폭이 신호가 아니다.

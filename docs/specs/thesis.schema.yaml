@@ -1,0 +1,112 @@
+# thesis 객체 — L3 산출물의 검증 스키마 (JSON Schema 스타일 서술)
+# 규약: evidence 또는 invalidations 가 비면 저장 거부 (CLAUDE.md §3, §5)
+
+schema_version: 1
+type: object
+required:
+  - theme_id
+  - generated_at
+  - horizon_months
+  - claim
+  - mechanism
+  - triggers
+  - invalidations        # 비면 거부 — 이것이 Tier-1 스탑의 근거다
+  - bear_case
+  - value_trap_axes
+  - cycle_confidence
+  - evidence             # 비면 거부 — LLM 의 기억은 증거가 아니다
+
+properties:
+
+  theme_id:        {type: string, note: "state/themes.yaml 의 id. 영구 불변"}
+  generated_at:    {type: date}
+  supersedes:      {type: [string, "null"], note: "이전 thesis 파일. 재실행 시 diff 대상"}
+  horizon_months:  {type: array, items: integer, minItems: 2, maxItems: 2}
+
+  claim:
+    type: string
+    maxLength: 400
+    note: "한 문장. 반증 가능해야 한다. 종목명이 등장하면 경고 (CLAUDE.md §4)"
+
+  mechanism:
+    type: string
+    note: >
+      인과 경로. 상관 서술 금지 — "역사적으로 함께 움직였다" 는 메커니즘이 아니다.
+      왜 가격/이익이 오르는지를 공급·수요·정책의 언어로 쓴다.
+
+  triggers:
+    type: array
+    minItems: 1
+    items:
+      required: [observable, source, by]
+      properties:
+        observable: {type: string, note: "관측 가능해야 한다. '심리 개선' 같은 것은 트리거가 아니다"}
+        source:     {type: string}
+        by:         {type: string, note: "기한. 시간 스탑과 정합해야 한다"}
+        status:     {enum: [pending, met, missed], default: pending}
+
+  invalidations:
+    type: array
+    minItems: 1
+    items:
+      required: [observable, source, action]
+      properties:
+        observable: {type: string}
+        source:     {type: string}
+        action:     {enum: [exit, halve, freeze_ladder]}
+        status:     {enum: [pending, fired], default: pending}
+    note: >
+      freeze_ladder = 물타기만 중단하고 보유 유지. exit = 즉시 전량 청산.
+      하나라도 fired 면 사다리 추가 매수 금지 (07-portfolio.md §3).
+
+  key_uncertainties:
+    type: array
+    items: {type: string}
+    note: "모르는 것을 아는 것으로 쓰지 않기 위한 칸. 비어 있으면 의심하라"
+
+  bear_case:
+    type: string
+    note: "bear 에이전트의 최강 논지를 원문 보존. 요약 금지 — 요약은 반론을 약하게 만든다"
+
+  value_trap_axes:
+    type: object
+    required: [unit_demand, capital_cycle, substitution, cost_curve, terminal_risk]
+    additionalProperties:
+      properties:
+        verdict:       {enum: [cycle, warning, death, not_applicable]}
+        evidence_refs: {type: array, items: integer}
+        note:          {type: string}
+    note: >
+      not_applicable 을 통과로 취급하지 않는다 (04-value-trap.md 축1).
+      해당 축을 쓸 수 없으면 그 사실이 리포트에 표시되고 확신도가 감점된다.
+
+  cycle_confidence:
+    type: number
+    minimum: 0
+    maximum: 1
+    note: >
+      04-value-trap.md §4 의 가감점 규칙을 기계적으로 적용한 값.
+      규칙 밖의 조정이 필요하면 조정 대신 key_uncertainties 에 서술한다.
+      이 값이 10-validation.md 캘리브레이션의 유일한 검증 대상이다.
+
+  evidence:
+    type: array
+    minItems: 1
+    items:
+      required: [id, claim, source_url, date, reliability]
+      properties:
+        id:          {type: integer}
+        claim:       {type: string}
+        source_url:  {type: string}
+        date:        {type: date, note: "12개월 초과 시 리포트에 표시"}
+        reliability: {enum: [high, medium, low]}
+    note: >
+      reliability: low 만으로는 축 판정 불가 — 최소 1개 medium 이상 필요.
+      수치는 원문 대조 없이 high 로 등급할 수 없다.
+
+  gate_result:
+    type: object
+    properties:
+      rejected:  {type: boolean}
+      reason:    {type: string}
+    note: "04-value-trap.md §3 하드 게이트 적용 결과. 기각도 저널에 남는다"
