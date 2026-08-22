@@ -17,12 +17,15 @@ bear 는 `BearInputs` 만 받는다 (`contracts.py`). 이 모듈의 `bear_messag
 
 from __future__ import annotations
 
+import copy
 import json
-from dataclasses import asdict
+import re
+from functools import partial
 from typing import Any
 
 from msa.l3.contracts import BearInputs, CaseStudy, ResearchInputs
 from msa.l3.providers import CompletionRequest
+from msa.thesis import AXES, AXIS_VERDICTS, INVALIDATION_ACTIONS, RELIABILITY
 
 EVIDENCE_ITEM_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -31,7 +34,7 @@ EVIDENCE_ITEM_SCHEMA: dict[str, Any] = {
         "claim": {"type": "string"},
         "source_url": {"type": "string"},
         "date": {"type": "string", "description": "YYYY-MM-DD. 출처 문서의 날짜"},
-        "reliability": {"type": "string", "enum": ["high", "medium", "low"]},
+        "reliability": {"type": "string", "enum": list(RELIABILITY)},
     },
     "required": ["id", "claim", "source_url", "date", "reliability"],
     "additionalProperties": False,
@@ -138,6 +141,52 @@ def _header(inputs: ResearchInputs | BearInputs) -> str:
     )
 
 
+def _context_blocks(
+    inputs: ResearchInputs | BearInputs,
+    *,
+    members_title: str = "## 구성원 재무 요약 (PIT, 시총 상위)",
+    prior: str | None = None,
+) -> list[str]:
+    """네 역할이 공통으로 받는 사실 자료 — 구성원 재무 · 거시 상태 (· 이전 thesis) · 케이스
+    few-shot."""
+    blocks = [
+        members_title + "\n" + _fmt_members(inputs),
+        "## 거시 상태\n" + _fmt_macro(inputs),
+    ]
+    if prior is not None:
+        blocks.append(prior)
+    blocks.append(_fmt_cases(inputs.cases))
+    return blocks
+
+
+def _analyst_request(
+    inputs: ResearchInputs,
+    *,
+    role: str,
+    system: str,
+    questions: tuple[tuple[str, str], ...],
+    schema: dict[str, Any],
+    ids_note: str,
+) -> CompletionRequest:
+    """supply · catalyst 공통 조립 — 스코어카드 포함 컨텍스트 + 고정 질문 목록."""
+    q = "\n".join(f"{i + 1}. **{k}** — {desc}" for i, (k, desc) in enumerate(questions))
+    user = "\n\n".join(
+        [
+            _header(inputs),
+            _fmt_scorecard(inputs),
+            *_context_blocks(inputs),
+            f"## 질문 (고정 — {len(questions)}개 전부 답한다. 못 찾으면 not_found=true)\n" + q,
+            ids_note,
+        ]
+    )
+    return CompletionRequest(
+        role=role,
+        system=system,
+        messages=[{"role": "user", "content": user}],
+        json_schema=schema,
+    )
+
+
 # ---------------------------------------------------------------- supply_analyst
 
 SUPPLY_SYSTEM = (
@@ -202,26 +251,15 @@ SUPPLY_SCHEMA: dict[str, Any] = {
 }
 
 
-def supply_request(inputs: ResearchInputs) -> CompletionRequest:
-    q = "\n".join(f"{i + 1}. **{k}** — {desc}" for i, (k, desc) in enumerate(SUPPLY_QUESTIONS))
-    user = "\n\n".join(
-        [
-            _header(inputs),
-            _fmt_scorecard(inputs),
-            "## 구성원 재무 요약 (PIT, 시총 상위)\n" + _fmt_members(inputs),
-            "## 거시 상태\n" + _fmt_macro(inputs),
-            _fmt_cases(inputs.cases),
-            "## 질문 (고정 — 6개 전부 답한다. 못 찾으면 not_found=true)\n" + q,
-            "증거는 `evidence` 배열에 1 부터 번호를 매겨 넣고 findings 의 `evidence_ids` 로 "
-            "가리킨다.",
-        ]
-    )
-    return CompletionRequest(
-        role="supply_analyst",
-        system=SUPPLY_SYSTEM,
-        messages=[{"role": "user", "content": user}],
-        json_schema=SUPPLY_SCHEMA,
-    )
+supply_request = partial(
+    _analyst_request,
+    role="supply_analyst",
+    system=SUPPLY_SYSTEM,
+    questions=SUPPLY_QUESTIONS,
+    schema=SUPPLY_SCHEMA,
+    ids_note="증거는 `evidence` 배열에 1 부터 번호를 매겨 넣고 findings 의 `evidence_ids` 로 "
+    "가리킨다.",
+)
 
 
 # ---------------------------------------------------------------- catalyst_analyst
@@ -277,26 +315,15 @@ CATALYST_SCHEMA: dict[str, Any] = {
 }
 
 
-def catalyst_request(inputs: ResearchInputs) -> CompletionRequest:
-    q = "\n".join(f"{i + 1}. **{k}** — {desc}" for i, (k, desc) in enumerate(CATALYST_QUESTIONS))
-    user = "\n\n".join(
-        [
-            _header(inputs),
-            _fmt_scorecard(inputs),
-            "## 구성원 재무 요약 (PIT, 시총 상위)\n" + _fmt_members(inputs),
-            "## 거시 상태\n" + _fmt_macro(inputs),
-            _fmt_cases(inputs.cases),
-            "## 질문 (고정 — 4개 전부 답한다. 못 찾으면 not_found=true)\n" + q,
-            "증거는 `evidence` 배열에 1 부터 번호를 매겨 넣고 calendar·findings 의 `evidence_ids` "
-            "로 가리킨다.",
-        ]
-    )
-    return CompletionRequest(
-        role="catalyst_analyst",
-        system=CATALYST_SYSTEM,
-        messages=[{"role": "user", "content": user}],
-        json_schema=CATALYST_SCHEMA,
-    )
+catalyst_request = partial(
+    _analyst_request,
+    role="catalyst_analyst",
+    system=CATALYST_SYSTEM,
+    questions=CATALYST_QUESTIONS,
+    schema=CATALYST_SCHEMA,
+    ids_note="증거는 `evidence` 배열에 1 부터 번호를 매겨 넣고 calendar·findings 의 `evidence_ids` "
+    "로 가리킨다.",
+)
 
 
 # ---------------------------------------------------------------- bear
@@ -370,9 +397,9 @@ def bear_request(inputs: BearInputs) -> CompletionRequest:
         [
             _header(inputs),
             f"cycle_class (테마 정의의 선언값, 점수 아님): {inputs.cycle_class}",
-            "## 구성원 재무 요약 (PIT, 시총 상위 — 사실 자료)\n" + _fmt_members(inputs),
-            "## 거시 상태\n" + _fmt_macro(inputs),
-            _fmt_cases(inputs.cases),
+            *_context_blocks(
+                inputs, members_title="## 구성원 재무 요약 (PIT, 시총 상위 — 사실 자료)"
+            ),
             "## 과제\n6개 공격축 전부에 대해 argument·evidence_ids·strength 를 채운다. 증거를 못 "
             "찾은 축은 strength=none_found 로 "
             "정직하게 적는다 (없는 증거를 만들지 않는다). 마지막에 `bear_case` 로 최강 논지를 "
@@ -428,10 +455,13 @@ REFEREE_SYSTEM = (
     "가른다.\n\n" + _COMMON_RULES
 )
 
+#: referee 가 내는 축 판정 — `contested` 는 L1(축1)만 낸다 (`docs/05` §2).
+REFEREE_VERDICTS: tuple[str, ...] = tuple(v for v in AXIS_VERDICTS if v != "contested")
+
 _AXIS_OUT = {
     "type": "object",
     "properties": {
-        "verdict": {"type": "string", "enum": ["cycle", "warning", "death", "not_applicable"]},
+        "verdict": {"type": "string", "enum": list(REFEREE_VERDICTS)},
         "evidence_refs": {"type": "array", "items": {"type": "integer"}},
         "note": {"type": "string"},
     },
@@ -441,7 +471,7 @@ _AXIS_OUT = {
 
 
 def _axis_out(extra: dict[str, Any]) -> dict[str, Any]:
-    o: dict[str, Any] = json.loads(json.dumps(_AXIS_OUT))
+    o: dict[str, Any] = copy.deepcopy(_AXIS_OUT)
     o["properties"].update(extra)
     o["required"] = list(o["properties"].keys())
     return o
@@ -478,7 +508,7 @@ REFEREE_SCHEMA: dict[str, Any] = {
                 "properties": {
                     "observable": {"type": "string"},
                     "source": {"type": "string"},
-                    "action": {"type": "string", "enum": ["exit", "halve", "freeze_ladder"]},
+                    "action": {"type": "string", "enum": list(INVALIDATION_ACTIONS)},
                 },
                 "required": ["observable", "source", "action"],
                 "additionalProperties": False,
@@ -514,13 +544,7 @@ REFEREE_SCHEMA: dict[str, Any] = {
                     }
                 ),
             },
-            "required": [
-                "unit_demand",
-                "capital_cycle",
-                "substitution",
-                "cost_curve",
-                "terminal_risk",
-            ],
+            "required": list(AXES),
             "additionalProperties": False,
         },
         "bear_rebuttal": {
@@ -591,10 +615,7 @@ def referee_request(
             + json.dumps(axis1_block, ensure_ascii=False, indent=1)
             + "\n```\n"
             + contested_note,
-            "## 구성원 재무 요약 (PIT, 시총 상위)\n" + _fmt_members(inputs),
-            "## 거시 상태\n" + _fmt_macro(inputs),
-            _fmt_prior(inputs),
-            _fmt_cases(inputs.cases),
+            *_context_blocks(inputs, prior=_fmt_prior(inputs)),
             "## supply_analyst 산출\n```json\n"
             + json.dumps(
                 {k: v for k, v in supply.items() if k != "evidence"}, ensure_ascii=False, indent=1
@@ -653,251 +674,263 @@ def check_role_output(role: str, obj: dict[str, Any]) -> None:
 
 
 # ---------------------------------------------------------------- Mock 기본 산출
+#
+# `MockProvider` 의 역할별 결정론적 산출 — 스키마를 만족하며 게이트를 통과하는 '정상' 경로.
+# 문자열 안의 `{theme}`·`{asof}`·`{year}` 는 요청 프롬프트에서 읽어 채운다 (`default_mock_output`).
+# 내용은 합성이며 사실이 아니다 (URL 은 example.org).
 
 
-def default_mock_output(request: CompletionRequest) -> dict[str, Any]:
-    """`MockProvider` 의 역할별 결정론적 산출. 스키마를 만족하며 게이트를 통과하는 '정상' 경로.
+def _mock_ev(role: str, i: int, claim: str, rel: str = "medium") -> dict[str, Any]:
+    return {
+        "id": i,
+        "claim": claim,
+        "source_url": f"https://example.org/{role}/{i}",
+        "date": "{asof}",
+        "reliability": rel,
+    }
 
-    테마 이름을 프롬프트에서 읽어 문장에 끼워 넣는다 — 내용은 합성이며 사실이 아니다 (URL 은
-    example.org).
-    """
-    role = request.role
-    asof = _extract(request.as_text(), r"기준일 (\d{4}-\d{2}-\d{2})") or "2026-01-01"
-    theme = _extract(request.as_text(), r"# 테마: (.+?) \(`") or "테마"
 
-    def ev(i: int, claim: str, rel: str = "medium") -> dict[str, Any]:
-        return {
-            "id": i,
-            "claim": claim,
-            "source_url": f"https://example.org/{role}/{i}",
-            "date": asof,
-            "reliability": rel,
-        }
-
-    if role == "supply_analyst":
-        return {
-            "findings": [
-                {
-                    "topic": "capacity_and_closures",
-                    "summary": f"{theme}: 지난 3년 감산 발표 3건(합성).",
-                    "evidence_ids": [1],
-                    "not_found": False,
-                },
-                {
-                    "topic": "pipeline_3y",
-                    "summary": "FID 완료 증설 1건, 규모 소폭(합성).",
-                    "evidence_ids": [2],
-                    "not_found": False,
-                },
-                {
-                    "topic": "inventories",
-                    "summary": "거래소 재고 10년 백분위 15%(합성).",
-                    "evidence_ids": [3],
-                    "not_found": False,
-                },
-                {
-                    "topic": "lead_time",
-                    "summary": "신규 공급 리드타임 5~7년(합성).",
-                    "evidence_ids": [1],
-                    "not_found": False,
-                },
-                {
-                    "topic": "cost_curve",
-                    "summary": "현재 가격이 P90 현금원가 아래, 셧다운 발표 2건(합성).",
-                    "evidence_ids": [4],
-                    "not_found": False,
-                },
-                {
-                    "topic": "unit_demand_series",
-                    "summary": "기관 통계의 실물 소비량 10년 시계열 확보(합성).",
-                    "evidence_ids": [5],
-                    "not_found": False,
-                },
-            ],
-            "unit_demand_series": {
-                "found": True,
-                "unit": "kt",
-                "scope": "global",
-                "source": "합성 기관 통계",
-                "years": [[2016 + k, 100 + 2 * k] for k in range(10)],
+MOCK_OUTPUTS: dict[str, dict[str, Any]] = {
+    "supply_analyst": {
+        "findings": [
+            {
+                "topic": "capacity_and_closures",
+                "summary": "{theme}: 지난 3년 감산 발표 3건(합성).",
+                "evidence_ids": [1],
+                "not_found": False,
+            },
+            {
+                "topic": "pipeline_3y",
+                "summary": "FID 완료 증설 1건, 규모 소폭(합성).",
+                "evidence_ids": [2],
+                "not_found": False,
+            },
+            {
+                "topic": "inventories",
+                "summary": "거래소 재고 10년 백분위 15%(합성).",
+                "evidence_ids": [3],
+                "not_found": False,
+            },
+            {
+                "topic": "lead_time",
+                "summary": "신규 공급 리드타임 5~7년(합성).",
+                "evidence_ids": [1],
+                "not_found": False,
+            },
+            {
+                "topic": "cost_curve",
+                "summary": "현재 가격이 P90 현금원가 아래, 셧다운 발표 2건(합성).",
+                "evidence_ids": [4],
+                "not_found": False,
+            },
+            {
+                "topic": "unit_demand_series",
+                "summary": "기관 통계의 실물 소비량 10년 시계열 확보(합성).",
                 "evidence_ids": [5],
+                "not_found": False,
             },
-            "evidence": [
-                ev(1, "감산 발표 3건 (합성)", "high"),
-                ev(2, "FID 완료 증설 1건 (합성)"),
-                ev(3, "거래소 재고 백분위 15% (합성)"),
-                ev(4, "P90 현금원가 대비 가격 −12%, 셧다운 2건 (합성)", "high"),
-                ev(5, "실물 소비량 10년 시계열 (합성)", "high"),
-            ],
-        }
-    if role == "catalyst_analyst":
-        return {
-            "calendar": [
-                {
-                    "date": "2027-03-31",
-                    "event": "보조금 집행 개시 (합성)",
-                    "kind": "policy_calendar",
-                    "evidence_ids": [1],
-                }
-            ],
-            "findings": [
-                {
-                    "topic": "policy_calendar",
-                    "summary": "12개월 내 정책 이벤트 2건(합성).",
-                    "evidence_ids": [1],
-                    "not_found": False,
-                },
-                {
-                    "topic": "budgets_subsidies_orders",
-                    "summary": "확정 예산 규모 (합성).",
-                    "evidence_ids": [2],
-                    "not_found": False,
-                },
-                {
-                    "topic": "trade_measures",
-                    "summary": "관세 현황 (합성).",
-                    "evidence_ids": [2],
-                    "not_found": False,
-                },
-                {
-                    "topic": "customer_capex",
-                    "summary": "수요처 capex 가이던스 상향 (합성).",
-                    "evidence_ids": [3],
-                    "not_found": False,
-                },
-            ],
-            "evidence": [
-                ev(1, "정책 캘린더 (합성)"),
-                ev(2, "예산·관세 (합성)", "high"),
-                ev(3, "수요처 capex 가이던스 (합성)"),
-            ],
-        }
-    if role == "bear":
-        return {
-            "bear_case": (
-                f"{theme} 강세 서사는 이미 2년째 컨센서스이며, 대체재 침투율이 8%에서 가속 중이고, "
-                f"구성원 상위 기업의 "
-                "유동부채 비중이 높아 사이클 회복 전에 희석이 일어날 수 있다. (합성 bear_case — "
-                "원문 보존 테스트용)"
-            ),
-            "attacks": {
-                "unit_demand": {
-                    "argument": "최종 수요량 감소 증거를 찾지 못함 (합성).",
-                    "evidence_ids": [],
-                    "strength": "none_found",
-                },
-                "substitution": {
-                    "argument": "대체재 침투율 8%, 비용 교차점 미도달 (합성).",
-                    "evidence_ids": [1],
-                    "strength": "moderate",
-                },
-                "structural_change": {
-                    "argument": "구조 변화 근거 약함 (합성).",
-                    "evidence_ids": [],
-                    "strength": "weak",
-                },
-                "omitted_facts": {
-                    "argument": "강세론이 재고 회계 변경을 빼놓음 (합성).",
-                    "evidence_ids": [2],
-                    "strength": "moderate",
-                },
-                "priced_in": {
-                    "argument": "서사는 2024년부터 컨센서스 (합성).",
-                    "evidence_ids": [2],
-                    "strength": "moderate",
-                },
-                "terminal_risk": {
-                    "argument": "유동부채/시총 일부 기업 높음 (합성).",
-                    "evidence_ids": [],
-                    "strength": "weak",
-                },
+        ],
+        "unit_demand_series": {
+            "found": True,
+            "unit": "kt",
+            "scope": "global",
+            "source": "합성 기관 통계",
+            "years": [[2016 + k, 100 + 2 * k] for k in range(10)],
+            "evidence_ids": [5],
+        },
+        "evidence": [
+            _mock_ev("supply_analyst", 1, "감산 발표 3건 (합성)", "high"),
+            _mock_ev("supply_analyst", 2, "FID 완료 증설 1건 (합성)"),
+            _mock_ev("supply_analyst", 3, "거래소 재고 백분위 15% (합성)"),
+            _mock_ev("supply_analyst", 4, "P90 현금원가 대비 가격 −12%, 셧다운 2건 (합성)", "high"),
+            _mock_ev("supply_analyst", 5, "실물 소비량 10년 시계열 (합성)", "high"),
+        ],
+    },
+    "catalyst_analyst": {
+        "calendar": [
+            {
+                "date": "2027-03-31",
+                "event": "보조금 집행 개시 (합성)",
+                "kind": "policy_calendar",
+                "evidence_ids": [1],
+            }
+        ],
+        "findings": [
+            {
+                "topic": "policy_calendar",
+                "summary": "12개월 내 정책 이벤트 2건(합성).",
+                "evidence_ids": [1],
+                "not_found": False,
             },
-            "consensus_since": "2024년 하반기 (합성)",
-            "evidence": [
-                ev(1, "대체재 침투율 8% (합성)"),
-                ev(2, "컨센서스 시점·재고 회계 (합성)", "low"),
-            ],
-        }
-    if role == "referee":
-        return {
-            "claim": (
-                f"{theme} 의 공급 축소와 재고 소진으로 {asof[:4]}년 말까지 실물 가격이 P90 원가 "
-                f"위로 회복되고 구성원 EBITDA 마진이 확대된다 (합성)."
-            ),
-            "mechanism": (
-                "저가격 국면의 투자 중단으로 신규 공급이 수년간 불가능하고, 실물 수요량은 완만히 "
-                "증가하므로 재고가 소진되면 가격이 한계원가 위로 복귀한다 (합성 인과 서술)."
-            ),
-            "horizon_months": [6, 18],
-            "triggers": [
-                {
-                    "observable": "주요 생산자 생산 가이던스 하향 발표",
-                    "source": "분기 실적 공시",
-                    "by": "2027-Q1",
-                },
-                {
-                    "observable": "breadth_200 > 0.6 지속 3개월",
-                    "source": "L1 스캐너",
-                    "by": "2027-Q2",
-                },
-            ],
-            "invalidations": [
-                {
-                    "observable": "확정 증설 파이프라인 규모가 수요의 10% 이상 추가 발표",
-                    "source": "기업 공시",
-                    "action": "exit",
-                },
-                {
-                    "observable": "실물 가격이 P90 원가 아래 6개월 지속",
-                    "source": "기관 가격 통계",
-                    "action": "halve",
-                },
-            ],
-            "key_uncertainties": ["합성 데이터 — 실제 출처 없음", "대체재 침투 속도"],
-            "axes": {
-                "unit_demand": {
-                    "note": "L1 판정 수용 (합성)",
-                    "evidence_refs": [5],
-                    "referee_ruling": None,
-                    "referee_evidence_refs": [],
-                },
-                "capital_cycle": {
-                    "verdict": "cycle",
-                    "evidence_refs": [1, 2],
-                    "note": "capex/D&A<1, 감산 (합성)",
-                },
-                "substitution": {
-                    "verdict": "cycle",
-                    "evidence_refs": [9],
-                    "note": "침투율 8% <10%, 비용 우위 없음 (합성)",
-                },
-                "cost_curve": {
-                    "verdict": "cycle",
-                    "evidence_refs": [4],
-                    "note": "가격<P90, 셧다운 관측 (합성)",
-                    "strong_cycle": True,
-                },
-                "terminal_risk": {
-                    "verdict": "warning",
-                    "evidence_refs": [8],
-                    "note": "일부 유동부채 (합성)",
-                    "severe": False,
-                    "debt_maturity_24m_over_half": False,
-                },
+            {
+                "topic": "budgets_subsidies_orders",
+                "summary": "확정 예산 규모 (합성).",
+                "evidence_ids": [2],
+                "not_found": False,
             },
-            "bear_rebuttal": "priced_in 은 반박 불가, substitution 은 침투율 수치로 반박 (합성).",
-            "evidence": [],
-        }
-    raise ValueError(f"알 수 없는 역할: {role}")
+            {
+                "topic": "trade_measures",
+                "summary": "관세 현황 (합성).",
+                "evidence_ids": [2],
+                "not_found": False,
+            },
+            {
+                "topic": "customer_capex",
+                "summary": "수요처 capex 가이던스 상향 (합성).",
+                "evidence_ids": [3],
+                "not_found": False,
+            },
+        ],
+        "evidence": [
+            _mock_ev("catalyst_analyst", 1, "정책 캘린더 (합성)"),
+            _mock_ev("catalyst_analyst", 2, "예산·관세 (합성)", "high"),
+            _mock_ev("catalyst_analyst", 3, "수요처 capex 가이던스 (합성)"),
+        ],
+    },
+    "bear": {
+        "bear_case": (
+            "{theme} 강세 서사는 이미 2년째 컨센서스이며, 대체재 침투율이 8%에서 가속 중이고, "
+            "구성원 상위 기업의 "
+            "유동부채 비중이 높아 사이클 회복 전에 희석이 일어날 수 있다. (합성 bear_case — "
+            "원문 보존 테스트용)"
+        ),
+        "attacks": {
+            "unit_demand": {
+                "argument": "최종 수요량 감소 증거를 찾지 못함 (합성).",
+                "evidence_ids": [],
+                "strength": "none_found",
+            },
+            "substitution": {
+                "argument": "대체재 침투율 8%, 비용 교차점 미도달 (합성).",
+                "evidence_ids": [1],
+                "strength": "moderate",
+            },
+            "structural_change": {
+                "argument": "구조 변화 근거 약함 (합성).",
+                "evidence_ids": [],
+                "strength": "weak",
+            },
+            "omitted_facts": {
+                "argument": "강세론이 재고 회계 변경을 빼놓음 (합성).",
+                "evidence_ids": [2],
+                "strength": "moderate",
+            },
+            "priced_in": {
+                "argument": "서사는 2024년부터 컨센서스 (합성).",
+                "evidence_ids": [2],
+                "strength": "moderate",
+            },
+            "terminal_risk": {
+                "argument": "유동부채/시총 일부 기업 높음 (합성).",
+                "evidence_ids": [],
+                "strength": "weak",
+            },
+        },
+        "consensus_since": "2024년 하반기 (합성)",
+        "evidence": [
+            _mock_ev("bear", 1, "대체재 침투율 8% (합성)"),
+            _mock_ev("bear", 2, "컨센서스 시점·재고 회계 (합성)", "low"),
+        ],
+    },
+    "referee": {
+        "claim": (
+            "{theme} 의 공급 축소와 재고 소진으로 {year}년 말까지 실물 가격이 P90 원가 "
+            "위로 회복되고 구성원 EBITDA 마진이 확대된다 (합성)."
+        ),
+        "mechanism": (
+            "저가격 국면의 투자 중단으로 신규 공급이 수년간 불가능하고, 실물 수요량은 완만히 "
+            "증가하므로 재고가 소진되면 가격이 한계원가 위로 복귀한다 (합성 인과 서술)."
+        ),
+        "horizon_months": [6, 18],
+        "triggers": [
+            {
+                "observable": "주요 생산자 생산 가이던스 하향 발표",
+                "source": "분기 실적 공시",
+                "by": "2027-Q1",
+            },
+            {
+                "observable": "breadth_200 > 0.6 지속 3개월",
+                "source": "L1 스캐너",
+                "by": "2027-Q2",
+            },
+        ],
+        "invalidations": [
+            {
+                "observable": "확정 증설 파이프라인 규모가 수요의 10% 이상 추가 발표",
+                "source": "기업 공시",
+                "action": "exit",
+            },
+            {
+                "observable": "실물 가격이 P90 원가 아래 6개월 지속",
+                "source": "기관 가격 통계",
+                "action": "halve",
+            },
+        ],
+        "key_uncertainties": ["합성 데이터 — 실제 출처 없음", "대체재 침투 속도"],
+        "axes": {
+            "unit_demand": {
+                "note": "L1 판정 수용 (합성)",
+                "evidence_refs": [5],
+                "referee_ruling": None,
+                "referee_evidence_refs": [],
+            },
+            "capital_cycle": {
+                "verdict": "cycle",
+                "evidence_refs": [1, 2],
+                "note": "capex/D&A<1, 감산 (합성)",
+            },
+            "substitution": {
+                "verdict": "cycle",
+                "evidence_refs": [9],
+                "note": "침투율 8% <10%, 비용 우위 없음 (합성)",
+            },
+            "cost_curve": {
+                "verdict": "cycle",
+                "evidence_refs": [4],
+                "note": "가격<P90, 셧다운 관측 (합성)",
+                "strong_cycle": True,
+            },
+            "terminal_risk": {
+                "verdict": "warning",
+                "evidence_refs": [8],
+                "note": "일부 유동부채 (합성)",
+                "severe": False,
+                "debt_maturity_24m_over_half": False,
+            },
+        },
+        "bear_rebuttal": "priced_in 은 반박 불가, substitution 은 침투율 수치로 반박 (합성).",
+        "evidence": [],
+    },
+}
+
+
+def _fill(obj: Any, vars_: dict[str, str]) -> Any:
+    """문자열 안의 `{theme}` 류 자리표시자를 채운다 (재귀). 다른 중괄호는 건드리지 않는다."""
+    if isinstance(obj, str):
+        for k, v in vars_.items():
+            obj = obj.replace(k, v)
+        return obj
+    if isinstance(obj, dict):
+        return {k: _fill(v, vars_) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_fill(x, vars_) for x in obj]
+    return obj
 
 
 def _extract(text: str, pattern: str) -> str | None:
-    import re
-
     m = re.search(pattern, text)
     return m.group(1) if m else None
 
 
-def inputs_to_prompt_dict(inputs: ResearchInputs) -> dict[str, Any]:
-    """디버그·리포트용 — 프롬프트에 실린 입력 전체."""
-    return asdict(inputs)
+def default_mock_output(request: CompletionRequest) -> dict[str, Any]:
+    """`MOCK_OUTPUTS[role]` 의 사본에 테마 이름·기준일을 채운다 — 프롬프트에서 읽는다."""
+    if request.role not in MOCK_OUTPUTS:
+        raise ValueError(f"알 수 없는 역할: {request.role}")
+    text = request.as_text()
+    asof = _extract(text, r"기준일 (\d{4}-\d{2}-\d{2})") or "2026-01-01"
+    theme = _extract(text, r"# 테마: (.+?) \(`") or "테마"
+    out: dict[str, Any] = _fill(
+        copy.deepcopy(MOCK_OUTPUTS[request.role]),
+        {"{theme}": theme, "{asof}": asof, "{year}": asof[:4]},
+    )
+    return out
