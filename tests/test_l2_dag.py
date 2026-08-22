@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from _l2_helpers import THEMES, small_dag_dict, write_dag
+from _l2_helpers import THEMES, rule_direction, small_dag_dict, write_dag
 from msa.l2.dag import (
     STRENGTH_WEIGHT,
     DagError,
@@ -37,13 +37,13 @@ def test_state_rule_direction_and_favorable() -> None:
         {"favorable_when": "change_6m_bp < -25", "neutral_band": [-25, 25]}, "change_6m_bp"
     )
     assert r is not None
-    assert r.direction(-40) == -1 and r.favorable(-40)
-    assert r.direction(40) == 1 and not r.favorable(40)
-    assert r.direction(0) == 0
+    assert rule_direction(r, -40) == -1 and r.favorable(-40)
+    assert rule_direction(r, 40) == 1 and not r.favorable(40)
+    assert rule_direction(r, 0) == 0
     # 밴드 없으면 임계값 하나가 경계
     r2 = parse_state_rule({"favorable_when": "change_6m > 0"}, "change_6m")
     assert r2 is not None and r2.band_lo == 0 == r2.band_hi
-    assert r2.direction(0.01) == 1 and r2.direction(-0.01) == -1
+    assert rule_direction(r2, 0.01) == 1 and rule_direction(r2, -0.01) == -1
     # 측정값 이름이 measure 와 다르면 실패
     with pytest.raises(DagError):
         parse_state_rule({"favorable_when": "yoy > 0"}, "change_6m")

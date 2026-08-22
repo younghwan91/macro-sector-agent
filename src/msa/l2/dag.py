@@ -14,6 +14,9 @@
 `state_rule.favorable_when` 은 `"<measure> <op> <threshold>"` 한 줄로 파싱한다.
 파싱이 안 되는 규칙(`policy_events` 의 서술형)은 `rule=None` 으로 남고, 그 드라이버는
 `drivers.py` 가 따로 다룬다.
+
+YAML 의 `observable`·`evidence`·`note`·`common_factor_edge` 는 **사람이 읽는 근거**다 — 스키마는
+`observable` 을 필수로 요구하지만 런타임 객체에는 싣지 않는다 (읽는 코드가 없다).
 """
 
 from __future__ import annotations
@@ -25,10 +28,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
-
+from msa.coerce import require
 from msa.config import paths
 from msa.errors import RefusedInput
+from msa.io import load_yaml_mapping
 
 REQUIRED_EDGE_FIELDS: tuple[str, ...] = ("from", "to", "sign", "strength", "channel", "observable")
 STRENGTH_WEIGHT: dict[str, int] = {"strong": 3, "moderate": 2, "weak": 1}
@@ -41,20 +44,24 @@ class DagError(RefusedInput, ValueError):
     """스키마 수준 실패 — 전부 모아서 한 번에 던진다."""
 
 
+def _norm(x: Any) -> str:
+    """YAML 블록 문자열의 줄바꿈·연속 공백을 한 칸으로."""
+    return " ".join(str(x).split())
+
+
 @dataclass(frozen=True)
 class StateRule:
     """`favorable_when` + `neutral_band` 를 파싱한 것.
 
-    `band_lo/band_hi` 가 **방향 상태**의 경계다 (측정값 > band_hi → +1, < band_lo → −1).
-    `op/threshold` 는 '우호' 판정(표시용). `neutral_band` 가 없으면 밴드 = [threshold, threshold].
+    `band_lo/band_hi` 가 **방향 상태**의 경계다 (측정값 > band_hi → +1, < band_lo → −1 —
+    `drivers.direction_states`). `op/threshold` 는 '우호' 판정(표시용).
+    `neutral_band` 가 없으면 밴드 = [threshold, threshold].
     """
 
-    measure: str
     op: str
     threshold: float
     band_lo: float
     band_hi: float
-    raw: str
 
     def favorable(self, value: float) -> bool:
         if self.op == "<":
@@ -65,13 +72,6 @@ class StateRule:
             return value > self.threshold
         return value >= self.threshold
 
-    def direction(self, value: float) -> int:
-        if value > self.band_hi:
-            return 1
-        if value < self.band_lo:
-            return -1
-        return 0
-
 
 @dataclass(frozen=True)
 class Driver:
@@ -79,13 +79,12 @@ class Driver:
     provider: str  # fred | derived | etf | manual | sharadar_derived | agent
     series: tuple[str, ...]  # FRED 시리즈 id 들 (provider=fred/derived)
     symbol: str | None  # ETF 심볼 (provider=etf)
+    alt: tuple[str, ...]  # ETF 대체 심볼 (`source.alt`)
     formula: str | None
     measure: str
     rule: StateRule | None
     common_factor: bool
     fallback: Mapping[str, Any] | None
-    note: str
-    raw: Mapping[str, Any] = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -97,11 +96,8 @@ class Edge:
     strength: str
     lag_months: tuple[int, int] | None
     channel: str
-    observable: str
-    evidence: str
     contradicts_when: str
     contradicts_rule: Mapping[str, Any] | None
-    common_factor_edge: bool
 
     @property
     def weight(self) -> int:
@@ -149,15 +145,18 @@ class MacroDag:
     def common_factors(self) -> list[str]:
         return [d.id for d in self.drivers if d.common_factor]
 
+    @property
+    def agent_drivers(self) -> set[str]:
+        """`policy_events` 처럼 시계열이 아니라 이벤트 목록인 드라이버."""
+        return {d.id for d in self.drivers if d.provider == "agent"}
+
 
 @dataclass
 class DagValidation:
     errors: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
     unknown_theme_refs: dict[int, list[str]] = field(default_factory=dict)  # edge idx → themes
     undercovered: dict[str, int] = field(default_factory=dict)  # theme → in-degree
     in_degree: dict[str, int] = field(default_factory=dict)  # 공통 인자 제외
-    out_degree: dict[str, int] = field(default_factory=dict)
     n_pairs: int = 0
     n_themes: int = 0
 
@@ -213,7 +212,16 @@ def parse_state_rule(raw: Mapping[str, Any] | None, measure: str) -> StateRule |
             raise DagError(f"neutral_band lo > hi: {band!r}")
     if name != measure:
         raise DagError(f"favorable_when 의 측정값 `{name}` 이 measure `{measure}` 와 다르다")
-    return StateRule(measure=name, op=op, threshold=thr, band_lo=lo, band_hi=hi, raw=fav)
+    return StateRule(op=op, threshold=thr, band_lo=lo, band_hi=hi)
+
+
+def _str_tuple(raw: Any) -> tuple[str, ...]:
+    """YAML 의 스칼라 또는 목록 → 문자열 튜플 (None → 빈 튜플)."""
+    if raw is None:
+        return ()
+    if isinstance(raw, str):
+        return (raw,)
+    return tuple(str(s) for s in raw)
 
 
 def _parse_driver(raw: Mapping[str, Any], errors: list[str]) -> Driver | None:
@@ -230,13 +238,6 @@ def _parse_driver(raw: Mapping[str, Any], errors: list[str]) -> Driver | None:
     measure = str(raw.get("measure", "")).strip()
     if not measure:
         errors.append(f"드라이버 {did}: measure 누락")
-    series_raw = src.get("series")
-    if series_raw is None:
-        series: tuple[str, ...] = ()
-    elif isinstance(series_raw, str):
-        series = (series_raw,)
-    else:
-        series = tuple(str(s) for s in series_raw)
     try:
         rule = parse_state_rule(raw.get("state_rule"), measure)
     except DagError as e:
@@ -246,15 +247,14 @@ def _parse_driver(raw: Mapping[str, Any], errors: list[str]) -> Driver | None:
     return Driver(
         id=did,
         provider=str(src["provider"]),
-        series=series,
+        series=_str_tuple(src.get("series")),
         symbol=str(src["symbol"]) if "symbol" in src else None,
+        alt=_str_tuple(src.get("alt")),
         formula=str(src["formula"]) if "formula" in src else None,
         measure=measure,
         rule=rule,
         common_factor=bool(raw.get("common_factor", False)),
         fallback=fb if isinstance(fb, Mapping) else None,
-        note=" ".join(str(src.get("note", raw.get("note", ""))).split()),
-        raw=raw,
     )
 
 
@@ -262,10 +262,12 @@ def _parse_edge(i: int, raw: Mapping[str, Any], errors: list[str]) -> Edge | Non
     tag = f"엣지[{i}] {raw.get('from')} -> {str(raw.get('to'))[:40]}"
     ok = True
     for f in REQUIRED_EDGE_FIELDS:
-        if f not in raw:
-            errors.append(f"{tag}: 필수 필드 `{f}` 누락")
+        try:
+            require(raw, f, tag, DagError)
+        except DagError as e:
+            errors.append(str(e))
             ok = False
-    channel = " ".join(str(raw.get("channel", "")).split())
+    channel = _norm(raw.get("channel", ""))
     if not channel:
         errors.append(f"{tag}: `channel` 이 비었다 — 메커니즘 없는 상관은 엣지가 아니다")
         ok = False
@@ -298,26 +300,15 @@ def _parse_edge(i: int, raw: Mapping[str, Any], errors: list[str]) -> Edge | Non
         strength=str(raw["strength"]),
         lag_months=lag_t,
         channel=channel,
-        observable=" ".join(str(raw.get("observable", "")).split()),
-        evidence=" ".join(str(raw.get("evidence", "")).split()),
-        contradicts_when=" ".join(str(raw.get("contradicts_when", "")).split()),
+        contradicts_when=_norm(raw.get("contradicts_when", "")),
         contradicts_rule=rule,
-        common_factor_edge=bool(raw.get("common_factor_edge", False)),
     )
-
-
-def dag_path() -> Path:
-    return paths().dag_yaml
 
 
 def load_dag(path: Path | str | None = None) -> MacroDag:
     """YAML → `MacroDag`. 스키마 실패는 전부 모아 `DagError` 하나로 던진다."""
-    p = Path(path) if path is not None else dag_path()
-    if not p.exists():
-        raise DagError(f"DAG 파일이 없다: {p}")
-    doc = yaml.safe_load(p.read_text(encoding="utf-8"))
-    if not isinstance(doc, Mapping) or "drivers" not in doc or "edges" not in doc:
-        raise DagError(f"{p}: 최상위에 drivers·edges 가 있어야 한다")
+    p = Path(path) if path is not None else paths().dag_yaml
+    doc = load_yaml_mapping(p, required_keys=("drivers", "edges"), err=DagError)
     errors: list[str] = []
     drivers = [d for d in (_parse_driver(r, errors) for r in doc["drivers"]) if d is not None]
     ids = [d.id for d in drivers]
@@ -362,24 +353,17 @@ def validate_dag(dag: MacroDag, theme_ids: Iterable[str]) -> DagValidation:
     theme_set = set(themes)
     v = DagValidation(n_themes=len(themes))
     in_deg: Counter[str] = Counter({t: 0 for t in themes})
-    out_deg: Counter[str] = Counter({d: 0 for d in dag.driver_ids})
     for e in dag.edges:
         if e.wildcard:
-            out_deg[e.source] += len(themes)
             continue
         for t in e.targets:
             if t not in theme_set:
                 v.unknown_theme_refs.setdefault(e.index, []).append(t)
                 continue
             in_deg[t] += 1
-            out_deg[e.source] += 1
     v.in_degree = dict(in_deg)
-    v.out_degree = dict(out_deg)
     v.n_pairs = sum(in_deg.values())
     v.undercovered = {t: n for t, n in in_deg.items() if n < MIN_IN_DEGREE}
-    for d in dag.drivers:
-        if "common_factor" not in d.raw:
-            v.warnings.append(f"드라이버 {d.id}: common_factor 미선언 (false 로 간주)")
     return v
 
 
