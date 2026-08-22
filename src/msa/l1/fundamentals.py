@@ -30,7 +30,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
+from functools import cached_property
+from typing import Any, cast
 
 import pandas as pd
 
@@ -94,10 +95,20 @@ class FundPanel:
     actions: pd.DataFrame  # index (date, theme) — exits_36m, entries_36m
     built_from: dict[str, Any]
 
+    @cached_property
+    def _wides(self) -> tuple[pd.DataFrame, ...]:
+        """세 표를 각각 한 번만 unstack 한 (date × (column, theme)) 행렬 — `wide()` 가 골라 쓴다."""
+        return tuple(
+            cast(pd.DataFrame, src.unstack("theme")).sort_index()
+            for src in (self.frame, self.same_store, self.actions)
+        )
+
     def wide(self, column: str) -> pd.DataFrame:
-        for src in (self.frame, self.same_store, self.actions):
-            if column in src.columns:
-                return src[column].unstack("theme").sort_index()
+        for w in self._wides:
+            if column in w.columns.get_level_values(0):
+                out = cast(pd.DataFrame, w[column])
+                out.columns.name = "theme"
+                return out
         raise KeyError(f"재무 패널에 없는 컬럼: {column}")
 
 

@@ -1,6 +1,8 @@
 """합성 데이터로 패널 → 지표 → 스코어보드를 끝까지 돌린다 (스토어 없음).
 
 목적은 수치의 정확성이 아니라 **모양·결측·가중치 재정규화·플래그**가 설계대로 나오는지다.
+벡터화한 `scoreboard_history` 는 월말별 `build_scoreboard` 루프(`_ref_scoreboard_history`)와
+비트 단위로 같아야 한다.
 """
 
 from __future__ import annotations
@@ -10,161 +12,106 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-import yaml
 
-from msa.l1.blocks import BLOCK_INDICATORS, compute_indicators
-from msa.l1.fundamentals import FUND_COLUMNS, FundPanel, grid_dates
-from msa.l1.panel import PANEL_COLUMNS, panel_from_frames
-from msa.l1.physical import PhysicalBundle, PhysicalSeries
-from msa.l1.scoreboard import BLOCKS, SCORED, build_scoreboard, scoreboard_history
-from msa.themes import BLOCK_WEIGHTS, ThemeSet, load_themes
+from _synth_l1 import (
+    physical_refs_for,
+    pipeline_panel,
+    synthetic_fund,
+    synthetic_physical,
+    theme_record,
+    write_panel_cache,
+    write_themes,
+)
+from msa.data.store import StoreError
+from msa.l1.blocks import BLOCK_INDICATORS, Indicators, compute_indicators
+from msa.l1.fundamentals import FundPanel, grid_dates
+from msa.l1.panel import PANEL_COLUMNS, ThemePanel, load_cached_panel
+from msa.l1.scan import scan_dirs
+from msa.l1.scoreboard import (
+    BLOCKS,
+    SCORED,
+    build_scoreboard,
+    render_flags,
+    scoreboard_history,
+)
+from msa.themes import BLOCK_WEIGHTS, ThemeSet
 
 THEMES = ["alpha", "beta", "gamma", "delta"]
 CLASSES = ["commodity_supply", "secular_growth", "credit_rate", "commodity_supply"]
 
 
-@pytest.fixture
-def themes(tmp_path: Path) -> ThemeSet:
-    recs = []
-    for i, (tid, cc) in enumerate(zip(THEMES, CLASSES, strict=True)):
-        recs.append(
-            {
-                "id": tid,
-                "name_ko": tid,
-                "parent_sector": "X",
-                "cycle_class": cc,
-                "industry_match": [f"Ind{i}"],
-                "include_tickers": [],
-                "exclude_tickers": [],
-                "etf_proxy": "GDX" if i == 0 else None,
-                "etf_proxy_alt": [],
-                "physical_ref": (
-                    {"source": "etf", "symbol": "GLD", "kind": "price"}
-                    if i == 0
-                    else {"source": "manual", "symbol": "VOL", "kind": "volume"}
-                    if i == 1
-                    else {"source": "fred", "symbol": "MISSING", "kind": "volume"}
-                    if i == 2
-                    else None
-                ),
-                "correlation_cluster": None,
-                "min_constituents": 5,
-            }
-        )
-    p = tmp_path / "themes.yaml"
-    p.write_text(yaml.safe_dump({"schema_version": 1, "defaults": {}, "themes": recs}))
-    return load_themes(p)
+@pytest.fixture(scope="module")
+def themes(tmp_path_factory: pytest.TempPathFactory) -> ThemeSet:
+    refs = physical_refs_for(THEMES)
+    recs = [
+        theme_record(tid, cc, i, etf_proxy="GDX" if i == 0 else None, physical_ref=refs[i])
+        for i, (tid, cc) in enumerate(zip(THEMES, CLASSES, strict=True))
+    ]
+    return write_themes(tmp_path_factory.mktemp("themes"), recs)
 
 
-def _synthetic_panel(seed: int = 1):
-    rng = np.random.default_rng(seed)
-    days = pd.bdate_range("2010-01-01", "2016-12-30")
-    rows = []
-    for j, t in enumerate(THEMES):
-        drift = (-0.0004, 0.0005, 0.0001, -0.0002)[j]
-        ret = rng.normal(drift, 0.012, size=len(days))
-        n_listed = 20 + j * 5
-        for i, d in enumerate(days):
-            rows.append(
-                {
-                    "date": d,
-                    "theme": t,
-                    "ret_ew": ret[i],
-                    "ret_cw": ret[i] * 0.9,
-                    "n_ret": n_listed - 1,
-                    "n_listed": n_listed,
-                    "n_cw": n_listed - 2,
-                    "dv": 1e7 * (1 + 0.2 * np.sin(i / 50)),
-                    "mcap_sum": 1e10,
-                    "n_sma200": n_listed if i >= 200 else 0,
-                    "n_above200": int(n_listed * (0.3 + 0.4 * (np.sin(i / 120) > 0)))
-                    if i >= 200
-                    else 0,
-                    "n_nh6m": int(rng.integers(0, 4)),
-                    "n_nl6m": int(rng.integers(0, 4)),
-                    "n_capped": 0,
-                }
-            )
-    frame = pd.DataFrame(rows).set_index(["date", "theme"]).sort_index()
-    spy_ret = rng.normal(0.0003, 0.01, size=len(days))
-    spy = pd.DataFrame({"close": 100 * np.cumprod(1 + spy_ret), "dv": 5e10}, index=days)
-    return panel_from_frames(frame, spy)
+@pytest.fixture(scope="module")
+def panel() -> ThemePanel:
+    return pipeline_panel(THEMES)
 
 
-def _synthetic_fund(seed: int = 2) -> FundPanel:
-    rng = np.random.default_rng(seed)
-    gd = grid_dates("2010-01-31", "2016-12-30")
-    buckets = pd.to_datetime(gd["bucket"])
-    rows = []
-    for j, t in enumerate(THEMES):
-        for b in buckets:
-            base = {c: float(abs(rng.normal(10, 2)) + 1) for c in FUND_COLUMNS}
-            base.update(
-                n_reporting=15 + j,
-                n_ebitda_pos=10,
-                ebitda_nonpos_share=0.3,
-                ev_ebitda_med=8 + rng.normal(),
-                ev_sales_med=2 + rng.normal() * 0.1,
-                pb_med=1.5 + rng.normal() * 0.1,
-                fcf_yield_med=0.05 + rng.normal() * 0.01,
-                ev_replacement_med=1.2,
-            )
-            rows.append({"date": b, "theme": t, **base})
-    frame = pd.DataFrame(rows).set_index(["date", "theme"]).sort_index()
-    ss_rows = []
-    for t in THEMES:
-        for b in buckets:
-            ss_rows.append(
-                {
-                    "date": b,
-                    "theme": t,
-                    "ss10_rev_t1": 120.0,
-                    "ss10_rev_t0": 100.0,
-                    "ss10_ratio_med": 1.1,
-                    "ss10_n": 8,
-                    "ss10_n_t0": 10,
-                    "ss10_coverage": 0.8,
-                    "ss10_ma_n": 1,
-                    "ss5_rev_t1": 110.0,
-                    "ss5_rev_t0": 100.0,
-                    "ss5_ratio_med": 1.05,
-                    "ss5_n": 9,
-                    "ss5_n_t0": 10,
-                    "ss5_coverage": 0.9,
-                    "ss5_ma_n": 0,
-                }
-            )
-    ss = pd.DataFrame(ss_rows).set_index(["date", "theme"]).sort_index()
-    act = pd.DataFrame(
-        {"exits_36m": 3.0, "entries_36m": 1.0, "exits_1m": 0.0, "entries_1m": 0.0},
-        index=frame.index,
-    )
-    return FundPanel(frame=frame, same_store=ss, actions=act, built_from={"synthetic": True})
+@pytest.fixture(scope="module")
+def fund() -> FundPanel:
+    return synthetic_fund(THEMES)
 
 
-def _physical() -> PhysicalBundle:
-    me = pd.date_range("2000-01-31", "2016-12-31", freq="ME")
-    gld = pd.Series(np.linspace(50, 120, len(me)), index=me)
-    vol = pd.Series(np.linspace(100, 130, len(me)), index=me)
-    cpi = pd.Series(np.linspace(170, 240, len(me)), index=me)
-    return PhysicalBundle(
-        refs={
-            "alpha": PhysicalSeries("GLD", "etf", "price", "ok", gld),
-            "beta": PhysicalSeries("VOL", "manual", "volume", "ok", vol),
-            "gamma": PhysicalSeries("MISSING", "fred", "volume", "missing", None, "no key"),
-        },
-        cpi=PhysicalSeries("CPIAUCSL", "fred", "?", "ok", cpi),
-    )
+@pytest.fixture(scope="module")
+def ind(panel: ThemePanel, fund: FundPanel, themes: ThemeSet) -> Indicators:
+    return compute_indicators(panel, fund, synthetic_physical(THEMES), themes, compute_vcp=True)
 
 
-def test_panel_index_level_and_wide() -> None:
-    panel = _synthetic_panel()
+@pytest.fixture(scope="module")
+def ind_novcp(panel: ThemePanel, fund: FundPanel, themes: ThemeSet) -> Indicators:
+    return compute_indicators(panel, fund, synthetic_physical(THEMES), themes, compute_vcp=False)
+
+
+def test_panel_index_level_and_wide(panel: ThemePanel) -> None:
     P = panel.index_level("ew")
     assert list(P.columns) == sorted(THEMES)
     assert (P.iloc[-1] > 0).all()
     assert set(PANEL_COLUMNS) <= set(panel.frame.columns)
+    # wide() 는 한 번 unstack 한 것을 잘라 준다 — 열별 unstack 과 같다
+    for c in ("ret_ew", "n_listed"):
+        pd.testing.assert_frame_equal(
+            panel.wide(c), panel.frame[c].unstack("theme").sort_index(), check_exact=True
+        )
+    assert panel.index_level("ew") is panel.index_level("ew")  # 가중 방식별 1회 계산
     with pytest.raises(KeyError):
         panel.wide("nope")
+
+
+def test_panel_cache_roundtrip(panel: ThemePanel, tmp_path: Path) -> None:
+    cache = tmp_path / "cache"
+    with pytest.raises(StoreError):
+        load_cached_panel(cache)
+    write_panel_cache(panel, cache, fingerprint="aaaa000000000000")
+    loaded = load_cached_panel(cache, "aaaa000000000000")
+    pd.testing.assert_frame_equal(loaded.frame, panel.frame)
+    pd.testing.assert_frame_equal(loaded.spy, panel.spy, check_freq=False)
+    assert loaded.built_from["fingerprint"] == "aaaa000000000000"
+    # 지문을 안 주면 가장 최근 것
+    write_panel_cache(panel, cache, fingerprint="bbbb000000000000")
+    assert load_cached_panel(cache).built_from["fingerprint"] == "bbbb000000000000"
+    # 불완전한 캐시(메타 없음)는 거부
+    (cache / "l1_panel_bbbb000000000000.json").unlink()
+    with pytest.raises(StoreError):
+        load_cached_panel(cache, "bbbb000000000000")
+
+
+def test_fund_wide_selects_from_three_tables(fund: FundPanel) -> None:
+    pd.testing.assert_frame_equal(
+        fund.wide("ss10_n"), fund.same_store["ss10_n"].unstack("theme").sort_index()
+    )
+    pd.testing.assert_frame_equal(
+        fund.wide("exits_36m"), fund.actions["exits_36m"].unstack("theme").sort_index()
+    )
+    with pytest.raises(KeyError):
+        fund.wide("nope")
 
 
 def test_grid_dates_adds_partial_month() -> None:
@@ -175,10 +122,7 @@ def test_grid_dates_adds_partial_month() -> None:
     assert len(g2) == 3 and str(g2["me"].iloc[-1]) == "2020-03-31"
 
 
-def test_pipeline_shapes_flags_and_weights(themes: ThemeSet) -> None:
-    panel = _synthetic_panel()
-    fund = _synthetic_fund()
-    ind = compute_indicators(panel, fund, _physical(), themes, compute_vcp=True)
+def test_pipeline_shapes_flags_and_weights(themes: ThemeSet, ind: Indicators) -> None:
     m = ind.monthly
     assert m.index.names == ["date", "theme"]
     for b, names in BLOCK_INDICATORS.items():
@@ -206,6 +150,7 @@ def test_pipeline_shapes_flags_and_weights(themes: ThemeSet) -> None:
         n_live=pd.Series({"alpha": 3, "beta": 20, "gamma": 20, "delta": 20}),
     )
     t = sb.table
+    assert t.columns[0] == "rank"
     assert list(t["rank"].dropna().astype(int)) == [1, 2, 3, 4]
     assert t["score"].between(0, 1).all()
     for b in BLOCKS:
@@ -221,6 +166,8 @@ def test_pipeline_shapes_flags_and_weights(themes: ThemeSet) -> None:
     assert "axis1:ok_fallback" in t.loc["alpha", "flags"]
     assert "axis1:data_missing" in t.loc["gamma", "flags"]
     assert "no_etf_proxy" in t.loc["beta", "flags"]
+    # flags 는 구조화 열에서 다시 만들 수 있는 표시 전용 파생값
+    assert (t.apply(render_flags, axis=1) == t["flags"]).all()
     # top_k 는 소표본을 뒤로
     assert sb.top_k(1).index[0] != "alpha"
     # 점수에 들어간 지표 백분위 표
@@ -230,16 +177,11 @@ def test_pipeline_shapes_flags_and_weights(themes: ThemeSet) -> None:
     assert "테마 스코어보드" in txt and "alpha" in txt
 
 
-def test_missing_block_renormalizes_weights(themes: ThemeSet) -> None:
-    panel = _synthetic_panel()
-    fund = _synthetic_fund()
-    ind = compute_indicators(panel, fund, _physical(), themes, compute_vcp=False)
+def test_missing_block_renormalizes_weights(themes: ThemeSet, ind_novcp: Indicators) -> None:
     # F 블록 지표를 전부 지우면 F 없이 재정규화돼야 한다
-    m = ind.monthly.copy()
+    m = ind_novcp.monthly.copy()
     for c in SCORED["F"]:
         m[c] = np.nan
-    from msa.l1.blocks import Indicators
-
     sb = build_scoreboard(Indicators(monthly=m), themes, pd.Timestamp("2016-12-30"))
     t = sb.table
     assert (t["blocks_missing"] == "F").all()
@@ -251,12 +193,46 @@ def test_missing_block_renormalizes_weights(themes: ThemeSet) -> None:
     assert "blocks_missing=F" in t["flags"].iloc[0]
 
 
-def test_scoreboard_history_stacks_all_month_ends(themes: ThemeSet) -> None:
-    panel = _synthetic_panel()
-    fund = _synthetic_fund()
-    ind = compute_indicators(panel, fund, _physical(), themes, compute_vcp=False)
-    hist = scoreboard_history(ind, themes)
+def _ref_scoreboard_history(ind: Indicators, themes: ThemeSet) -> pd.DataFrame:
+    """구 구현 — 월말마다 `build_scoreboard` 를 불러 쌓는다."""
+    frames = []
+    for d in ind.dates:
+        sb = build_scoreboard(ind, themes, d)
+        t = sb.table[["score", "cycle_class", *BLOCKS, *[f"{b}_pct" for b in BLOCKS]]].copy()
+        t["date"] = d
+        frames.append(t.reset_index())
+    return pd.concat(frames, ignore_index=True).set_index(["date", "theme"]).sort_index()
+
+
+def test_scoreboard_history_matches_per_month_loop(themes: ThemeSet, ind_novcp: Indicators) -> None:
+    sub = Indicators(monthly=ind_novcp.monthly.loc["2016-01-31":])  # 월말 12개면 충분하다
+    hist = scoreboard_history(sub, themes)
     assert hist.index.names == ["date", "theme"]
-    n_dates = ind.monthly.index.get_level_values("date").nunique()
-    assert len(hist) == n_dates * len(THEMES)
+    assert len(hist) == sub.dates.nunique() * len(THEMES)
     assert {"score", "cycle_class", *BLOCKS} <= set(hist.columns)
+    pd.testing.assert_frame_equal(hist, _ref_scoreboard_history(sub, themes), check_exact=True)
+
+
+def test_scoreboard_history_exact_with_ties_and_nans(
+    themes: ThemeSet, ind_novcp: Indicators
+) -> None:
+    """동률·결측이 섞여도 루프와 비트 단위로 같다 (합산 순서가 같아야 동률이 같은 쪽으로 깨진다)."""
+    m = ind_novcp.monthly.loc["2016-01-31":].copy()
+    # C 블록 지표(9개) 일부를 결측·동률로 만든다
+    m.loc[(slice(None), "alpha"), "mom_13612w"] = np.nan
+    m.loc[(slice(None), "beta"), "rs_slope"] = m.loc[(slice(None), "gamma"), "rs_slope"].to_numpy()
+    m.loc["2016-06-30", "breadth_lead"] = 0.0
+    sub = Indicators(monthly=m)
+    pd.testing.assert_frame_equal(
+        scoreboard_history(sub, themes), _ref_scoreboard_history(sub, themes), check_exact=True
+    )
+
+
+def test_scan_dirs_lists_dated_snapshots(tmp_path: Path) -> None:
+    assert scan_dirs(tmp_path / "none") == []
+    for name in ("2026-08-14", "2026-07-31", "latest", "2026-13-99"):
+        (tmp_path / name).mkdir()
+    (tmp_path / "2026-01-01.txt").write_text("x")
+    got = scan_dirs(tmp_path)
+    assert [str(d) for d, _ in got] == ["2026-07-31", "2026-08-14"]
+    assert got[-1][1] == tmp_path / "2026-08-14"
