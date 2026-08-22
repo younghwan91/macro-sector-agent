@@ -129,11 +129,21 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
       `03-macro-dag.md` §7). 이전 판의 "~150개" 는 버킷 85개 기준으로 잡힌 수치였다
       — **완료**: 드라이버 26 · 테마-엣지 쌍 380 · in-degree min 2 (`docs/macro-dag-audit.md`)
 - [x] `channel` 없는 엣지 0개 (스키마 검증) — `scripts/audit_dag.py`
-- [ ] `tailwind` 계산 + 공통 인자 횡단면 중앙값 차감
-- [ ] 국면 4분면 시각화
-- [x] 모순 감사 1회 실행, 플래그 목록 리뷰 — `docs/macro-dag-audit.md` (`contradicts_when` 22개)
+- [x] `tailwind` 계산 + 공통 인자 횡단면 중앙값 차감 — `src/msa/l2/tailwind.py`, `msa macro`
+      (`03-macro-dag.md` §8.3). 단, **오늘 실제 값은 3개 드라이버(GLD·CPER·hyperscaler_capex)로만**
+      계산된다 — FRED 23개 드라이버가 `FRED_API_KEY` 없음으로 결측
+- [x] 국면 4분면 시각화 — ASCII 차트 + 24개월 CSV (`regime.txt`·`regime.csv`, §8.4). PNG 없음.
+      **오늘은 계산 불가** (성장·인플레 축 구성 드라이버 전부 FRED)
+- [x] 모순 감사 1회 실행, 플래그 목록 리뷰 — `docs/macro-dag-audit.md` (`contradicts_when` 22개).
+      런타임 평가(`contradictions.csv`)는 규칙 있는 2개만 판정하고 20개는 `PROSE_ONLY`
 - [ ] **엣지 부호 일치율 실측** (`10-validation.md` §2.1) — 선언한 `sign` 과
-      36·60개월 창 상관의 부호가 맞는 비율. **불일치 엣지를 고치는 것이 아니라 세는 것**이다
+      36·60개월 창 상관의 부호가 맞는 비율. **불일치 엣지를 고치는 것이 아니라 세는 것**이다.
+      기계는 있다 (`src/msa/l2/signcheck.py`, `docs/macro-dag-sign-check.md` 는 실행 불가 기록).
+      **실측은 안 됐다** — 359쌍 중 27쌍(ETF·Sharadar 드라이버)만 계산, FRED 기반 332쌍은 키 대기
+- [ ] **DAG 를 확정 버킷 134개에 맞춘다** — `scripts/audit_dag.py` 가 `state/themes.yaml` 기준으로
+      실패한다: `to` 에 없는 테마 6개(`nickel_cobalt`·`ag_machinery`·`semi_memory`·`semi_analog_power`·
+      `semi_foundry_logic`·`aerospace_commercial`), 입력 엣지 2개 미만 테마 31개. 런타임은 미지
+      타깃을 세어서 제외하고 미달 테마에 `undercovered` 플래그를 단다 (`msa macro` 리포트 첫 줄)
 
 ## M5 · L4 종목 선정
 **완료 기준**

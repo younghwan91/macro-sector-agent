@@ -18,6 +18,7 @@ CPI(`CPIAUCSL`)는 `dd_real`(A 블록)과 `nominal` 종류 참조의 실질화�
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
@@ -68,25 +69,65 @@ def to_month_end(s: pd.Series) -> pd.Series:
     return s.resample("ME").last()
 
 
-def load_fred_series(symbol: str, *, allow_fetch: bool = True) -> PhysicalSeries:
-    cache = _physical_dir() / "fred" / f"{symbol}.csv"
-    if cache.exists():
-        s = _read_csv_series(cache)
-        return PhysicalSeries(symbol, "fred", "?", "ok", to_month_end(s), f"cache {cache.name}")
-    if not allow_fetch:
-        return PhysicalSeries(symbol, "fred", "?", "missing", None, f"캐시 없음 {cache}")
-    try:
-        from msa.data.fred import FredClient
+def fred_cache_path(symbol: str) -> Path:
+    """`state/physical/fred/<SYMBOL>.csv` — L1(실물 참조·CPI)과 L2(드라이버)가 같은 캐시를 쓴다."""
+    return _physical_dir() / "fred" / f"{symbol}.csv"
 
-        with FredClient() as c:
-            obs = c.observations(symbol, min_obs=12)
-    except Exception as e:  # MissingApiKey · FredError · 네트워크
-        return PhysicalSeries(symbol, "fred", "?", "missing", None, f"{type(e).__name__}: {e}")
+
+def read_fred_cache(symbol: str) -> pd.Series | None:
+    """캐시된 FRED 시리즈를 **원래 주기 그대로** 읽는다. 캐시가 없으면 `None`."""
+    cache = fred_cache_path(symbol)
+    if not cache.exists():
+        return None
+    return _read_csv_series(cache)
+
+
+def fetch_fred_to_cache(symbol: str, *, min_obs: int = 12) -> pd.Series:
+    """FRED 에서 받아 캐시에 쓴다. 키가 없거나 실패하면 **예외를 그대로 올린다.**
+
+    값 옆에 `<SYMBOL>.meta.json`(단위·주기·제목·받은 시각)을 남긴다 — 파생 드라이버
+    (`usd_liquidity`)의 단위 환산이 선언과 맞는지 L2 가 대조할 재료다.
+    """
+    from msa.data.fred import FredClient
+
+    cache = fred_cache_path(symbol)
+    with FredClient() as c:
+        obs = c.observations(symbol, min_obs=min_obs)
+        try:
+            meta = c.series_meta(symbol)
+            meta_d: dict[str, object] = {
+                "series_id": meta.series_id,
+                "title": meta.title,
+                "frequency": meta.frequency,
+                "units": meta.units,
+                "last_updated": meta.last_updated,
+            }
+        except Exception as e:  # 메타 실패는 값 캐시를 막지 않는다 — 그러나 기록한다
+            meta_d = {"series_id": symbol, "meta_error": f"{type(e).__name__}: {e}"}
     s = pd.Series({pd.Timestamp(o.date): o.value for o in obs}).dropna().sort_index()
     cache.parent.mkdir(parents=True, exist_ok=True)
     dates = pd.DatetimeIndex(s.index).strftime("%Y-%m-%d")
     pd.DataFrame({"date": dates, "value": s.to_numpy()}).to_csv(cache, index=False)
+    meta_d["fetched_at"] = pd.Timestamp.now().isoformat(timespec="seconds")
+    meta_d["n_obs"] = len(s)
+    cache.with_suffix(".meta.json").write_text(json.dumps(meta_d, ensure_ascii=False, indent=1))
     log.info("fred: %s 관측 %d개 캐시 → %s", symbol, len(s), cache)
+    return s
+
+
+def load_fred_series(symbol: str, *, allow_fetch: bool = True) -> PhysicalSeries:
+    cache = fred_cache_path(symbol)
+    cached = read_fred_cache(symbol)
+    if cached is not None:
+        return PhysicalSeries(
+            symbol, "fred", "?", "ok", to_month_end(cached), f"cache {cache.name}"
+        )
+    if not allow_fetch:
+        return PhysicalSeries(symbol, "fred", "?", "missing", None, f"캐시 없음 {cache}")
+    try:
+        s = fetch_fred_to_cache(symbol)
+    except Exception as e:  # MissingApiKey · FredError · 네트워크
+        return PhysicalSeries(symbol, "fred", "?", "missing", None, f"{type(e).__name__}: {e}")
     return PhysicalSeries(symbol, "fred", "?", "ok", to_month_end(s), "fetched+cached")
 
 

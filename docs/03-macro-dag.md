@@ -247,3 +247,72 @@ final(t) = 0.70 · cycle_score(t)  +  0.30 · normalize(tailwind(t))
 공통 인자로 돌리지 않은 이유는 보험 3종에서 부호가 갈리기 때문이지만, 실질금리가
 한 방향으로 움직이면 tailwind 가 광범위하게 같은 방향으로 밀린다는 사실은
 리포트에 표기한다 (`macro-dag-audit.md` §5).
+
+## 8. 구현 노트 (M4 런타임 — `src/msa/l2/`, `msa macro`)
+
+위 §2~§7 이 못 박지 않은 것을 런타임이 어떻게 정했는지의 기록이다. 전부 **선언**이며 데이터로
+정하지 않았다. 바꾸려면 근거를 여기와 커밋에 적는다.
+
+### 8.1 `state` 는 값의 방향이다
+
+`state/macro-dag.yaml` 의 부호 규약("sign = +1 은 드라이버 값 상승 → 테마 우호")과 §4 의
+`sign × state` 가 함께 성립하려면 `state` 는 **측정값의 방향**이어야 한다:
+측정값 > `neutral_band` 상한 → +1, < 하한 → −1, 안 → 0. `favorable_when` 은 리포트의 `favorable`
+열(표시용)에만 쓴다. 예: 실질금리 6개월 −40bp → state −1(favorable Y), `real_rate_10y → gold_miners
+(sign −1)` 기여 = (−1)(−1) = +1. `neutral_band` 가 없는 드라이버는 임계값 하나가 경계다.
+
+### 8.2 측정값·z 창·발표 지연 — `msa.l2.drivers` 모듈 docstring 의 표가 정본
+
+- `yoy_second_derivative` = yoy 의 **3개월 보폭** 2계 차분 (월 보폭은 잡음이 개정폭보다 크다).
+- `composite_z`(employment) = (z(PAYEMS 월간 증가분 3M 평균) − z(UNRATE 6M 변화)) / 2,
+  z 창 **120개월·최소 60** (L1 의 자기이력 창과 같다).
+- 발표 지연은 `PUB_LAG` 에 시리즈별로 선언돼 있다 (일간 0일 · DTWEXBGS/WALCL/WTREGEN 7일 · 월간
+  대부분 +1개월 · AMTMNO/ISRATIO +2개월 · FDEFX 분기말 +1개월). **`docs/08` §3 의 실측이 없어서**
+  발표 일정에서 온 값이며, `msa data fred-fetch` 뒤 `msa data fred-lag` 로 실측되면 그 값으로 **대체**한다.
+  월말 격자 T 에서는 T 까지 발표된 관측만 쓴다. 선언되지 않은 시리즈는 예외다.
+- FRED 캐시는 최신 개정치다 (ALFRED 아님). 오늘의 판정에는 무관, 과거 상관(8.6)에는 한계로 적는다.
+- 기준일은 **마지막 월말**이다 (8/23 실행 → 7/31). 그 달이 끝나야 월말 값이 있다.
+
+### 8.3 tailwind 의 분모와 공통 인자 차감
+
+- 분모는 **가용 엣지의 가중치 합**이다. 드라이버가 없는 엣지는 분자·분모에서 빠지고 `n_edges_missing`·
+  `weight_coverage` 로 보고된다 (전체 가중치로 나누면 결측이 "중립" 으로 둔갑한다).
+- 공통 인자 기여 `cf(t) = Σ w·sign·state / W_avail(t)` 는 분자가 전 테마에 같아도 분모가 달라 테마마다
+  다르다. 그 **테마별 기여분의 횡단면 중앙값**을 빼고 더한다 (`tailwind`), 차감 전 값은 `tailwind_raw`.
+- 하드 규칙 `tailwind < −0.5` 는 `hard_exclude` **플래그**만 세우고, `weight_coverage ≥ 0.5` 일 때만
+  선다 (엣지 하나로 제외하면 결측이 판정이 된다). 실제 제외는 `final(t)` 를 만드는 단계(M5 이후)의 일.
+- `policy_events` 는 테마별이다. `state/physical/manual/policy_events.csv` 의 `effect` 가 **해당 테마에**
+  유리(+1)/불리(−1)이고, `state := sign × effect` 라 `sign × state = effect`. 창 12개월, `confirmed=Y` 만.
+
+### 8.4 4분면 — 축 구성과 신용 페널티
+
+성장축·인플레축은 §5 의 드라이버 측정값을 각각 z(120개월) 한 뒤 평균 (employment 는 이미 z).
+**구성 드라이버 2개 이상**이 있어야 축을 내고 `n_growth`·`n_inflation` 을 매 행에 적는다.
+`hy_spread` 상태 +1(확대) 이면 `credit_stress`, 페널티 계수 **0.5 를 선언**만 한다 — 적용은
+`final(t)` 단계. 출력은 ASCII 차트(`regime.txt`) + 최근 24개월 CSV (`regime.csv`). PNG 없음 (matplotlib 미의존).
+
+### 8.5 `contradicts_when` 은 서술이다
+
+기계가 읽는 것은 선택 필드 `contradicts_rule` (`all_of`/`any_of` 의 드라이버 상태 조건) 뿐이다.
+서술이 순수 드라이버 상태 조건인 엣지 2개(달러·금 동반 강세, 실질금리 상승 동반)에만 규칙을 달았고
+나머지 20개는 `PROSE_ONLY` 로 표에 올라 사람이 읽는다. `FLAGGED` 는 플래그까지다 — 자동 제외 없음.
+
+### 8.6 엣지 부호 일치율 실측 (`docs/macro-dag-sign-check.md`)
+
+x = 드라이버 측정값(as-of), y = 테마 EW 지수(L1 패널 캐시)의 **전방 12개월 초과수익**(vs SPY).
+엣지가 `lag_months` 로 선행을 선언했으므로 전방 수익을 쓴다. 36·60개월 롤링 상관의 부호 일치 비율과
+창 수를 세며 **검정이 아니다** (전방수익 중첩). 플래그는 최신 창 기준 §6 의 0.3/0.1. 결과 문서는
+`uv run msa macro --doc-out docs/macro-dag-sign-check.md` 가 만든다.
+
+### 8.7 데이터 소스와 오늘의 가용성
+
+| provider | 경로 | 2026-08 현재 |
+|---|---|---|
+| `fred` | `state/physical/fred/<SYM>.csv` (L1 과 공유). `msa data fred-fetch` 가 24종+physical_ref+CPI 를 받는다 | **없음** — `FRED_API_KEY` 미설정, 캐시 없음 |
+| `derived` (`usd_liquidity`) | 위 캐시 3종. 단위는 `<SYM>.meta.json` 과 대조 (RRP 십억→백만) | 없음 |
+| `etf` (`gold_price` GLD·IAU, `copper_price` 폴백 CPER) | 벌크 `funds.csv.zip` | 있음 |
+| `manual` (`china_credit_impulse`·`china_property`) | `state/physical/manual/<id>.csv` (`date,value[,available]`) | 없음 |
+| `agent` (`policy_events`) | `state/physical/manual/policy_events.csv` | 없음 |
+| `sharadar_derived` (`hyperscaler_capex`) | DuckDB SF1 ARQ `capex`, datekey as-of, 5사 동시 가용 월만 | 있음 |
+
+`msa macro` 는 없는 것을 **이름으로** 적는다 (`drivers.csv` 의 `missing_series`, 리포트의 결측 목록).

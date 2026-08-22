@@ -305,6 +305,10 @@ edges:
     contradicts_when: >
       달러와 금이 동반 강세면 통화체계 신뢰 훼손(안전자산 동반 매수) 국면이다.
       이 엣지로 설명되지 않으므로 별도 논지가 필요 — 자동 점수에서 제외 플래그.
+    contradicts_rule:            # 위 서술의 기계 판독형 (런타임 모순 감사용 — 의미 추가 없음)
+      all_of:
+        - {driver: dollar_broad, state: 1}
+        - {driver: gold_price, state: 1}
 
   - from: dollar_broad
     to: [oil_gas_ep, intl_majors, oil_services, lumber_paper]
@@ -561,6 +565,9 @@ edges:
     evidence: "2021-2022 주거·물류 임대료의 두 자릿수 갱신"
     observable: "T10YIE 6개월 변화 > +15bp"
     contradicts_when: "실질금리 상승이 동반되면 캡레이트 경로가 임대료 경로를 압도한다"
+    contradicts_rule:            # 위 서술의 기계 판독형
+      all_of:
+        - {driver: real_rate_10y, state: 1}
 
   # ───────────────────────────────────────────────────────────────────────
   # hy_spread — 하이일드 스프레드 (부호는 −1: 확대 = 역풍)
