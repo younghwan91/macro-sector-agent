@@ -5,6 +5,8 @@
 커밋: b0e06e1f114cb6365b4112447c796ad93c31e041 (해당 파일의 마지막 변경 커밋; HEAD 8aef4e4e)
 복사: 2026-08-23 (M3.5). 함수 본문은 원본 그대로다. 바꾼 것은 이 머리말과 `scipy` 의존
 (pyproject 에 추가)뿐이다. 상류 변경을 자동 반영하지 않는다 (`docs/08-data-contract.md` §5).
+성능 최적화 2026-08-23: 본문과 수학 동일, 결과 동일(부동소수 반올림 제외) — CSCV 루프를 블록별
+합·제곱합으로 바꿔 조합마다 행렬을 다시 자르지 않는다 (`probability_of_backtest_overfitting`).
 
 이 저장소에서의 용법 (`src/msa/l1/backtest.py`):
 - `deflated_sharpe_ratio` 의 `returns` 에는 **전략 수익률이 아니라** 월별 rank-IC 시계열 또는
@@ -149,26 +151,38 @@ def probability_of_backtest_overfitting(
         idx = rng.choice(len(all_combos), size=max_splits, replace=False)
         all_combos = [all_combos[i] for i in idx]
 
-    def _sharpe(block: np.ndarray) -> np.ndarray:
-        mu = block.mean(axis=0)
-        sd = block.std(axis=0, ddof=1)
+    # 블록별 합·제곱합·개수를 한 번만 만들고, 조합마다 IS/OOS 를 더해서 Sharpe 를 낸다.
+    # 전역 평균을 먼저 빼 두면 (분산은 불변) 제곱합 상쇄 오차가 작다. 수학은 원본의
+    # mean / std(ddof=1) 과 같고, 차이는 부동소수 합산 순서뿐이다.
+    centered = m - m.mean(axis=0, keepdims=True)
+    gmean = m.mean(axis=0)
+    b_sum = np.stack([centered[b].sum(axis=0) for b in blocks])  # (n_blocks, n_cfg)
+    b_sq = np.stack([(centered[b] ** 2).sum(axis=0) for b in blocks])
+    b_n = np.array([len(b) for b in blocks], dtype=float)
+    sel = np.zeros((len(all_combos), n_blocks), dtype=float)
+    for i, combo in enumerate(all_combos):
+        sel[i, list(combo)] = 1.0
+
+    def _sharpe(sel_mat: np.ndarray) -> np.ndarray:
+        n = sel_mat @ b_n  # (n_combos,)
+        s1 = sel_mat @ b_sum  # (n_combos, n_cfg)
+        s2 = sel_mat @ b_sq
+        mu_c = s1 / n[:, None]
+        var = (s2 - n[:, None] * mu_c**2) / (n[:, None] - 1.0)
+        sd = np.sqrt(np.maximum(var, 0.0))
+        mu = mu_c + gmean[None, :]
         return np.asarray(np.divide(mu, sd, out=np.zeros_like(mu), where=sd > 0))
 
-    logits, oos_sr_best = [], []
-    for combo in all_combos:
-        is_rows = np.concatenate([blocks[b] for b in combo])
-        oos_rows = np.concatenate([blocks[b] for b in range(n_blocks) if b not in combo])
-        best = int(np.argmax(_sharpe(m[is_rows])))
-        oos_sr = _sharpe(m[oos_rows])
-        # OOS 상대순위 ω ∈ (0,1): 1 이면 OOS 에서도 1등
-        omega = (stats.rankdata(oos_sr)[best]) / (n_cfg + 1.0)
-        logits.append(np.log(omega / (1.0 - omega)))
-        oos_sr_best.append(oos_sr[best])
-
-    logits_arr = np.asarray(logits)
+    is_sr = _sharpe(sel)
+    oos_sr = _sharpe(1.0 - sel)
+    best = np.argmax(is_sr, axis=1)
+    rows = np.arange(len(all_combos))
+    # OOS 상대순위 ω ∈ (0,1): 1 이면 OOS 에서도 1등
+    omega = stats.rankdata(oos_sr, axis=1)[rows, best] / (n_cfg + 1.0)
+    logits_arr = np.log(omega / (1.0 - omega))
     return PBOResult(
         pbo=float((logits_arr < 0).mean()),
         logits=logits_arr,
         n_splits=len(all_combos),
-        oos_sharpe_of_is_best=np.asarray(oos_sr_best),
+        oos_sharpe_of_is_best=oos_sr[rows, best],
     )
