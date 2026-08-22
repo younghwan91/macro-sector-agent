@@ -224,3 +224,33 @@ evidence:                         # 비면 스키마 검증 실패 (CLAUDE.md §
 | 숫자 환각 | 생산량·재고 수치 조작 | `reliability` 등급 + `source_url` 필수. 수치는 원문 대조 없이 `high` 불가 |
 | 논지 표류 | 재실행마다 논지가 조금씩 바뀌어 무효화를 회피 | 이전 thesis 를 입력으로 주고 diff 를 저널에 기록 (`09-operations.md`) |
 | **`contested` 가 상시 보류로 굳는다** | `referee` 가 판단을 미루는 편한 출구로 쓰면 기각도 통과도 하지 않게 되고, 하드 게이트가 무력해진다 | `04-value-trap.md` §3.1 의 **"서술 못 하면 기각으로 닫는다"** 를 기계적으로 적용한다. 더해 **보류 건수를 리포트에 센다** — 라운드별 `contested` 수와 직전 라운드에서 넘어온 미해소 건수를 함께 적어, 보류가 쌓이는 것이 보이게 한다 |
+
+## 7. 구현 노트 (M7)
+
+코드: `src/msa/l3/` (`contracts` · `providers` · `roles` · `schema` · `gates` · `pipeline`), CLI `msa research <theme>`.
+
+**제공자 추상화.** 파이프라인은 `LLMProvider.complete(request) -> CompletionResult` 만 호출한다.
+구현 셋 — `AnthropicProvider`(공식 `anthropic` SDK, 구조화 출력 `output_config.format`, adaptive thinking,
+`bear`·`referee` = `claude-opus-5`, `supply`·`catalyst` = `claude-sonnet-5`; 환경변수
+`MSA_L3_MODEL_TOP` / `MSA_L3_MODEL_STANDARD` 로 덮어쓴다), `MockProvider`(결정론적 합성 산출, 테스트·`--dry-run`),
+`FixtureProvider`(`tests/fixtures/l3/<theme>/<role>.json` 녹화 형식). 웹 검색은 `SearchTool` 프로토콜 —
+기본 `StubSearchTool` 은 호출 시 `NotConfigured` 를 던지고, `AnthropicWebSearch` 는 서버 도구
+(`web_search_20260209`, `max_uses` = 남은 예산)를 싣는다. 역할당 예산 15 는 `SearchBudget` 이 강제하고
+사용량은 `CostLedger` 가 역할별 호출·토큰·검색 수로 세어 리포트에 싣는다 (§5).
+
+**이 런타임에서 막힌 것.** `ANTHROPIC_API_KEY` 가 없고 검색 도구가 없어 **실제 모델 호출은 한 번도 돌리지
+않았다.** 4역할 프롬프트·JSON 스키마·게이트·검증·저장 경로는 Mock/Fixture 로 전부 돌렸고 테스트가 있다.
+실제 실행은 `ANTHROPIC_API_KEY=... msa research <theme>` — 첫 실행에서 확인할 것: (1) 구조화 출력이 역할
+스키마를 실제로 만족하는가, (2) 서버 검색 쿼리 수가 `usage.server_tool_use.web_search_requests` 로 잡히는가,
+(3) `referee` 가 `axis1_contested` 에서 `referee_ruling` + 증거를 내는가 (못 내면 기각으로 닫힌다).
+
+**입력 계약.** L2·L4·L5 모듈을 임포트하지 않는다. 스코어카드는 `state/scans/<date>/` 파일, 거시 상태는 선택
+JSON(`state/macro/latest.json`, `tailwind` 키), 구성원 PIT 재무 요약은 DuckDB 에서 직접(시총 상위 12),
+이전 thesis 는 `state/theses/<이전 date>/`, few-shot 은 `state/cases/*.md`(없으면 "few-shot 없음").
+
+**축 1 은 L1 값을 그대로 옮긴다.** `verdict_post_ss`·`axis1_contested`·`ss_n`·`ss_coverage`·`ma_flag` 를 thesis 에
+복사하고 `referee` 는 contested 일 때의 서술 판정만 낸다. 스캔 자체를 `reliability: medium` 증거로 한 줄 추가한다.
+
+**산출물.** `state/theses/<asof>/<theme>.thesis.yaml` · `<theme>.report.md` · `rejections-pending.yaml`
+(기각 행, `09` §4 형식 — 대장 적재는 M8) · `contested.json`(라운드 보류 수 + 이월 수). 스키마 미달은
+저장하지 않고 종료 코드 2, 게이트 기각은 저장한다 (§4).

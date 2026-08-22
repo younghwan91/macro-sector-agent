@@ -1,7 +1,7 @@
 """`msa` CLI.
 
-도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3).
-나머지(`macro`·`research`·`picks`·`portfolio`·`check`)는 `--help` 에는 나오되
+도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3) · `research`(M7).
+나머지(`macro`·`picks`·`portfolio`·`check`)는 `--help` 에는 나오되
 호출하면 `NotImplementedError` 를 던진다 — 있는 척하는 스텁이 조용히 빈 결과를
 내는 것보다 낫다 (`CLAUDE.md` §2).
 """
@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date
 
 import typer
@@ -20,7 +21,7 @@ app = typer.Typer(
     no_args_is_help=True,
     help=(
         "macro-sector-agent — 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 "
-        "(M1~M3: 데이터·L1 스캐너)"
+        "(M1~M3: 데이터·L1 스캐너 · M7: L3 리서치)"
     ),
 )
 data_app = typer.Typer(no_args_is_help=True, help="L0 데이터 — 스토어 상태와 커버리지 감사")
@@ -244,9 +245,80 @@ def macro() -> None:
 
 
 @app.command()
-def research(theme: str) -> None:
-    """L3 에이전트 리서치 → thesis 객체. (미구현 — M5)"""
-    _todo("research", "docs/05-agent-research.md")
+def research(
+    theme: str = typer.Argument(..., help="테마 id (state/themes.yaml)"),
+    asof: str = typer.Option(
+        "", help="기준일 YYYY-MM-DD — 그 이전 최신 스캔을 쓴다. 기본 = 최신 스캔"
+    ),
+    provider: str = typer.Option(
+        "anthropic",
+        "--provider",
+        help="anthropic | mock | fixture. anthropic 은 ANTHROPIC_API_KEY 필요",
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="MockProvider 로 경로만 검증 (저장도 한다 — 합성 표기)"
+    ),
+    no_write: bool = typer.Option(False, "--no-write", help="state/theses/ 에 저장하지 않는다"),
+    no_store: bool = typer.Option(
+        False, "--no-store", help="DuckDB 구성원 재무 요약 생략 (경고로 표시)"
+    ),
+    macro: str = typer.Option(
+        "", help="L2 거시 상태 JSON 경로 (기본 state/macro/latest.json 이 있으면 사용)"
+    ),
+    fixtures: str = typer.Option("", help="--provider fixture 의 루트 (기본 tests/fixtures/l3)"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """L3 에이전트 리서치 (supply · catalyst · bear · referee) → thesis 객체 (docs/05).
+
+    산출물: state/theses/<date>/<theme>.thesis.yaml · <theme>.report.md · rejections-pending.yaml ·
+    contested.json.
+    스키마 미달이면 저장하지 않고 종료 코드 2. 게이트 기각은 저장한다 (docs/05 §4).
+    """
+    from pathlib import Path
+
+    from msa.config import paths
+    from msa.l3.contracts import InputsError, assemble_inputs
+    from msa.l3.pipeline import run_research
+    from msa.l3.providers import ProviderError, make_provider
+    from msa.l3.schema import ThesisRejected
+
+    _setup_logging(verbose)
+    kind = "mock" if dry_run else provider
+    state = paths().state
+    try:
+        inputs = assemble_inputs(
+            theme,
+            state_dir=state,
+            asof=asof or None,
+            macro_path=Path(macro) if macro else None,
+            with_store=not no_store,
+        )
+    except InputsError as e:
+        typer.echo(f"입력 오류: {e}", err=True)
+        raise typer.Exit(code=1) from e
+    prov = make_provider(kind, theme_id=theme, fixture_root=Path(fixtures) if fixtures else None)
+    if kind == "anthropic" and not (
+        os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+    ):
+        typer.echo(
+            "경고: ANTHROPIC_API_KEY 가 비어 있다 — SDK 가 `ant auth login` 프로필을 찾지 못하면 "
+            "인증 오류가 난다. "
+            "오프라인 검증은 --dry-run 또는 --provider fixture.",
+            err=True,
+        )
+    try:
+        res = run_research(inputs, prov, theses_root=state / "theses", write=not no_write)
+    except ThesisRejected as e:
+        typer.echo("thesis 스키마 검증 실패 — 저장하지 않는다 (CLAUDE.md §3·§5):", err=True)
+        for line in e.result.errors:
+            typer.echo(f"  - {line}", err=True)
+        raise typer.Exit(code=2) from e
+    except ProviderError as e:
+        typer.echo(f"제공자 오류: {e}", err=True)
+        raise typer.Exit(code=3) from e
+    typer.echo(res.report_md)
+    if res.thesis_path:
+        typer.echo(f"\n저장: {res.thesis_path}")
 
 
 @app.command()
