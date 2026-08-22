@@ -1,6 +1,6 @@
 """`msa` CLI.
 
-도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3).
+도는 것: `data status`·`data audit`·`data fred-lag`(M1) · `scan`(M3) · `backtest l1`(M3.5).
 나머지(`macro`·`research`·`picks`·`portfolio`·`check`)는 `--help` 에는 나오되
 호출하면 `NotImplementedError` 를 던진다 — 있는 척하는 스텁이 조용히 빈 결과를
 내는 것보다 낫다 (`CLAUDE.md` §2).
@@ -25,6 +25,10 @@ app = typer.Typer(
 )
 data_app = typer.Typer(no_args_is_help=True, help="L0 데이터 — 스토어 상태와 커버리지 감사")
 app.add_typer(data_app, name="data")
+backtest_app = typer.Typer(
+    no_args_is_help=True, help="관문 0 — 결정론 계층의 백테스트 (docs/10 §2). 튜닝 루프가 아니다"
+)
+app.add_typer(backtest_app, name="backtest")
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -233,6 +237,25 @@ def scan(
         f"축 1: 선언 {ph['declared']} · 데이터 있음 {ph['data_ok']} · "
         f"없음 {ph['data_missing']} · CPI {ph['cpi']}"
     )
+    if res.out_dir:
+        typer.echo(f"저장: {res.out_dir}")
+
+
+@backtest_app.command("l1")
+def backtest_l1(
+    force: bool = typer.Option(False, "--force", help="패널·재무·지표 캐시를 무시하고 다시 만든다"),
+    no_write: bool = typer.Option(False, "--no-write", help="state/backtests/ 에 저장하지 않는다"),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+) -> None:
+    """L1 스코어보드 백테스트 — rank-IC · 스프레드 · breadth_lead 실측 · DSR/PBO (M3.5).
+
+    산출물: state/backtests/l1/<store_end>/. 결과로 가중치를 바꾸지 않는다 (CLAUDE.md §1).
+    """
+    from msa.l1.backtest import render_report, run_backtest
+
+    _setup_logging(verbose)
+    res = run_backtest(write=not no_write, force=force)
+    typer.echo(render_report(res))
     if res.out_dir:
         typer.echo(f"저장: {res.out_dir}")
 

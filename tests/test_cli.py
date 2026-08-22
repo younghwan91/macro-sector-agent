@@ -37,3 +37,12 @@ def test_data_subcommands_registered() -> None:
     assert r.exit_code == 0
     for c in ("status", "audit", "fred-lag"):
         assert c in r.stdout
+
+
+def test_backtest_subgroup_registered() -> None:
+    r = runner.invoke(app, ["backtest", "--help"])
+    assert r.exit_code == 0
+    assert "l1" in r.stdout
+    r2 = runner.invoke(app, ["backtest", "l1", "--help"])
+    assert r2.exit_code == 0
+    assert "--no-write" in r2.stdout

@@ -104,6 +104,8 @@ msa data status       # 스토어 상태·결측률 (M1)
 msa data audit        # 커버리지 감사 — 데이터 부분 (M1)
 msa scan              # L1 사이클 스캐너 → 테마 스코어보드 (M3). --asof --force --no-vcp
                       #   산출물 state/scans/<date>/ (scoreboard·indicators·coverage·report·meta)
+msa backtest l1       # L1 백테스트 관문 0 (M3.5) — rank-IC·스프레드·breadth_lead·DSR/PBO.
+                      #   산출물 state/backtests/l1/<date>/ · 판정 docs/backtest-l1.md. 튜닝 루프가 아니다
 # 아래는 미구현 — 호출하면 NotImplementedError
 msa macro             # L2 거시 국면 + 드라이버 상태
 msa research <theme>  # L3 에이전트 (베어 포함) → thesis 객체
