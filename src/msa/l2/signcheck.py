@@ -58,8 +58,9 @@ class ThemeIndexMonthly:
     meta: dict[str, Any] = field(default_factory=dict)
 
 
-def load_theme_index_from_cache(cache_dir: Path) -> ThemeIndexMonthly:
-    """L1 패널 캐시 → 월말 EW 지수. 캐시가 없으면 `SignCheckUnavailable`."""
+# TODO(rf-b): → `msa.l1.panel.load_cached_panel(cache_dir)` (ThemePanel) 로 교체.
+# 그 전까지의 최소 로더 — 최신 패널의 `ret_ew`(일별 × 테마)·SPY 종가·메타만 읽는다.
+def _load_panel_from_cache(cache_dir: Path) -> tuple[pd.DataFrame, pd.Series, dict[str, Any]]:
     panels = sorted(cache_dir.glob("l1_panel_*.parquet"), key=lambda p: p.stat().st_mtime)
     if not panels:
         raise SignCheckUnavailable(
@@ -70,16 +71,22 @@ def load_theme_index_from_cache(cache_dir: Path) -> ThemeIndexMonthly:
     spy_p = cache_dir / f"l1_spy_{fp}.parquet"
     if not spy_p.exists():
         raise SignCheckUnavailable(f"SPY 캐시 없음: {spy_p}")
-    frame = pd.read_parquet(panel_p, columns=["ret_ew"])
-    r = frame["ret_ew"].unstack("theme").sort_index()
-    level = (1.0 + r.fillna(0.0)).cumprod().where(r.notna().cummax())
-    idx_m = level.resample("ME").last()
-    spy = pd.read_parquet(spy_p)["close"].sort_index().resample("ME").last()
+    ret_ew = pd.read_parquet(panel_p, columns=["ret_ew"])["ret_ew"].unstack("theme").sort_index()
+    spy = pd.read_parquet(spy_p, columns=["close"])["close"].sort_index()
     meta: dict[str, Any] = {"panel": panel_p.name, "fingerprint": fp}
     meta_p = cache_dir / f"l1_panel_{fp}.json"
     if meta_p.exists():
         meta.update(json.loads(meta_p.read_text()))
-    return ThemeIndexMonthly(index=idx_m, spy=spy, meta=meta)
+    return ret_ew, spy, meta
+
+
+def load_theme_index_from_cache(cache_dir: Path) -> ThemeIndexMonthly:
+    """L1 패널 캐시 → 월말 EW 지수. 캐시가 없으면 `SignCheckUnavailable`."""
+    r, spy, meta = _load_panel_from_cache(cache_dir)
+    level = (1.0 + r.fillna(0.0)).cumprod().where(r.notna().cummax())  # = ThemePanel.index_level
+    return ThemeIndexMonthly(
+        index=level.resample("ME").last(), spy=spy.resample("ME").last(), meta=meta
+    )
 
 
 def forward_excess_return(
@@ -92,31 +99,39 @@ def forward_excess_return(
     return fwd.sub(fwd_spy, axis=0)
 
 
-def rolling_sign_agreement(x: pd.Series, y: pd.Series, window: int, sign: int) -> dict[str, Any]:
-    both = pd.concat([x, y], axis=1, keys=["x", "y"]).dropna()
+#: 창을 만들 수 없을 때의 결과 꼴 (`n_obs` 는 호출자가 채운다).
+_EMPTY: dict[str, Any] = {
+    "n_windows": 0,
+    "agree_share": float("nan"),
+    "latest_corr": float("nan"),
+    "n_obs": 0,
+}
+MIN_FULL_CORR_OBS = 24  # 전 구간 상관을 적는 최소 관측 수
+
+
+def _paired(x: pd.Series, y: pd.Series) -> pd.DataFrame:
+    """둘 다 있는 시점만 — 한 쌍에 한 번 만들어 창·전 구간 상관에 같이 쓴다."""
+    return pd.concat([x, y], axis=1, keys=["x", "y"]).dropna()
+
+
+def _agreement(both: pd.DataFrame, window: int, sign: int) -> dict[str, Any]:
     if len(both) < window:
-        return {
-            "n_windows": 0,
-            "agree_share": float("nan"),
-            "latest_corr": float("nan"),
-            "n_obs": len(both),
-        }
+        return _EMPTY | {"n_obs": len(both)}
     rc = both["x"].rolling(window, min_periods=window).corr(both["y"]).dropna()
     rc = rc[np.isfinite(rc)]
     if rc.empty:
-        return {
-            "n_windows": 0,
-            "agree_share": float("nan"),
-            "latest_corr": float("nan"),
-            "n_obs": len(both),
-        }
-    agree = float((np.sign(rc) == sign).mean())
+        return _EMPTY | {"n_obs": len(both)}
     return {
         "n_windows": len(rc),
-        "agree_share": agree,
+        "agree_share": float((np.sign(rc) == sign).mean()),
         "latest_corr": float(rc.iloc[-1]),
         "n_obs": len(both),
     }
+
+
+def rolling_sign_agreement(x: pd.Series, y: pd.Series, window: int, sign: int) -> dict[str, Any]:
+    """`window` 개월 롤링 상관의 부호가 `sign` 과 같은 창의 비율·최신 상관·창 수."""
+    return _agreement(_paired(x, y), window, sign)
 
 
 def flag_for(corr: float, sign: int) -> str:
@@ -157,7 +172,16 @@ def run_sign_check(
     """
     notes = missing_notes or {}
     pairs = [p for p in expand_edges(dag, theme_ids) if not p.edge.wildcard]
-    agent_drivers = {d.id for d in dag.drivers if d.provider == "agent"}
+    agent_drivers = dag.agent_drivers
+    # 드라이버별로 한 번: 측정값 시리즈와 "없음" 사유 (쌍 451개가 같은 26개 드라이버를 본다)
+    driver_reason: dict[str, str] = {}
+    for drv in {p.edge.source for p in pairs}:
+        if drv in agent_drivers:
+            driver_reason[drv] = "policy_events 는 시계열이 아니다"
+        elif drv not in measures.columns or measures[drv].notna().sum() == 0:
+            driver_reason[drv] = f"드라이버 {drv} 측정값 없음" + (
+                f" — {notes[drv]}" if drv in notes else ""
+            )
     recs: list[dict[str, Any]] = []
     for p in pairs:
         e = p.edge
@@ -169,47 +193,25 @@ def run_sign_check(
             "strength": e.strength,
             "lag_months": "" if e.lag_months is None else f"{e.lag_months[0]}-{e.lag_months[1]}",
         }
-        x = measures[e.source] if e.source in measures.columns else None
-        y = (
-            fwd_excess[p.theme]
-            if (fwd_excess is not None and p.theme in fwd_excess.columns)
-            else None
-        )
-        reason = ""
-        if e.source in agent_drivers:
-            reason = "policy_events 는 시계열이 아니다"
-        elif x is None or x.notna().sum() == 0:
-            reason = f"드라이버 {e.source} 측정값 없음" + (
-                f" — {notes[e.source]}" if e.source in notes else ""
-            )
-        elif y is None:
+        reason = driver_reason.get(e.source, "")
+        if not reason and (fwd_excess is None or p.theme not in fwd_excess.columns):
             reason = unavailable_reason or f"테마 {p.theme} 지수 없음"
         rec["reason"] = reason
+        both: pd.DataFrame | None = None
+        if not reason:
+            assert fwd_excess is not None
+            both = _paired(measures[e.source], fwd_excess[p.theme])
         for w in windows:
-            if reason:
-                r = {
-                    "n_windows": 0,
-                    "agree_share": float("nan"),
-                    "latest_corr": float("nan"),
-                    "n_obs": 0,
-                }
-            else:
-                assert x is not None and y is not None
-                r = rolling_sign_agreement(x, y, w, e.sign)
+            r = _EMPTY if both is None else _agreement(both, w, e.sign)
             rec[f"n_windows_{w}"] = r["n_windows"]
             rec[f"agree_{w}"] = r["agree_share"]
             rec[f"latest_corr_{w}"] = r["latest_corr"]
             rec[f"flag_{w}"] = flag_for(r["latest_corr"], e.sign)
-        if not reason:
-            assert x is not None and y is not None
-            both = pd.concat([x, y], axis=1).dropna()
-            rec["full_corr"] = (
-                float(both.iloc[:, 0].corr(both.iloc[:, 1])) if len(both) >= 24 else float("nan")
-            )
-            rec["n_obs"] = len(both)
+        if both is not None and len(both) >= MIN_FULL_CORR_OBS:
+            rec["full_corr"] = float(both["x"].corr(both["y"]))
         else:
             rec["full_corr"] = float("nan")
-            rec["n_obs"] = 0
+        rec["n_obs"] = 0 if both is None else len(both)
         recs.append(rec)
     cols = ["edge", "from", "theme", "sign", "strength", "lag_months", "n_obs", "full_corr"]
     for w in windows:
@@ -236,25 +238,39 @@ def run_sign_check(
     )
 
 
-def _count_eq(s: pd.Series, value: str) -> int:
-    return int((s == value).sum())
-
-
-def _n_available(s: pd.Series) -> int:
-    return int((s == "").sum())
+_EDGE_FLAGS = ("CONTRADICTED", "NO_SIGNAL", "CONSISTENT")
 
 
 def _aggregate(pairs: pd.DataFrame, windows: tuple[int, ...]) -> pd.DataFrame:
+    """엣지별 집계 — 테마 수·계산된 수·창별 평균 일치율·창 수·플래그별 테마 수."""
     if pairs.empty:
         return pd.DataFrame()
-    g = pairs.groupby(["edge", "from", "sign", "strength"], sort=True)
-    out = g.agg(n_themes=("theme", "size"), n_available=("reason", _n_available))
+    flags = {f"{f.lower()}_{w}": pairs[f"flag_{w}"] == f for w in windows for f in _EDGE_FLAGS}
+    g = pairs.assign(available=pairs["reason"] == "", **flags).groupby(
+        ["edge", "from", "sign", "strength"], sort=True
+    )
+    spec: dict[str, tuple[str, str]] = {
+        "n_themes": ("theme", "size"),
+        "n_available": ("available", "sum"),
+    }
     for w in windows:
-        out[f"agree_{w}"] = g[f"agree_{w}"].mean()
-        out[f"n_windows_{w}"] = g[f"n_windows_{w}"].sum()
-        for f in ("CONTRADICTED", "NO_SIGNAL", "CONSISTENT"):
-            out[f"{f.lower()}_{w}"] = g[f"flag_{w}"].apply(_count_eq, value=f)
-    return out.reset_index()
+        spec[f"agree_{w}"] = (f"agree_{w}", "mean")
+        spec[f"n_windows_{w}"] = (f"n_windows_{w}", "sum")
+        for f in _EDGE_FLAGS:
+            spec[f"{f.lower()}_{w}"] = (f"{f.lower()}_{w}", "sum")
+    return g.agg(**spec).reset_index()
+
+
+def _fetch_howto(*, with_scan: bool) -> list[str]:
+    """문서의 "키가 생기면" 절차 — 계산 불가 절에는 `msa scan`(테마 지수) 한 줄이 더 들어간다."""
+    return [
+        "```bash",
+        "export FRED_API_KEY=...",
+        "uv run msa data fred-fetch          # DRIVER_SERIES + physical_ref + CPIAUCSL 캐시",
+        *(["uv run msa scan                     # L1 패널 캐시 (테마 지수)"] if with_scan else []),
+        "uv run msa macro --doc-out docs/macro-dag-sign-check.md",
+        "```",
+    ]
 
 
 def render_markdown(res: SignCheckResult, meta: dict[str, Any]) -> str:
@@ -310,11 +326,7 @@ def render_markdown(res: SignCheckResult, meta: dict[str, Any]) -> str:
             + "). 아래 요약·엣지 표의 평균은 **계산된 쌍만의 값**이며 DAG 전체를 대표하지 않는다. "
             "FRED 기반 드라이버는 `FRED_API_KEY` 가 설정되면 채워진다:",
             "",
-            "```bash",
-            "export FRED_API_KEY=...",
-            "uv run msa data fred-fetch          # DRIVER_SERIES + physical_ref + CPIAUCSL 캐시",
-            "uv run msa macro --doc-out docs/macro-dag-sign-check.md",
-            "```",
+            *_fetch_howto(with_scan=False),
             "",
             "수동 드라이버(`china_*`)는 `state/physical/manual/<id>.csv`, `policy_events` 는 "
             "시계열이 아니라 이 검정의 대상이 아니다.",
@@ -330,12 +342,7 @@ def render_markdown(res: SignCheckResult, meta: dict[str, Any]) -> str:
             "FRED 기반 드라이버의 측정값이 "
             "없다. 이 문서는 **실측이 아니라 실측 불가의 기록**이다. 키가 생기면:",
             "",
-            "```bash",
-            "export FRED_API_KEY=...",
-            "uv run msa data fred-fetch          # DRIVER_SERIES + physical_ref + CPIAUCSL 캐시",
-            "uv run msa scan                     # L1 패널 캐시 (테마 지수)",
-            "uv run msa macro --doc-out docs/macro-dag-sign-check.md",
-            "```",
+            *_fetch_howto(with_scan=True),
             "",
         ]
     lines += ["## 드라이버별 가용성", ""]
