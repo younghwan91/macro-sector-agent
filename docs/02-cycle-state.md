@@ -126,11 +126,15 @@ Sharadar SF1 로 전부 계산 가능하고, **이걸 테마 단위로 집계해
 | `ebitda_margin_pct` | 마진의 `pct(·,10y)` | 4분기 방향과 함께 읽는다 |
 | `surprise_dir` | 실적 서프라이즈 부호의 4분기 이동평균 | 가능한 경우에만 |
 | `guidance_rev` | 컨센서스 리비전 | `portfolio-research` FMP 어댑터가 있으면 |
-| `unit_volume_proxy` | 실물 소비량 시계열. 없으면 **동일 구성원** 매출 / 관련 가격지수 | **실질 물량.** `04-value-trap.md` 축 1 과 공유 |
-| `unit_volume_median` | 동일 구성원의 **기업당 중앙값** 물량 | 합산과 부호가 갈리면 산업 축소이지 수요 소멸이 아님 |
+| `unit_series` | 실물 소비량 시계열. 없으면 **동일 구성원** 매출 / 관련 가격지수 | **실질 물량.** `04-value-trap.md` 축 1 과 공유 |
+| `unit_series_median` | 동일 구성원의 **기업당 중앙값** 물량 | 합산이 산업 규모를, 중앙값이 개별 기업 물량을 본다 |
+| `unit_cagr_10y` · `unit_cagr_5y` | `unit_series` 의 CAGR | 축 1 판정 임계가 이 값에 걸린다 (`04` 축 1) |
+| `unit_cagr_10y_median` | `unit_series_median` 의 10년 CAGR | 합산과 **부호가 갈리면** 산업 축소이지 수요 소멸이 아님 |
+| `sign_split` | `unit_cagr_10y` 와 `unit_cagr_10y_median` 의 부호가 갈리는가 | true 면 `axis1_contested` 의 사유 (`04` §3.1) |
 | `ss_n` · `ss_coverage` | 동일 구성원 수와 원 구성원 대비 비율 | **표기 없으면 조용한 절단** (`CLAUDE.md` §2) |
+| `ma_flag` | 동일 구성원 표본에 유의미한 인수 이력 기업이 있는가 | true 면 물량에 상향 편향이 남는다 (`04` 축 1 규정 5) |
 
-> `unit_volume_proxy` 는 여기서 계산하고 가치함정 판별기가 소비한다.
+> `unit_series` 는 여기서 계산하고 가치함정 판별기가 소비한다.
 > 매출이 늘어도 물량이 줄고 있으면 가격 효과일 뿐이다.
 >
 > **정의는 `04-value-trap.md` 축 1 과 하나여야 한다.** 계산이 여기 있고 판정이 저기 있으므로
@@ -138,7 +142,10 @@ Sharadar SF1 로 전부 계산 가능하고, **이걸 테마 단위로 집계해
 > ① 1순위는 **외부 실물 소비량 시계열**(L3 `supply_analyst` 수집)이고
 > 매출/가격지수는 그것이 없을 때의 **폴백**이다.
 > ② 폴백은 측정 구간의 양 끝에 **모두 존재하는 기업**만으로 합산한다(동일 구성원).
-> ③ `ss_n`·`ss_coverage`·M&A 플래그를 함께 낸다.
+> ③ `ss_n`·`ss_coverage`·`ma_flag` 를 함께 낸다.
+> ⑤ **이름은 `04-value-trap.md` 축 1 · `specs/thesis.schema.yaml` 과 하나로 쓴다.**
+>   이전 판은 여기서만 `unit_volume_proxy`·`unit_volume_median` 이라 불렀다 —
+>   L1 이 만든 것을 하류가 다른 이름으로 받으면 구현에서 두 지표가 된다.
 > ④ **구성원이 몇 개 줄었는지는 이 지표가 세지 않는다** — 그건 §E 의 `exit_count` 몫이다.
 > 두 블록이 같은 관측을 두 번 세면 04 의 축 1 과 축 2 가 같은 사실을 반대로 해석하게 된다.
 
