@@ -14,10 +14,8 @@ from typing import Any
 
 from msa.errors import RefusedInput
 
-#: thesis 열거형의 단일 소유자는 `msa.thesis` 다 (docs/specs/thesis.schema.yaml 기준). 여기서는
-#: 기존 임포터(`ops.journal`·`ops.state_files`·테스트)를 위해 같은 이름으로 재수출한다.
-#: `REJECTION_PATHS` 는 `gate_result.path` / `rejections.yaml` 의 `path` 열 — 두 곳이 같은 값을
-#: 쓴다 (docs/09 §4).
+# enum 의 단일 소유자는 `msa.thesis` 다 — 기존 importer(`ops.journal`·`ops.state_files`·테스트)를
+# 위해 같은 이름으로 재-export 한다.
 from msa.thesis import (
     AXES,
     AXIS_VERDICTS,
@@ -36,6 +34,7 @@ __all__ = [
     "INVALIDATION_STATUS",
     "REJECTION_PATHS",
     "TRIGGER_STATUS",
+    "FieldChange",
     "ThesisInvalid",
     "diff_thesis",
     "flatten",
@@ -125,8 +124,8 @@ def validate_thesis(t: dict[str, Any]) -> None:
 
 # ---------------------------------------------------------------------------
 # 필드 단위 diff — 논지 표류 추적 (docs/05 §6, docs/09 §2)
-# `msa.thesis.thesis_diff` (L3 의 필드 단위 표류 diff) 와는 의도적으로 별개다 — 이쪽은 저널용
-# 평탄(flatten) diff 이며 `msa journal diff` 출력 형식이 여기에 걸려 있다.
+# `msa.thesis.thesis_diff` 는 L3 리포트용 구조화 diff(필드 7개 + 축 판정) 이고, 여기 것은 저널
+# 스냅샷 두 개를 점 경로로 평탄화해 전부 대조하는 diff 다 — 용도가 달라 합치지 않는다.
 # ---------------------------------------------------------------------------
 
 
