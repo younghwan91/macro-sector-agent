@@ -72,8 +72,9 @@ def _missing(symbol: str, source: str, note: str) -> RawSeries:
     return RawSeries(symbol, source, SeriesStatus.MISSING, note=note)
 
 
-# TODO(rf-b): → `msa.l1.physical.read_date_value_csv(path, extra=("available",))` 로 교체
-# (L1 이 `extra` 열을 받게 되면 아래 본문은 그 호출 한 줄이 된다).
+# `msa.l1.physical.read_date_value_csv` 와 값 열 규칙(소문자 컬럼·to_numeric·결측 제거·오름차순)은
+# 같지만 선택 열 `available`(이용가능일)을 같은 행 단위로 함께 읽어야 해서 별도로 둔다
+# (CSV 를 두 번 읽지 않는다).
 def read_manual_csv(path: Path) -> tuple[pd.Series, pd.Series | None]:
     """`date,value[,available]` → (값, 이용가능일 또는 None)."""
     df = pd.read_csv(path)

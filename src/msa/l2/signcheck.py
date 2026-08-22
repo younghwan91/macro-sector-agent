@@ -28,7 +28,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +36,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from msa.data.store import StoreError
+from msa.l1.panel import load_cached_panel
 from msa.l2.dag import MacroDag, expand_edges
 
 log = logging.getLogger(__name__)
@@ -58,32 +59,19 @@ class ThemeIndexMonthly:
     meta: dict[str, Any] = field(default_factory=dict)
 
 
-# TODO(rf-b): → `msa.l1.panel.load_cached_panel(cache_dir)` (ThemePanel) 로 교체.
-# 그 전까지의 최소 로더 — 최신 패널의 `ret_ew`(일별 × 테마)·SPY 종가·메타만 읽는다.
-def _load_panel_from_cache(cache_dir: Path) -> tuple[pd.DataFrame, pd.Series, dict[str, Any]]:
-    panels = sorted(cache_dir.glob("l1_panel_*.parquet"), key=lambda p: p.stat().st_mtime)
-    if not panels:
-        raise SignCheckUnavailable(
-            f"L1 패널 캐시 없음: {cache_dir}/l1_panel_*.parquet — `msa scan` 을 먼저 돌려라"
-        )
-    panel_p = panels[-1]
-    fp = panel_p.stem.removeprefix("l1_panel_")
-    spy_p = cache_dir / f"l1_spy_{fp}.parquet"
-    if not spy_p.exists():
-        raise SignCheckUnavailable(f"SPY 캐시 없음: {spy_p}")
-    ret_ew = pd.read_parquet(panel_p, columns=["ret_ew"])["ret_ew"].unstack("theme").sort_index()
-    spy = pd.read_parquet(spy_p, columns=["close"])["close"].sort_index()
-    meta: dict[str, Any] = {"panel": panel_p.name, "fingerprint": fp}
-    meta_p = cache_dir / f"l1_panel_{fp}.json"
-    if meta_p.exists():
-        meta.update(json.loads(meta_p.read_text()))
-    return ret_ew, spy, meta
-
-
 def load_theme_index_from_cache(cache_dir: Path) -> ThemeIndexMonthly:
-    """L1 패널 캐시 → 월말 EW 지수. 캐시가 없으면 `SignCheckUnavailable`."""
-    r, spy, meta = _load_panel_from_cache(cache_dir)
-    level = (1.0 + r.fillna(0.0)).cumprod().where(r.notna().cummax())  # = ThemePanel.index_level
+    """L1 패널 캐시(`msa.l1.panel.load_cached_panel`) → 월말 EW 지수.
+
+    캐시가 없으면 `SignCheckUnavailable`."""
+    try:
+        panel = load_cached_panel(cache_dir)
+    except StoreError as e:
+        raise SignCheckUnavailable(f"{e} — `msa scan` 을 먼저 돌려라") from e
+    built = dict(panel.built_from)
+    fp = str(built.get("fingerprint", ""))
+    meta: dict[str, Any] = {"panel": f"l1_panel_{fp}.parquet", "fingerprint": fp, **built}
+    level = panel.index_level("ew")
+    spy = panel.spy["close"].sort_index()
     return ThemeIndexMonthly(
         index=level.resample("ME").last(), spy=spy.resample("ME").last(), meta=meta
     )

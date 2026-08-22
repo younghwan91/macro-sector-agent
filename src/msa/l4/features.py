@@ -82,7 +82,7 @@ from msa.config import paths
 from msa.data import pit
 from msa.data.store import Store, StoreError
 from msa.dates import months_between
-from msa.l1.physical import PhysicalSeries, load_etf_series, load_fred_series, load_manual_series
+from msa.l1.physical import PhysicalSeries, load_ref
 from msa.l1.scoreboard import xs_pct
 from msa.status import FundStatus
 from msa.themes import MEMBER_META_MIN_ROWS, Membership, Theme
@@ -519,17 +519,10 @@ def load_reference_series(theme: Theme, *, allow_fetch: bool) -> PhysicalSeries 
     """테마 `physical_ref` 를 월말 시계열로. 없으면 None.
 
     `kind` 가 price 가 아니어도 쓰되 기록한다."""
-    # TODO(rf-b): → msa.l1.physical.load_ref(ref, allow_fetch=allow_fetch) 로 교체 (L1 머지 후)
     ref = theme.physical_ref
     if ref is None:
         return None
-    if ref.source == "etf":
-        base = load_etf_series([ref.symbol])[ref.symbol]
-    elif ref.source == "fred":
-        base = load_fred_series(ref.symbol, allow_fetch=allow_fetch)
-    else:
-        base = load_manual_series(ref.symbol)
-    return PhysicalSeries(base.symbol, base.source, ref.kind, base.status, base.series, base.note)
+    return load_ref(ref, allow_fetch=allow_fetch)
 
 
 # ---------------------------------------------------------------- 가격 특성 (순수 함수)

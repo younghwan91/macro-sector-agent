@@ -31,6 +31,7 @@ import pandas as pd
 from msa.coerce import opt_bool, opt_float, opt_int, opt_str
 from msa.config import paths
 from msa.errors import RefusedInput
+from msa.l1.scan import scan_dirs
 from msa.status import Axis1Status
 from msa.thesis import read_thesis_yaml, thesis_filename
 
@@ -233,10 +234,9 @@ class BearInputs:
 
 def latest_scan_dir(scans_root: Path, asof: str | None = None) -> Path:
     """`state/scans/` 아래 `asof` 이하의 최신 스냅샷. 없으면 예외."""
-    # TODO(rf-b): `msa.l1.scan.scan_dirs` (L1 이 같은 정렬을 제공하면 그것으로)
     if not scans_root.exists():
         raise InputsError(f"스캔 디렉터리가 없다: {scans_root} — 먼저 `msa scan` 을 돌려라")
-    dirs = sorted(p for p in scans_root.iterdir() if p.is_dir() and (p / "scoreboard.csv").exists())
+    dirs = [p for _d, p in scan_dirs(scans_root) if (p / "scoreboard.csv").exists()]
     if asof:
         dirs = [d for d in dirs if d.name <= asof]
     if not dirs:

@@ -16,6 +16,6 @@
 `state/scans/` · `state/cache/l1_*.parquet`)으로만 한다 — L2~L5 패키지를 import 하지 않는다.
 L1 에 대해서만 **읽기 전용 리더**를 쓴다: `reproduce` 가 `msa.l1.scan.render_report` 로 리포트를
 다시 그리고, `rejections` 가 L1 패널·지표 캐시를 읽는다
-(TODO(rf-b): `msa.l1.panel.load_cached_panel` · `msa.l1.scan.scan_dirs`).
+(`msa.l1.panel.load_cached_panel` · `msa.l1.scan.scan_dirs`).
 가격은 `msa.data.store.Store` 를 `check.StorePriceSource` 가 감싼다.
 """

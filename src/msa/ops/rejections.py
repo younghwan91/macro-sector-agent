@@ -27,6 +27,9 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
+from msa.data.store import StoreError
+from msa.l1.panel import load_cached_panel
+from msa.l1.scan import scan_dirs
 from msa.ops.journal import load_entries
 from msa.ops.state_files import Rejection
 
@@ -58,15 +61,11 @@ def load_theme_index(cache_dir: Path) -> pd.DataFrame:
 
     스코어보드와 같은 지수다 (`ThemePanel.index_level("ew")` 와 동일 계산).
     """
-    # TODO(rf-b): `msa.l1.panel.load_cached_panel` 이 생기면 그것으로 바꾼다 (같은 캐시·같은 열).
-    f = _newest(cache_dir, "l1_panel_*.parquet")
-    if f is None:
-        raise FileNotFoundError(
-            f"{cache_dir} 에 l1_panel_*.parquet 이 없다 — `msa scan` 을 먼저 돌려라"
-        )
-    frame = pd.read_parquet(f, columns=["ret_ew"])
-    r = frame["ret_ew"].unstack("theme").sort_index()
-    return theme_index_from_returns(r)
+    try:
+        panel = load_cached_panel(cache_dir)
+    except StoreError as e:
+        raise FileNotFoundError(f"{e} — `msa scan` 을 먼저 돌려라") from e
+    return theme_index_from_returns(panel.wide("ret_ew"))
 
 
 def load_axis1_monthly(cache_dir: Path) -> pd.DataFrame | None:
@@ -223,7 +222,6 @@ def question_b(rows: list[Rejection], axis1: pd.DataFrame | None) -> list[str]:
 
 
 def question_c(scans_dir: Path, index: pd.DataFrame | ThemeSeries, asof: date) -> list[str]:
-    # TODO(rf-b): 스캔 디렉터리 탐색은 `msa.l1.scan.scan_dirs` 가 생기면 그것으로 바꾼다.
     L = [
         f"### (c) 상위 K={TOP_K} 컷오프에 근거가 있는가 — "
         f"{BELOW_K_RANGE[0]}~{BELOW_K_RANGE[1]}위 vs 상위 {TOP_K}",
@@ -236,13 +234,9 @@ def question_c(scans_dir: Path, index: pd.DataFrame | ThemeSeries, asof: date) -
         12: {"top": [], "below": []},
         24: {"top": [], "below": []},
     }
-    for d in sorted(scans_dir.iterdir()):
+    for t0, d in scan_dirs(scans_dir):
         sb = d / "scoreboard.csv"
         if not sb.exists():
-            continue
-        try:
-            t0 = date.fromisoformat(d.name)
-        except ValueError:
             continue
         tab = pd.read_csv(sb, index_col=0)
         if "rank" not in tab.columns:

@@ -100,7 +100,8 @@ def load_theme_ew_returns(
 
     `themes` 를 주면 그 테마 행만 읽는다 (parquet 필터 — 94만 행 전체를 펼치지 않는다).
     """
-    # TODO(rf-b): → msa.l1.panel.load_cached_panel(...) 로 교체 (L1 머지 후)
+    # `msa.l1.panel.load_cached_panel` 은 94만 행 전체를 읽는다 — 여기서는 후보 테마 행만 parquet
+    # 필터로 읽는 것이 3~4배 빠르므로 최신 패널 경로만 찾고 읽기는 필터로 한다.
     p = _latest_panel_path(Path(cache_dir))
     filters = None if themes is None else [("theme", "in", list(themes))]
     frame = pd.read_parquet(p, columns=["ret_ew"], filters=filters)

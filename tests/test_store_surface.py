@@ -103,6 +103,7 @@ def test_etf_prices_header_drift_is_refused(tmp_path: Path) -> None:
 
 # ---------------------------------------------------------------- 실제 스토어
 
+
 @pytest.mark.data
 def test_store_end_and_columns_cache(store: Store) -> None:
     se = store.store_end()
