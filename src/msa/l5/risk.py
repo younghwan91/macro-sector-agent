@@ -54,7 +54,7 @@ from __future__ import annotations
 import glob
 import logging
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 import numpy as np
@@ -84,20 +84,26 @@ class RiskInputError(RefusedInput, ValueError):
 
 
 def _latest_panel_path(cache_dir: Path) -> Path:
-    files = sorted(glob.glob(str(cache_dir / "l1_panel_*.parquet")))
+    """여러 지문이 있으면 가장 최근 수정본 (수정 시각 동률이면 이름 순)."""
+    files = glob.glob(str(cache_dir / "l1_panel_*.parquet"))
     if not files:
         raise RiskInputError(
             f"L1 패널 캐시가 없다: {cache_dir}/l1_panel_*.parquet — 먼저 `msa scan` 을 돌려라"
         )
-    # 여러 지문이 있으면 가장 최근 수정본
-    files.sort(key=lambda f: Path(f).stat().st_mtime)
-    return Path(files[-1])
+    return Path(max(files, key=lambda f: (Path(f).stat().st_mtime, f)))
 
 
-def load_theme_ew_returns(cache_dir: Path | str) -> pd.DataFrame:
-    """L1 패널 캐시에서 테마 EW **일별** 수익률 (date × theme) 을 읽는다."""
+def load_theme_ew_returns(
+    cache_dir: Path | str, themes: Sequence[str] | None = None
+) -> pd.DataFrame:
+    """L1 패널 캐시에서 테마 EW **일별** 수익률 (date × theme) 을 읽는다.
+
+    `themes` 를 주면 그 테마 행만 읽는다 (parquet 필터 — 94만 행 전체를 펼치지 않는다).
+    """
+    # TODO(rf-b): → msa.l1.panel.load_cached_panel(...) 로 교체 (L1 머지 후)
     p = _latest_panel_path(Path(cache_dir))
-    frame = pd.read_parquet(p, columns=["ret_ew"])
+    filters = None if themes is None else [("theme", "in", list(themes))]
+    frame = pd.read_parquet(p, columns=["ret_ew"], filters=filters)
     wide = frame["ret_ew"].unstack("theme").sort_index()
     wide.index = pd.to_datetime(wide.index)
     log.info("risk: 테마 EW 수익률 %s (%d일 × %d테마)", p.name, *wide.shape)
@@ -157,6 +163,60 @@ class CovarianceResult:
     notes: tuple[str, ...] = ()
 
 
+def _shrunk_cov(
+    frame: pd.DataFrame,
+    cols: Sequence[str],
+    *,
+    asof: pd.Timestamp | None,
+    lookback: int,
+    min_len: int,
+    min_periods: int,
+    ppy: int,
+    shrink_delta: float,
+    source: str,
+    notes: tuple[str, ...],
+    unit: str,
+    pair_unit: str,
+    missing_what: str,
+    obs_what: str,
+    obs_unit: str,
+    thin_fmt: str,
+) -> CovarianceResult:
+    """룩백 창 → 표본 공분산 → 상수상관 축소 → 연율. 테마/종목 두 경로의 공통 몸통.
+
+    관측이 절반 미만인 열은 예외 — 조용히 0 분산으로 들어가는 것보다 낫다. 문구 인자들은 두
+    경로의 기존 오류 메시지를 그대로 두기 위한 것이다.
+    """
+    missing = [c for c in cols if c not in frame.columns]
+    if missing:
+        raise RiskInputError(f"{missing_what} 없는 {unit}: {missing}")
+    m = frame[list(cols)]
+    if asof is not None:
+        m = m.loc[: pd.Timestamp(asof)]
+    m = m.tail(lookback)
+    if len(m) < min_len:
+        raise RiskInputError(
+            f"{obs_what} {len(m)}{obs_unit} — {min_len} 미만으로는 공분산을 만들지 않는다"
+        )
+    thin = [c for c in cols if m[c].notna().sum() < len(m) / 2]
+    if thin:
+        raise RiskInputError(thin_fmt.format(n=len(m), thin=thin))
+    sample = np.asarray(m.cov(min_periods=min_periods).to_numpy(), dtype=np.float64)
+    if not np.all(np.isfinite(sample)):
+        raise RiskInputError(f"표본 공분산에 NaN — {pair_unit} 쌍의 겹치는 관측이 부족하다")
+    sigma = shrink_constant_correlation(sample, shrink_delta) * ppy
+    return CovarianceResult(
+        sigma=sigma,
+        labels=tuple(cols),
+        source=source,
+        lookback_months=lookback,
+        n_obs=len(m),
+        shrink_delta=shrink_delta,
+        window=(str(m.index[0].date()), str(m.index[-1].date())),
+        notes=notes,
+    )
+
+
 def theme_covariance(
     monthly: pd.DataFrame,
     themes: Sequence[str],
@@ -167,30 +227,23 @@ def theme_covariance(
 ) -> CovarianceResult:
     """테마 EW 월간 수익률에서 연율 축소 공분산. 룩백 안에 관측이 절반 미만인 테마는 예외 —
     조용히 0 분산으로 들어가는 것보다 낫다."""
-    missing = [t for t in themes if t not in monthly.columns]
-    if missing:
-        raise RiskInputError(f"테마 수익률에 없는 테마: {missing}")
-    m = monthly[list(themes)]
-    if asof is not None:
-        m = m.loc[: pd.Timestamp(asof)]
-    m = m.tail(lookback_months)
-    if len(m) < 12:
-        raise RiskInputError(f"월간 관측 {len(m)}개 — 12개 미만으로는 공분산을 만들지 않는다")
-    thin = [t for t in themes if m[t].notna().sum() < len(m) / 2]
-    if thin:
-        raise RiskInputError(f"룩백 {len(m)}개월 중 관측이 절반 미만인 테마: {thin}")
-    sample = np.asarray(m.cov(min_periods=6).to_numpy(), dtype=np.float64)
-    if not np.all(np.isfinite(sample)):
-        raise RiskInputError("표본 공분산에 NaN — 테마 쌍의 겹치는 관측이 부족하다")
-    sigma = shrink_constant_correlation(sample, shrink_delta) * MONTHS_PER_YEAR
-    return CovarianceResult(
-        sigma=sigma,
-        labels=tuple(themes),
-        source="theme_ew_monthly",
-        lookback_months=lookback_months,
-        n_obs=len(m),
+    return _shrunk_cov(
+        monthly,
+        themes,
+        asof=asof,
+        lookback=lookback_months,
+        min_len=12,
+        min_periods=6,
+        ppy=MONTHS_PER_YEAR,
         shrink_delta=shrink_delta,
-        window=(str(m.index[0].date()), str(m.index[-1].date())),
+        source="theme_ew_monthly",
+        notes=(),
+        unit="테마",
+        pair_unit="테마",
+        missing_what="테마 수익률에",
+        obs_what="월간 관측",
+        obs_unit="개",
+        thin_fmt="룩백 {n}개월 중 관측이 절반 미만인 테마: {thin}",
     )
 
 
@@ -204,31 +257,23 @@ def stock_covariance_from_returns(
     shrink_delta: float = SHRINK_DELTA,
 ) -> CovarianceResult:
     """종목 수익률(date × ticker) 에서 연율 축소 공분산 — `returns.csv` 경로."""
-    missing = [t for t in tickers if t not in returns.columns]
-    if missing:
-        raise RiskInputError(f"returns 에 없는 티커: {missing}")
-    r = returns[list(tickers)]
-    if asof is not None:
-        r = r.loc[: pd.Timestamp(asof)]
-    r = r.tail(lookback_rows)
-    if len(r) < 60:
-        raise RiskInputError(f"종목 수익률 관측 {len(r)}행 — 60 미만으로는 공분산을 만들지 않는다")
-    thin = [t for t in tickers if r[t].notna().sum() < len(r) / 2]
-    if thin:
-        raise RiskInputError(f"룩백 안 관측이 절반 미만인 티커: {thin}")
-    sample = np.asarray(r.cov(min_periods=30).to_numpy(), dtype=np.float64)
-    if not np.all(np.isfinite(sample)):
-        raise RiskInputError("표본 공분산에 NaN — 종목 쌍의 겹치는 관측이 부족하다")
-    sigma = shrink_constant_correlation(sample, shrink_delta) * periods_per_year
-    return CovarianceResult(
-        sigma=sigma,
-        labels=tuple(tickers),
-        source="stock_returns",
-        lookback_months=lookback_rows,
-        n_obs=len(r),
+    return _shrunk_cov(
+        returns,
+        tickers,
+        asof=asof,
+        lookback=lookback_rows,
+        min_len=60,
+        min_periods=30,
+        ppy=periods_per_year,
         shrink_delta=shrink_delta,
-        window=(str(r.index[0].date()), str(r.index[-1].date())),
+        source="stock_returns",
         notes=("룩백 단위는 행(일)이다",),
+        unit="티커",
+        pair_unit="종목",
+        missing_what="returns 에",
+        obs_what="종목 수익률 관측",
+        obs_unit="행",
+        thin_fmt="룩백 안 관측이 절반 미만인 티커: {thin}",
     )
 
 
@@ -274,13 +319,8 @@ class ENBResult:
     n_factors: int
     port_var: float
 
-    def as_dict(self) -> dict[str, float | int | list[float]]:
-        return {
-            "enb": self.enb,
-            "p_top3": list(self.p_top3),
-            "n_factors": self.n_factors,
-            "port_var": self.port_var,
-        }
+    def as_dict(self) -> dict[str, object]:
+        return asdict(self)
 
 
 def effective_number_of_bets(sigma: FArray, w: FArray) -> ENBResult:
@@ -331,7 +371,7 @@ class HistoricalDrawdown:
             "threshold": self.threshold,
             "max_loss": self.max_loss,
             "n_episodes": len(self.episodes),
-            "episodes": [e.__dict__ for e in self.episodes],
+            "episodes": [asdict(e) for e in self.episodes],
             "history": list(self.history) if self.history else None,
         }
 
@@ -350,32 +390,29 @@ def similar_regime_drawdown(
     dates = s.index
     peak = np.maximum.accumulate(px)
     dd = px / peak - 1.0
+    n = len(px)
+    recover = np.flatnonzero(dd >= 0.0)  # 고점 회복(낙폭 0) 시점들 — 에피소드는 여기서 끝난다
     episodes: list[RegimeEpisode] = []
     i = 0
-    n = len(px)
-    while i < n:
-        if dd[i] <= -threshold:
-            entry = px[i]
-            j = i
-            trough = entry
-            trough_j = i
-            while j < n and dd[j] < 0.0:
-                if px[j] < trough:
-                    trough = px[j]
-                    trough_j = j
-                j += 1
-            ongoing = j >= n
-            episodes.append(
-                RegimeEpisode(
-                    entry_date=str(pd.Timestamp(dates[i]).date()),
-                    trough_date=str(pd.Timestamp(dates[trough_j]).date()),
-                    loss_from_entry=float(1.0 - trough / entry),
-                    ongoing=ongoing,
-                )
+    while True:
+        hits = np.flatnonzero(dd[i:] <= -threshold)
+        if hits.size == 0:
+            break
+        i = i + int(hits[0])  # 진입 = −threshold 최초 도달
+        nxt = recover[np.searchsorted(recover, i, side="right") :]
+        j = int(nxt[0]) if nxt.size else n  # 첫 회복 시점 (없으면 진행 중)
+        trough_j = i + int(np.argmin(px[i:j]))
+        episodes.append(
+            RegimeEpisode(
+                entry_date=str(pd.Timestamp(dates[i]).date()),
+                trough_date=str(pd.Timestamp(dates[trough_j]).date()),
+                loss_from_entry=float(1.0 - px[trough_j] / px[i]),
+                ongoing=j >= n,
             )
-            i = j
-        else:
-            i += 1
+        )
+        i = j
+        if i >= n:
+            break
     mx = max((e.loss_from_entry for e in episodes), default=None)
     return HistoricalDrawdown(
         theme=theme,
@@ -408,17 +445,7 @@ class ScenarioLoss:
         return self.value is not None
 
     def as_dict(self) -> dict[str, object]:
-        return {
-            "theme": self.theme,
-            "hist_term": self.hist_term,
-            "case_raw": self.case_raw,
-            "case_factor": self.case_factor,
-            "case_term": self.case_term,
-            "case_id": self.case_id,
-            "value": self.value,
-            "binding": self.binding,
-            "reasons": list(self.reasons),
-        }
+        return asdict(self)
 
 
 def scenario_loss(
