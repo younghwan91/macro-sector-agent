@@ -9,14 +9,20 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import os
+from collections.abc import Callable
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import typer
 
 from msa import __version__
+from msa.config import REPO_ROOT, MissingApiKey, paths
+from msa.dates import asof_or_today
+from msa.errors import MsaError
 
 app = typer.Typer(
     add_completion=False,
@@ -44,31 +50,77 @@ app.add_typer(backtest_app, name="backtest")
 
 
 def _setup_logging(verbose: bool) -> None:
-    logging.basicConfig(
-        level=logging.DEBUG if verbose else logging.INFO,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    """루트 로거를 **한 번만** 구성한다. 이미 구성됐으면 `verbose` 일 때 레벨만 올린다.
+
+    전역 `msa -v …` 와 명령별 `… -v` 가 둘 다 여기로 온다 — 어느 쪽이든 DEBUG 로 올라간다.
+    """
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(
+            level=logging.DEBUG if verbose else logging.INFO,
+            format="%(levelname)s %(name)s: %(message)s",
+        )
+    elif verbose:
+        root.setLevel(logging.DEBUG)
+
+
+def cli_guard[**P, R](fn: Callable[P, R]) -> Callable[P, R]:
+    """도메인 예외(`MsaError`)를 메시지 + 종료 코드로 바꾼다 — 트레이스백은 버그에만 남긴다.
+
+    종료 코드는 예외 뿌리가 정한다 (`msa.errors`: 입력 거부 1 · 산출물 기각 2 · 제공자 3).
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
+        try:
+            return fn(*args, **kwargs)
+        except MsaError as e:
+            typer.echo(str(e), err=True)
+            raise typer.Exit(code=e.exit_code) from e
+
+    return wrapper
+
+
+def _echo_saved(out_dir: Path | str | None) -> None:
+    if out_dir:
+        typer.echo(f"저장: {out_dir}")
 
 
 def _fmt(n: int | None) -> str:
     return "—" if n is None else f"{n:,}"
 
 
+#: 모든 명령이 같은 철자로 받는 옵션.
+OPT_VERBOSE = typer.Option(False, "--verbose", "-v")
+
+
+def _no_write_option(target: str) -> Any:
+    """`--no-write` — 도움말의 대상 디렉터리만 다르다."""
+    return typer.Option(False, "--no-write", help=f"{target} 에 저장하지 않는다")
+
+
+@app.callback()
+def _main(verbose: bool = OPT_VERBOSE) -> None:
+    """전역 옵션. `msa -v <명령>` 은 명령별 `-v` 와 같다."""
+    _setup_logging(verbose)
+
+
 @app.command()
+@cli_guard
 def version() -> None:
     """버전."""
     typer.echo(f"msa {__version__}")
 
 
 @data_app.command("status")
+@cli_guard
 def data_status(
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    verbose: bool = OPT_VERBOSE,
     etf: str = typer.Option(
         "", "--etf", help="쉼표로 구분한 ETF 티커. 벌크 funds.csv.zip 을 1회 스캔한다(~12초)."
     ),
 ) -> None:
     """전 소스의 최신 시점·행수·결측률. (M1 완료 판정 항목)"""
-    from msa.config import paths
     from msa.data import fred
     from msa.data.store import ETF_IN_STORE, Store, etf_prices
 
@@ -131,16 +183,17 @@ def data_status(
 
         fred_api_key()
         typer.echo("  API 키        : 있음 — `msa data fred-lag` 로 발표지연을 실측해라")
-    except Exception as e:
+    except MissingApiKey as e:
         typer.echo(f"  API 키        : 없음 — {type(e).__name__}")
         typer.echo("  → §3 표의 `발표지연`·`개정` 열은 아직 실측되지 않았다 (M1 미완료 항목)")
 
 
 @data_app.command("audit")
+@cli_guard
 def data_audit(
     start: str = typer.Option("2010-01-01", help="폐지 종목 포함 감사 구간 시작"),
     end: str = typer.Option(str(date.today()), help="감사 구간 끝"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    verbose: bool = OPT_VERBOSE,
 ) -> None:
     """커버리지 감사(`docs/01` §5) 중 데이터 부분 — category 제외 수 · 폐지 포함 · 중복 소속.
 
@@ -171,7 +224,7 @@ def data_audit(
 
         typer.echo("")
         typer.echo("[2] 폐지 종목 자기이력 포함 (docs/01 §5)")
-        cov = audit_delisted_included(store, start, end)
+        cov = audit_delisted_included(store, start, end, meta=meta)
         typer.echo(f"  {cov.report()}")
         for c, n in sorted(cov.excluded_non_equity.items(), key=lambda kv: -kv[1]):
             typer.echo(f"    검사 모집단 밖(보통주 아님) {c:<30}{n:>7,}")
@@ -189,11 +242,12 @@ def data_audit(
 
 
 @data_app.command("fred-lag")
+@cli_guard
 def data_fred_lag(
     vintage: str = typer.Option(
         "", help="ALFRED 빈티지 날짜(YYYY-MM-DD). 주면 개정 여부까지 판정한다"
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    verbose: bool = OPT_VERBOSE,
 ) -> None:
     """FRED 시리즈의 발표 지연·개정 실측 — `docs/08` §3 표의 두 열을 채우는 명령."""
     from msa.data.fred import ALL_SERIES, FredClient
@@ -207,16 +261,17 @@ def data_fred_lag(
 
 
 @app.command()
+@cli_guard
 def scan(
     asof: str = typer.Option(
         "", help="기준일 YYYY-MM-DD (그 이전 마지막 월말). 기본 = 스토어 최종일"
     ),
     top: int = typer.Option(0, help="표에 보일 상위 N (0 = 전부)"),
     force: bool = typer.Option(False, "--force", help="패널·재무·지표 캐시를 무시하고 다시 만든다"),
-    no_write: bool = typer.Option(False, "--no-write", help="state/scans/ 에 저장하지 않는다"),
+    no_write: bool = _no_write_option("state/scans/"),
     no_fetch: bool = typer.Option(False, "--no-fetch", help="FRED 를 받지 않는다 (캐시만)"),
     no_vcp: bool = typer.Option(False, "--no-vcp", help="vcp_index 계산 생략 (빠른 확인용)"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    verbose: bool = OPT_VERBOSE,
 ) -> None:
     """L1 사이클 스캐너 → 테마 스코어보드 (docs/02). 산출물: state/scans/<date>/"""
     from msa.l1.scan import run_scan
@@ -242,14 +297,14 @@ def scan(
         f"축 1: 선언 {ph['declared']} · 데이터 있음 {ph['data_ok']} · "
         f"없음 {ph['data_missing']} · CPI {ph['cpi']}"
     )
-    if res.out_dir:
-        typer.echo(f"저장: {res.out_dir}")
+    _echo_saved(res.out_dir)
 
 
 @data_app.command("fred-fetch")
+@cli_guard
 def data_fred_fetch(
     force: bool = typer.Option(False, "--force", help="이미 캐시된 시리즈도 다시 받는다"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    verbose: bool = OPT_VERBOSE,
 ) -> None:
     """L2 드라이버 24종 + 테마 physical_ref FRED 심볼 + CPIAUCSL 을 state/physical/fred/ 에 캐시.
 
@@ -285,7 +340,7 @@ def data_fred_fetch(
         except Exception as e:
             failed.append(f"{sym}: {type(e).__name__}: {e}")
             typer.echo(f"  {sym:<14} 실패 — {type(e).__name__}: {e}")
-            if type(e).__name__ == "MissingApiKey":
+            if isinstance(e, MissingApiKey):
                 break
     typer.echo("")
     typer.echo(
@@ -297,11 +352,14 @@ def data_fred_fetch(
         for f in failed:
             typer.echo(f"  ! {f}")
         raise typer.Exit(code=1)
+
+
 @backtest_app.command("l1")
+@cli_guard
 def backtest_l1(
     force: bool = typer.Option(False, "--force", help="패널·재무·지표 캐시를 무시하고 다시 만든다"),
-    no_write: bool = typer.Option(False, "--no-write", help="state/backtests/ 에 저장하지 않는다"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    no_write: bool = _no_write_option("state/backtests/"),
+    verbose: bool = OPT_VERBOSE,
 ) -> None:
     """L1 스코어보드 백테스트 — rank-IC · 스프레드 · breadth_lead 실측 · DSR/PBO (M3.5).
 
@@ -312,11 +370,11 @@ def backtest_l1(
     _setup_logging(verbose)
     res = run_backtest(write=not no_write, force=force)
     typer.echo(render_report(res))
-    if res.out_dir:
-        typer.echo(f"저장: {res.out_dir}")
+    _echo_saved(res.out_dir)
 
 
 @app.command()
+@cli_guard
 def macro(
     asof: str = typer.Option("", help="기준일 YYYY-MM-DD (그 이전 마지막 월말). 기본 = 오늘"),
     no_fetch: bool = typer.Option(False, "--no-fetch", help="FRED 를 받지 않는다 (캐시만)"),
@@ -324,21 +382,19 @@ def macro(
     no_store: bool = typer.Option(
         False, "--no-store", help="DuckDB 스토어(hyperscaler_capex)를 읽지 않는다"
     ),
-    no_write: bool = typer.Option(False, "--no-write", help="state/macro/ 에 저장하지 않는다"),
+    no_write: bool = _no_write_option("state/macro/"),
     no_sign_check: bool = typer.Option(
         False, "--no-sign-check", help="엣지 부호 일치율 실측을 건너뛴다"
     ),
     doc_out: str = typer.Option(
         "", "--doc-out", help="부호 실측 문서를 이 경로에도 쓴다 (예: docs/macro-dag-sign-check.md)"
     ),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    verbose: bool = OPT_VERBOSE,
 ) -> None:
     """L2 거시 DAG — 드라이버 상태 · tailwind · 국면 4분면 · 모순 감사 · 부호 실측 (docs/03).
 
     산출물: state/macro/<date>/. 없는 드라이버는 이름으로 보고된다.
     """
-    from pathlib import Path
-
     from msa.l2.runtime import render_report, run_macro
 
     _setup_logging(verbose)
@@ -352,11 +408,11 @@ def macro(
         doc_out=Path(doc_out) if doc_out else None,
     )
     typer.echo(render_report(res))
-    if res.out_dir:
-        typer.echo(f"저장: {res.out_dir}")
+    _echo_saved(res.out_dir)
 
 
 @app.command()
+@cli_guard
 def research(
     theme: str = typer.Argument(..., help="테마 id (state/themes.yaml)"),
     asof: str = typer.Option(
@@ -370,7 +426,7 @@ def research(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="MockProvider 로 경로만 검증 (저장도 한다 — 합성 표기)"
     ),
-    no_write: bool = typer.Option(False, "--no-write", help="state/theses/ 에 저장하지 않는다"),
+    no_write: bool = _no_write_option("state/theses/"),
     no_store: bool = typer.Option(
         False, "--no-store", help="DuckDB 구성원 재무 요약 생략 (경고로 표시)"
     ),
@@ -378,7 +434,7 @@ def research(
         "", help="L2 거시 상태 JSON 경로 (기본 state/macro/latest.json 이 있으면 사용)"
     ),
     fixtures: str = typer.Option("", help="--provider fixture 의 루트 (기본 tests/fixtures/l3)"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    verbose: bool = OPT_VERBOSE,
 ) -> None:
     """L3 에이전트 리서치 (supply · catalyst · bear · referee) → thesis 객체 (docs/05).
 
@@ -386,9 +442,6 @@ def research(
     contested.json.
     스키마 미달이면 저장하지 않고 종료 코드 2. 게이트 기각은 저장한다 (docs/05 §4).
     """
-    from pathlib import Path
-
-    from msa.config import paths
     from msa.l3.contracts import InputsError, assemble_inputs
     from msa.l3.pipeline import run_research
     from msa.l3.providers import ProviderError, make_provider
@@ -396,11 +449,10 @@ def research(
 
     _setup_logging(verbose)
     kind = "mock" if dry_run else provider
-    state = paths().state
     try:
         inputs = assemble_inputs(
             theme,
-            state_dir=state,
+            state_dir=paths().state,
             asof=asof or None,
             macro_path=Path(macro) if macro else None,
             with_store=not no_store,
@@ -419,7 +471,7 @@ def research(
             err=True,
         )
     try:
-        res = run_research(inputs, prov, theses_root=state / "theses", write=not no_write)
+        res = run_research(inputs, prov, theses_root=paths().theses, write=not no_write)
     except ThesisRejected as e:
         typer.echo("thesis 스키마 검증 실패 — 저장하지 않는다 (CLAUDE.md §3·§5):", err=True)
         for line in e.result.errors:
@@ -434,18 +486,19 @@ def research(
 
 
 @app.command()
+@cli_guard
 def picks(
     theme: str,
     asof: str = typer.Option("", help="기준일 YYYY-MM-DD. 기본 = 스토어 최종일"),
     top: int = typer.Option(4, help="바벨 종목 수 (앵커 max(1, top//2) + 토크)"),
-    no_write: bool = typer.Option(False, "--no-write", help="state/picks/ 에 저장하지 않는다"),
+    no_write: bool = _no_write_option("state/picks/"),
     no_physical: bool = typer.Option(
         False,
         "--no-physical",
         help="상품가 탄력성(price_beta_hist) 계산 생략 — ETF 벌크 스캔 ~12초",
     ),
     no_fetch: bool = typer.Option(False, "--no-fetch", help="FRED 를 받지 않는다 (캐시만)"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    verbose: bool = OPT_VERBOSE,
 ) -> None:
     """L4 종목 선정 — 3축(S·T·M)·하드 필터·바벨 (docs/06). 산출물: state/picks/<date>/<theme>/"""
     from msa.l4.picks import run_picks
@@ -460,11 +513,11 @@ def picks(
         with_physical=not no_physical,
     )
     typer.echo(res.report)
-    if res.out_dir:
-        typer.echo(f"저장: {res.out_dir}")
+    _echo_saved(res.out_dir)
 
 
 @app.command()
+@cli_guard
 def portfolio(
     inputs: str = typer.Option(
         ..., "--inputs", help="입력 디렉터리: picks.csv · theses/*.yaml (· returns.csv 선택)"
@@ -481,8 +534,8 @@ def portfolio(
     cluster_cap: list[str] = typer.Option(  # noqa: B008 — typer 의 옵션 선언 관용구
         [], "--cluster-cap", help="선택적 클러스터 상한 name=cap (docs/07 §2.5 — 요구했을 때만)"
     ),
-    no_write: bool = typer.Option(False, "--no-write", help="state/portfolio/ 에 저장하지 않는다"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    no_write: bool = _no_write_option("state/portfolio/"),
+    verbose: bool = OPT_VERBOSE,
 ) -> None:
     """L5 포트 구성 + 매매계획서 (docs/07). 산출물: state/portfolio/<date>/"""
     from msa.l5.plan import render_plan
@@ -498,18 +551,7 @@ def portfolio(
         write=not no_write,
     )
     typer.echo(render_plan(res))
-    if res.out_dir:
-        typer.echo(f"저장: {res.out_dir}")
-
-
-def _repo_root() -> Path:
-    from msa.config import REPO_ROOT
-
-    return REPO_ROOT
-
-
-def _parse_date(s: str) -> date:
-    return date.today() if not s.strip() else date.fromisoformat(s.strip())
+    _echo_saved(res.out_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -518,20 +560,20 @@ def _parse_date(s: str) -> date:
 
 
 @app.command()
+@cli_guard
 def check(
     asof: str = typer.Option("", help="기준일 YYYY-MM-DD (기본 오늘)"),
     daily: bool = typer.Option(False, "--daily", help="일간 — 무효화·사다리·TP·시간스탑 자동 확인"),
     weekly: bool = typer.Option(False, "--weekly", help="주간 — 전 항목 + manual 목록 (기본)"),
-    no_write: bool = typer.Option(False, "--no-write", help="state/checks/ 에 저장하지 않는다"),
+    no_write: bool = _no_write_option("state/checks/"),
     no_send: bool = typer.Option(False, "--no-send", help="텔레그램을 보내지 않는다 (파일만)"),
     positions: str = typer.Option("", help="positions.yaml 경로 (기본 state/positions.yaml)"),
-    verbose: bool = typer.Option(False, "--verbose", "-v"),
+    verbose: bool = OPT_VERBOSE,
 ) -> None:
     """보유 포지션의 트리거·무효화·Tier-2·사다리·시간스탑·TP 점검 (docs/09 §1).
 
     주문은 내지 않는다 (CLAUDE.md §8).
     """
-    from msa.config import paths
     from msa.data.store import Store
     from msa.ops.alerts import deliver
     from msa.ops.check import StorePriceSource, run_check
@@ -543,11 +585,11 @@ def check(
         raise typer.BadParameter("--daily 와 --weekly 는 동시에 줄 수 없다")
     mode = "daily" if daily else "weekly"
     p = paths()
-    root = _repo_root()
-    asof_d = _parse_date(asof)
-    pos_path = Path(positions) if positions else p.state / "positions.yaml"
-    out_root = None if no_write else p.state / "checks"
-    tracker = RunTracker(LastRunStore(p.state / "checks" / "last_run.json"), key=f"check.{mode}")
+    root = REPO_ROOT
+    asof_d = asof_or_today(asof)
+    pos_path = Path(positions) if positions else p.positions
+    out_root = None if no_write else p.checks
+    tracker = RunTracker(LastRunStore(p.checks / "last_run.json"), key=f"check.{mode}")
     lookback = tracker.lookback_days(asof_d)
     if lookback > 1:
         typer.echo(
@@ -590,6 +632,7 @@ def check(
 
 
 @journal_app.command("template")
+@cli_guard
 def journal_template(
     type_: str = typer.Argument(..., metavar="TYPE", help="entry|check|add|tp|exit|reject"),
 ) -> None:
@@ -602,6 +645,7 @@ def journal_template(
 
 
 @journal_app.command("new")
+@cli_guard
 def journal_new(
     from_: str = typer.Option(..., "--from", help="항목 YAML 파일 (type 키로 종류 지정)"),
     suffix: str = typer.Option("", help="같은 날 같은 종류가 둘이면 파일명 접미사"),
@@ -610,23 +654,14 @@ def journal_new(
     """저널 항목을 추가한다. 필수 필드가 비면 거부, 기존 파일은 덮어쓰지 않는다."""
     import yaml
 
-    from msa.ops.journal import (
-        IncompleteEntry,
-        JournalImmutable,
-        journal_dir,
-        record_from_dict,
-        write_record,
-    )
+    from msa.ops.journal import journal_dir, record_from_dict, write_record
 
     d = yaml.safe_load(Path(from_).read_text(encoding="utf-8"))
     if not isinstance(d, dict):
         raise typer.BadParameter("YAML 최상위가 dict 여야 한다")
-    jdir = Path(journal) if journal else journal_dir(_repo_root())
-    try:
-        w = write_record(record_from_dict(d), jdir, suffix=suffix)
-    except (IncompleteEntry, JournalImmutable) as e:
-        typer.echo(str(e), err=True)
-        raise typer.Exit(code=1) from e
+    jdir = Path(journal) if journal else journal_dir(REPO_ROOT)
+    # IncompleteEntry · JournalImmutable 은 `cli_guard` 가 메시지 + 종료 코드 1 로 바꾼다
+    w = write_record(record_from_dict(d), jdir, suffix=suffix)
     typer.echo(f"작성: {w.markdown}")
     if w.thesis_snapshot:
         typer.echo(f"스냅샷: {w.thesis_snapshot}")
@@ -636,6 +671,7 @@ def journal_new(
 
 
 @journal_app.command("verify")
+@cli_guard
 def journal_verify(
     staged: bool = typer.Option(False, "--staged", help="인덱스만 본다 (pre-commit)"),
     repo: str = typer.Option("", help="저장소 루트 (기본 이 저장소)"),
@@ -643,7 +679,7 @@ def journal_verify(
     """커밋된 journal/ 파일이 수정·삭제됐으면 실패 (append-only, CLAUDE.md §6)."""
     from msa.ops.journal import verify_append_only
 
-    root = Path(repo) if repo else _repo_root()
+    root = Path(repo) if repo else REPO_ROOT
     v = verify_append_only(root, staged_only=staged)
     if v:
         typer.echo(
@@ -657,6 +693,7 @@ def journal_verify(
 
 
 @journal_app.command("install-hook")
+@cli_guard
 def journal_install_hook(
     force: bool = typer.Option(False, "--force", help="기존 pre-commit 훅을 덮어쓴다"),
     repo: str = typer.Option("", help="저장소 루트"),
@@ -665,7 +702,7 @@ def journal_install_hook(
     from msa.ops.journal import install_hook
 
     try:
-        t = install_hook(Path(repo) if repo else _repo_root(), force=force)
+        t = install_hook(Path(repo) if repo else REPO_ROOT, force=force)
     except FileExistsError as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(code=1) from e
@@ -673,6 +710,7 @@ def journal_install_hook(
 
 
 @journal_app.command("diff")
+@cli_guard
 def journal_diff(
     theme: str = typer.Argument(..., help="테마 id"),
     journal: str = typer.Option("", help="journal/ 경로"),
@@ -680,7 +718,7 @@ def journal_diff(
     """최근 두 thesis 스냅샷의 필드 단위 diff — 논지 표류 추적 (docs/05 §6)."""
     from msa.ops.journal import journal_dir, thesis_drift
 
-    typer.echo(thesis_drift(Path(journal) if journal else journal_dir(_repo_root()), theme))
+    typer.echo(thesis_drift(Path(journal) if journal else journal_dir(REPO_ROOT), theme))
 
 
 # ---------------------------------------------------------------------------
@@ -689,6 +727,7 @@ def journal_diff(
 
 
 @ops_app.command("schedule")
+@cli_guard
 def ops_schedule(
     print_cron: bool = typer.Option(False, "--print-cron", help="crontab 텍스트"),
     systemd: bool = typer.Option(False, "--systemd", help="systemd 타이머 텍스트"),
@@ -697,12 +736,13 @@ def ops_schedule(
     from msa.ops.scheduler import cron_lines, systemd_units
 
     if systemd:
-        typer.echo(systemd_units(_repo_root()))
+        typer.echo(systemd_units(REPO_ROOT))
     else:
-        typer.echo(cron_lines(_repo_root()))
+        typer.echo(cron_lines(REPO_ROOT))
 
 
 @ops_app.command("due")
+@cli_guard
 def ops_due(
     cadence: str = typer.Argument(..., help="monthly|weekly|daily|quarterly"),
     asof: str = typer.Option("", help="기준일 (기본 오늘)"),
@@ -712,13 +752,14 @@ def ops_due(
 
     if cadence not in CADENCES:
         raise typer.BadParameter(f"cadence ∈ {CADENCES}")
-    d = _parse_date(asof)
+    d = asof_or_today(asof)
     ok = is_due(cadence, d)
     typer.echo(f"{cadence} @ {d}: {'due' if ok else 'not due'}")
     raise typer.Exit(code=0 if ok else 1)
 
 
 @ops_app.command("calibration")
+@cli_guard
 def ops_calibration(
     journal: str = typer.Option("", help="journal/ 경로"),
     write: bool = typer.Option(
@@ -728,70 +769,69 @@ def ops_calibration(
     """cycle_confidence 캘리브레이션 (docs/10 §4). N<20 이면 '결론 없음' + 표본 나열."""
     import json
 
-    from msa.config import paths
     from msa.ops.calibration import run, to_json
     from msa.ops.journal import journal_dir
 
-    text, cals = run(Path(journal) if journal else journal_dir(_repo_root()))
+    text, cals = run(Path(journal) if journal else journal_dir(REPO_ROOT))
     typer.echo(text)
     if write:
-        out = paths().state / "calibration"
+        out = paths().calibration
         out.mkdir(parents=True, exist_ok=True)
         (out / f"{date.today().isoformat()}.txt").write_text(text, encoding="utf-8")
         (out / f"{date.today().isoformat()}.json").write_text(
             json.dumps(to_json(cals), ensure_ascii=False, indent=1), encoding="utf-8"
         )
-        typer.echo(f"저장: {out}")
+        _echo_saved(out)
 
 
 @ops_app.command("rejections-update")
+@cli_guard
 def ops_rejections_update(
     asof: str = typer.Option("", help="기준일 (기본 오늘)"),
     dry_run: bool = typer.Option(False, "--dry-run", help="파일을 쓰지 않는다"),
 ) -> None:
     """기각 대장 r_12m/r_24m 갱신 + 세 질문 집계 → state/rejections-summary.md (내부 기록)."""
-    from msa.config import paths
     from msa.ops.journal import journal_dir
     from msa.ops.rejections import load_axis1_monthly, load_theme_index, summarize
     from msa.ops.state_files import load_rejections, save_rejections
 
     p = paths()
-    asof_d = _parse_date(asof)
-    rows = load_rejections(p.state / "rejections.yaml")
+    asof_d = asof_or_today(asof)
+    rows = load_rejections(p.rejections)
     if not rows:
         typer.echo("기각 대장이 비어 있다 (state/rejections.yaml) — 월간 스캔이 행을 적재해야 한다")
-    cache = p.state / "cache"
+    cache = p.cache
     index = load_theme_index(cache)
     summary = summarize(
         rows,
         index=index,
         axis1=load_axis1_monthly(cache),
-        jdir=journal_dir(_repo_root()),
-        scans_dir=p.state / "scans",
+        jdir=journal_dir(REPO_ROOT),
+        scans_dir=p.scans,
         asof=asof_d,
     )
     typer.echo(summary.text)
     if not dry_run:
-        save_rejections(p.state / "rejections.yaml", summary.updated_rows)
-        (p.state / "rejections-summary.md").write_text(summary.text, encoding="utf-8")
+        save_rejections(p.rejections, summary.updated_rows)
+        p.rejections_summary.write_text(summary.text, encoding="utf-8")
         typer.echo(
             f"갱신: r_12m {summary.n_filled_12m}개 · r_24m {summary.n_filled_24m}개 → "
-            f"{p.state / 'rejections.yaml'}"
+            f"{p.rejections}"
         )
 
 
 @ops_app.command("reproduce")
+@cli_guard
 def ops_reproduce(
     scan_date: str = typer.Argument(..., help="YYYY-MM-DD 또는 state/scans/<date>/ 경로"),
     show: bool = typer.Option(False, "--show", help="재생성 리포트 전문 출력"),
 ) -> None:
     """저장된 스냅샷만으로 리포트를 재생성하고 보관본과 대조한다 (재계산 없음)."""
-    from msa.config import paths
     from msa.ops.reproduce import reproduce
 
     d = Path(scan_date)
     if not d.exists():
-        d = paths().state / "scans" / scan_date
+        d = paths().scans / scan_date
     r = reproduce(d)
     if show:
         typer.echo(r.rendered)
