@@ -168,11 +168,11 @@ def test_read_ranking_path_input(tmp_path: Path) -> None:
 
 def test_thesis_input_from_l3_round_trips_through_parse_thesis() -> None:
     t = make_thesis()
-    t["inputs"] = {"macro_tailwind": 0.41}
+    t["inputs"] = {"scan_dir": "state/scans/2026-08-14"}
     t["cycle_confidence_by"] = "referee-pipeline (04 §4 기계 적용)"
     m = thesis_input_from_l3(t, confidence_source="referee", source_path="state/x.yaml")
     assert m["cycle_confidence_source"] == "referee"
-    assert m["tailwind"] == 0.41
+    assert "tailwind" not in m  # L2 제거 — 거시 필드는 옮기지 않는다
     assert m["gate_result"] == {
         "status": "passed",
         "portfolio_eligible": True,
@@ -193,7 +193,7 @@ def test_thesis_input_from_l3_round_trips_through_parse_thesis() -> None:
     assert ti.theme == "uranium" and ti.confidence_source == "referee"
     assert ti.cycle_confidence == 0.72 and ti.horizon_months == (6, 18)
     assert len(ti.invalidations) == 2 and len(ti.triggers) == 3
-    assert ti.tailwind == 0.41 and ti.portfolio_eligible and ti.axis1_available is True
+    assert ti.portfolio_eligible and ti.axis1_available is True
 
 
 def test_thesis_input_declared_provenance_wins() -> None:

@@ -27,7 +27,6 @@ upsert (기존 `added_at` 유지). 저널은 append-only — 기존 파일은 �
 
 from __future__ import annotations
 
-import json
 import logging
 from dataclasses import dataclass, field, replace
 from datetime import date
@@ -207,19 +206,6 @@ def resolve_scan_dir(thesis: dict[str, Any], explicit: Path | None) -> Path | No
     return cand if cand.is_dir() else None
 
 
-def load_tailwind(macro_latest: Path | None, theme: str) -> float | None:
-    """`state/macro/latest.json` 의 `tailwind` (테마별 dict 또는 단일 실수). 없으면 None."""
-    if macro_latest is None or not macro_latest.exists():
-        return None
-    raw = json.loads(macro_latest.read_text(encoding="utf-8"))
-    tw = raw.get("tailwind") if isinstance(raw, dict) else None
-    v = tw.get(theme) if isinstance(tw, dict) else tw
-    try:
-        return None if v is None else float(v)
-    except (TypeError, ValueError):
-        return None
-
-
 # ---------------------------------------------------------------------------
 # thesis → 레코드/행
 # ---------------------------------------------------------------------------
@@ -356,17 +342,14 @@ def entry_draft(
     asof: date,
     scan: str,
     l1_blocks: dict[str, float] | None,
-    l2_tailwind: float | None,
 ) -> tuple[dict[str, Any], list[str]]:
     """진입 항목 초안 dict (`msa journal new --from` 의 entry 모양) + 사람이 채울 필드 목록.
 
-    기계가 아는 값만 넣는다 — 모르는 값(블록·tailwind)은 **가짜 0 이 아니라 비운다**: `EntryRecord`
+    기계가 아는 값만 넣는다 — 모르는 값(블록)은 **가짜 0 이 아니라 비운다**: `EntryRecord`
     가 거부하므로 사람이 채울 때까지 저널에 들어가지 않는다."""
     todo = list(HUMAN_FIELDS_ALWAYS)
     if l1_blocks is None:
         todo.append("l1_blocks — 스코어보드(A..F) 6개 값 (scoreboard.csv 에서 읽지 못했다)")
-    if l2_tailwind is None:
-        todo.append("l2_tailwind — L2 tailwind (state/macro/latest.json 에 이 테마 값이 없다)")
     d: dict[str, Any] = {
         "type": "entry",
         "date": asof.isoformat(),
@@ -374,7 +357,6 @@ def entry_draft(
         "confidence_provenance": "referee",  # c 는 L3 referee 파이프라인 산출 (05 §7)
         "scan": scan,
         "l1_blocks": l1_blocks if l1_blocks is not None else {},
-        "l2_tailwind": l2_tailwind,
         "axis_verdicts": _axis_verdicts(thesis),
         "deviated_from_machine": False,
         "deviation_reason": "",
@@ -419,7 +401,6 @@ def ingest_round(
     journal_dir: Path,
     rejections_path: Path,
     watchlist_path: Path,
-    macro_latest: Path | None = None,
     write: bool = True,
 ) -> IngestReport:
     """`state/theses/<date>/` 한 라운드를 저널·기각 대장·관찰 목록·진입 초안으로 적재한다.
@@ -573,11 +554,7 @@ def ingest_round(
 
         if status == "passed":
             blocks = sb.blocks(theme)
-            tw = load_tailwind(macro_latest, theme)
-            if tw is None:
-                tw_thesis = (thesis.get("inputs") or {}).get("macro_tailwind")
-                tw = None if tw_thesis is None else float(tw_thesis)
-            d, todo = entry_draft(thesis, asof=asof, scan=scan, l1_blocks=blocks, l2_tailwind=tw)
+            d, todo = entry_draft(thesis, asof=asof, scan=scan, l1_blocks=blocks)
             draft_path = theses_dir / f"{DRAFT_PREFIX}{theme}.yaml"
             if write:
                 draft_path.write_text(render_draft(d, todo), encoding="utf-8")
@@ -610,21 +587,15 @@ def ingest_round(
     return report
 
 
-def default_macro_latest() -> Path:
-    return paths().macro_latest
-
-
 __all__ = [
     "DRAFT_PREFIX",
     "HUMAN_FIELDS_ALWAYS",
     "IngestReport",
     "Ingested",
     "ScoreboardView",
-    "default_macro_latest",
     "entry_draft",
     "ingest_round",
     "load_scoreboard",
-    "load_tailwind",
     "reject_record",
     "rejection_from_record",
     "render_draft",

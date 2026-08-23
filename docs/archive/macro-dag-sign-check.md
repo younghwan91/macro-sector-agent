@@ -1,3 +1,5 @@
+> **L2 제거(2026-08-23) 이전 기록** — `docs/13-design-question-l2-macro.md` §9 · `journal/2026-08-23-l2-removed.md`. 내용은 손대지 않았다.
+
 # L2 엣지 부호 일치율 실측 (`docs/10-validation.md` §2.1 · `docs/03` §6)
 
 생성: `msa macro` · 기준일 2026-07-31 · DAG state/macro-dag.yaml

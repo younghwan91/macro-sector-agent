@@ -1,3 +1,5 @@
+> **L2 제거(2026-08-23) 이전 기록** — `docs/13-design-question-l2-macro.md` §9 · `journal/2026-08-23-l2-removed.md`. 내용은 손대지 않았다.
+
 # 거시 인과 DAG 감사 (M4 · 134 버킷 기준 재감사)
 
 `state/macro-dag.yaml` 에 대한 `scripts/audit_dag.py` 실행 결과와 그 해석.

@@ -1,7 +1,7 @@
 """PIT(point-in-time) 분기 재무와 TTM 의 **단일 구현** — SQL 조각과 pandas 두 경로.
 
-`CLAUDE.md` PIT 규약의 구현이 L1(`fundamentals`)·L2(`sources`)·L3(`contracts`)·L4(`features`) 에
-네 번 있었다. 규칙은 하나다:
+`CLAUDE.md` PIT 규약의 구현이 L1(`fundamentals`)·L3(`contracts`)·L4(`features`) 에
+세 번 있었다 (제거된 L2 `sources` 까지 네 번). 규칙은 하나다:
 
 1. **최초 보고분** — 같은 `(ticker, calendardate)` 가 여러 `datekey` 로 다시 보고되면 가장 이른
    `datekey` 행만 쓴다 (`row_number() over (partition by ticker, calendardate order by datekey)

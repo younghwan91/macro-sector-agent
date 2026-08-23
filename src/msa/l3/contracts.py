@@ -1,6 +1,6 @@
 """L3 입력 계약 — 에이전트가 받는 것과 그 출처.
 
-L3 는 다른 계층의 **파일 산출물**만 읽는다. L2·L4·L5 모듈을 임포트하지 않는다 —
+L3 는 다른 계층의 **파일 산출물**만 읽는다. L4·L5 모듈을 임포트하지 않는다 —
 계층 간 결합은 파일 스키마로만 한다 (`docs/08-data-contract.md` 의 정신).
 
 | 입력 | 출처 | 없으면 |
@@ -8,7 +8,6 @@ L3 는 다른 계층의 **파일 산출물**만 읽는다. L2·L4·L5 모듈을 
 | 스코어카드 (`ThemeScorecard`) | `state/scans/<date>/` 스캔 산출물 | 예외 — 스캔 없인 안 돈다 |
 | 축 1 입력 (`Axis1Inputs`) | 같은 스캔의 `indicators.csv` (L1 계산) | `axis1_available=False` |
 | 구성원 재무 요약 (`MemberSummary`) | DuckDB 스토어 — 선택 | 경고 남기고 비운다 (`CLAUDE.md` §2) |
-| 거시 상태 (`MacroState`) | JSON 선택 (L2 계약 `state/macro/latest.json`) | `tailwind=None` |
 | 이전 thesis | `state/theses/<이전 date>/<theme>.thesis.yaml` | `None` — drift diff 없음 |
 | 케이스 스터디 few-shot | `state/cases/*.md` | "few-shot 없음" 을 프롬프트에 적는다 |
 
@@ -20,9 +19,8 @@ L3 는 다른 계층의 **파일 산출물**만 읽는다. L2·L4·L5 모듈을 
 from __future__ import annotations
 
 import dataclasses
-import json
 import logging
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
@@ -166,16 +164,6 @@ class MemberSummary:
 
 
 @dataclass(frozen=True)
-class MacroState:
-    """L2 산출물 계약 (선택). 파일이 없으면 `None` 으로 전달된다."""
-
-    asof: str | None
-    regime: str | None
-    tailwind: float | None  # 이 테마의 순풍 점수 [-1, 1]. 0.3 초과면 확신도 +0.10 (`docs/04` §4)
-    raw: dict[str, Any] = field(default_factory=dict)
-
-
-@dataclass(frozen=True)
 class CaseStudy:
     case_id: str
     text: str
@@ -191,7 +179,6 @@ class ResearchInputs:
     industries: tuple[str, ...]
     scorecard: ThemeScorecard
     members: tuple[MemberSummary, ...]
-    macro: MacroState | None
     prior_thesis: dict[str, Any] | None
     prior_thesis_path: str | None
     cases: tuple[CaseStudy, ...]
@@ -210,7 +197,6 @@ class ResearchInputs:
             industries=self.industries,
             cycle_class=self.scorecard.cycle_class,
             members=self.members,
-            macro=self.macro,
             cases=self.cases,
         )
 
@@ -225,7 +211,6 @@ class BearInputs:
     industries: tuple[str, ...]
     cycle_class: str
     members: tuple[MemberSummary, ...]
-    macro: MacroState | None
     cases: tuple[CaseStudy, ...]
 
 
@@ -295,22 +280,6 @@ def load_scorecard(scan_dir: Path, theme_id: str) -> ThemeScorecard:
         breadth_200=opt_float(g(x, "breadth_200")),
         flags=opt_str(g(r, "flags")) or "",
         axis1=axis1,
-    )
-
-
-def load_macro_state(path: Path | None, theme_id: str) -> MacroState | None:
-    """L2 산출물 JSON. 형식(관용): "
-    "`{"asof":..., "regime":..., "tailwind": {theme_id: float} | float}`."""
-    if path is None or not path.exists():
-        return None
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    tw_raw = raw.get("tailwind")
-    tailwind = opt_float(tw_raw.get(theme_id)) if isinstance(tw_raw, dict) else opt_float(tw_raw)
-    return MacroState(
-        asof=opt_str(raw.get("asof")),
-        regime=opt_str(raw.get("regime")),
-        tailwind=tailwind,
-        raw=raw,
     )
 
 
@@ -428,7 +397,6 @@ def assemble_inputs(
     *,
     state_dir: Path,
     asof: str | None = None,
-    macro_path: Path | None = None,
     cases_dir: Path | None = None,
     with_store: bool = True,
     top_members: int = 12,
@@ -455,11 +423,6 @@ def assemble_inputs(
             warnings.append(f"DuckDB 스토어 없음({p.duckdb}) — 구성원 재무 요약을 비운 채 진행")
     else:
         warnings.append("구성원 재무 요약 생략(--no-store)")
-    if macro_path is None:
-        macro_path = p.macro_latest if p.macro_latest.exists() else None
-    macro = load_macro_state(macro_path, theme_id)
-    if macro is None:
-        warnings.append("거시 상태(L2) 없음 — 확신도의 순풍 항(+0.10) 미적용")
     prior_path = find_prior_thesis(p.theses, theme_id, asof_s)
     cases = load_case_studies(cases_dir if cases_dir is not None else p.cases_dir)
     if not cases:
@@ -471,7 +434,6 @@ def assemble_inputs(
         industries=tuple(theme.industry_match),
         scorecard=card,
         members=tuple(members),
-        macro=macro,
         prior_thesis=load_prior_thesis(prior_path),
         prior_thesis_path=str(prior_path.relative_to(state_dir)) if prior_path else None,
         cases=cases,

@@ -79,15 +79,6 @@ def _fmt_members(inputs: ResearchInputs | BearInputs) -> str:
     return "\n".join(rows)
 
 
-def _fmt_macro(inputs: ResearchInputs | BearInputs) -> str:
-    if inputs.macro is None:
-        return "(거시 상태 없음 — L2 산출물 미제공)"
-    m = inputs.macro
-    return json.dumps(
-        {"asof": m.asof, "regime": m.regime, "tailwind": m.tailwind}, ensure_ascii=False
-    )
-
-
 def _fmt_cases(cases: tuple[CaseStudy, ...]) -> str:
     if not cases:
         return (
@@ -147,12 +138,9 @@ def _context_blocks(
     members_title: str = "## 구성원 재무 요약 (PIT, 시총 상위)",
     prior: str | None = None,
 ) -> list[str]:
-    """네 역할이 공통으로 받는 사실 자료 — 구성원 재무 · 거시 상태 (· 이전 thesis) · 케이스
-    few-shot."""
-    blocks = [
-        members_title + "\n" + _fmt_members(inputs),
-        "## 거시 상태\n" + _fmt_macro(inputs),
-    ]
+    """네 역할이 공통으로 받는 사실 자료 — 구성원 재무 (· 이전 thesis) · 케이스 few-shot.
+    거시 상태 블록은 없다 — L2 는 2026-08-23 에 제거됐다 (`docs/13` §9)."""
+    blocks = [members_title + "\n" + _fmt_members(inputs)]
     if prior is not None:
         blocks.append(prior)
     blocks.append(_fmt_cases(inputs.cases))

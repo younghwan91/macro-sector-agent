@@ -79,11 +79,13 @@ def test_mock_full_run_writes_outputs(tmp_path: Path) -> None:
 
 
 def test_confidence_in_pipeline_is_mechanical(tmp_path: Path) -> None:
-    """축1 cycle +0.15 · capex 10q +0.10 · 축3 cycle +0.15 · 축4 strong +0.10 · 순풍 없음 → 1.0"""
+    """축1 cycle +0.15 · capex 10q +0.10 · 축3 cycle +0.15 · 축4 strong +0.10 → 1.0
+    (거시 순풍 항 없음 — L2 제거)"""
     res = run_research(inputs(), MockProvider(), theses_root=tmp_path, write=False)
     assert res.confidence.raw == pytest.approx(1.0)
     assert res.thesis["cycle_confidence"] == 1.0
     assert "macro_tailwind" not in res.confidence.terms
+    assert "macro_tailwind" not in res.thesis["inputs"]  # L2 제거 — thesis 에 거시 입력 키가 없다
 
 
 def test_bear_case_is_verbatim_from_bear(tmp_path: Path) -> None:
@@ -424,26 +426,21 @@ def test_assemble_inputs_from_scan_files(tmp_path: Path) -> None:
     assert inp.scan_dir == "state/scans/2026-08-14"
 
 
-def test_assemble_inputs_loads_macro_prior_and_cases(tmp_path: Path) -> None:
+def test_assemble_inputs_loads_prior_and_cases(tmp_path: Path) -> None:
     write_scan_dir(tmp_path, ASOF, ("uranium",))
-    (tmp_path / "macro").mkdir()
-    (tmp_path / "macro" / "latest.json").write_text(
-        json.dumps({"asof": ASOF, "regime": "reflation", "tailwind": {"uranium": 0.6}}),
-        encoding="utf-8",
-    )
     (tmp_path / "cases").mkdir()
     (tmp_path / "cases" / "silver-2015.md").write_text("# 은광 2015\n축1 +3%/y", encoding="utf-8")
     prev = tmp_path / "theses" / "2026-07-31"
     prev.mkdir(parents=True)
     (prev / "uranium.thesis.yaml").write_text(yaml.safe_dump({"claim": "이전"}), encoding="utf-8")
     inp = assemble_inputs("uranium", state_dir=tmp_path, with_store=False)
-    assert inp.macro is not None and inp.macro.tailwind == 0.6
+    assert not hasattr(inp, "macro")  # L2 제거 — 거시 입력 자체가 없다
     assert inp.prior_thesis == {"claim": "이전"}
     assert inp.prior_thesis_path == "theses/2026-07-31/uranium.thesis.yaml"
     assert [c.case_id for c in inp.cases] == ["silver-2015"]
     prov = MockProvider()
     res = run_research(inp, prov, theses_root=tmp_path / "theses", write=False)
-    assert "macro_tailwind" in res.confidence.terms
+    assert "macro_tailwind" not in res.confidence.terms
     by_role = {r.role: r for r in prov.requests}
     assert "silver-2015" in by_role["bear"].as_text()  # few-shot 투입
     assert "## 이전 thesis (theses/2026-07-31" in by_role["referee"].as_text()

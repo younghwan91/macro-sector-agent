@@ -68,7 +68,6 @@ class ThemeRow:
     c: float
     c_tilde: float | None  # C6 탈락이면 None
     c_source: str
-    tailwind: float | None
     axis1_declared: bool  # themes.yaml physical_ref 보유
     axis1_available: bool | None  # thesis 가 적은 값 (없으면 None)
     eligible: bool
@@ -136,7 +135,6 @@ class PortfolioResult:
                     "c": r.c,
                     "c_tilde": r.c_tilde,
                     "c_source": r.c_source,
-                    "tailwind": r.tailwind,
                     "axis1_declared": r.axis1_declared,
                     "axis1_available": r.axis1_available,
                     "eligible": r.eligible,
@@ -274,7 +272,6 @@ def _theme_rows(
                 c=ti.cycle_confidence,
                 c_tilde=c_tilde.get(t),
                 c_source=ti.confidence_source,
-                tailwind=ti.tailwind,
                 axis1_declared=th.axis1_declared,
                 axis1_available=ti.axis1_available,
                 eligible=excl_reason[t] is None,

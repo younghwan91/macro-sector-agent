@@ -7,13 +7,12 @@ from datetime import date
 import pytest
 
 from msa.data.fred import (
-    ALL_SERIES,
-    DRIVER_SERIES,
-    NEEDS_VERIFICATION,
+    L1_SERIES,
     FredError,
     Observation,
     detect_revision,
     infer_frequency,
+    l1_series,
     lag_days,
     parse_observations,
     parse_series_meta,
@@ -24,12 +23,32 @@ def _payload(rows: list[tuple[str, str]]) -> dict[str, object]:
     return {"observations": [{"date": d, "value": v} for d, v in rows]}
 
 
-def test_series_count_matches_data_contract() -> None:
-    """`docs/08` §6.3 이 정의한 24 = 직접 20 + usd_liquidity 파생 3 + DFEDTARU."""
-    assert len(ALL_SERIES) == 24
-    assert len(set(ALL_SERIES)) == 24
-    assert DRIVER_SERIES["usd_liquidity"] == ("WALCL", "WTREGEN", "RRPONTSYD")
-    assert set(NEEDS_VERIFICATION) <= set(ALL_SERIES)
+def test_l1_series_is_cpi_plus_fred_physical_refs() -> None:
+    """L2 제거(2026-08-23) 뒤 FRED 대상은 L1 이 쓰는 것뿐 — CPI + 테마 `physical_ref.source ==
+    fred`. 24종 드라이버 목록(`ALL_SERIES`·`DRIVER_SERIES`)은 없다 (`docs/archive/macro-dag.yaml`
+    에 기록만)."""
+    import msa.data.fred as fred
+
+    assert L1_SERIES == ("CPIAUCSL",)
+    assert not hasattr(fred, "ALL_SERIES") and not hasattr(fred, "DRIVER_SERIES")
+
+    class _Ref:
+        def __init__(self, source: str, symbol: str) -> None:
+            self.source, self.symbol = source, symbol
+
+    class _Theme:
+        def __init__(self, ref: _Ref | None) -> None:
+            self.physical_ref = ref
+
+    themes = [
+        _Theme(_Ref("fred", "HOUST")),
+        _Theme(_Ref("etf", "GLD")),
+        _Theme(None),
+        _Theme(_Ref("fred", "CPIAUCSL")),  # CPI 중복은 한 번만
+        _Theme(_Ref("fred", "HOUST")),  # 심볼 중복도 한 번만
+    ]
+    assert l1_series(themes) == ("CPIAUCSL", "HOUST")
+    assert l1_series([]) == L1_SERIES
 
 
 def test_missing_value_is_none_not_zero() -> None:

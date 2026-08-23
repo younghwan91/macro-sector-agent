@@ -11,7 +11,7 @@ from enum import StrEnum
 
 
 class SeriesStatus(StrEnum):
-    """외부 시계열(실물 참조·FRED·ETF·수동 CSV) 로드 결과 (`l1/physical`·`l2/sources`)."""
+    """외부 시계열(실물 참조·FRED·ETF·수동 CSV) 로드 결과 (`l1/physical`)."""
 
     OK = "ok"
     MISSING = "missing"
@@ -36,14 +36,6 @@ class FundStatus(StrEnum):
     OK = "ok"
     STALE = "stale"
     NONE = "none"
-
-
-class CoverageStatus(StrEnum):
-    """L2 tailwind 표의 테마별 엣지 커버리지 (`l2/tailwind`)."""
-
-    OK = "ok"
-    PARTIAL = "partial"
-    UNAVAILABLE = "unavailable"
 
 
 class DeliveryStatus(StrEnum):

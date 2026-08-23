@@ -5,7 +5,7 @@
 | `MSA_DUCKDB` | `~/data/us_micro.duckdb` | Sharadar 적재 DuckDB 스토어 (읽기 전용) |
 | `MSA_SHARADAR_RAW` | `~/data/sharadar` | 벤더 벌크 CSV 원본 (스토어 검증의 대조군) |
 | `MSA_STATE` | `<repo>/state` | 산출물 저장소. **다른 계층이 쓴다 — M1 은 읽지도 쓰지도 않는다** |
-| `FRED_API_KEY` | 없음 | FRED 어댑터. 없으면 `msa.data.fred` 가 예외를 던진다 |
+| `FRED_API_KEY` | 없음 | FRED 어댑터(L1 축 1 실물 참조·CPI). 없으면 `msa.data.fred` 가 던진다 |
 
 `state/` 아래의 하위 경로는 전부 `Paths` 의 속성이다 (`paths().scans`·`paths().themes_yaml`·…).
 계층 모듈이 `p.state / "scans"` 를 각자 만들면 디렉터리 이름이 한 곳에서 바뀔 때 조용히
@@ -50,15 +50,6 @@ class Paths:
         return self.state / "scans"
 
     @property
-    def macro(self) -> Path:
-        return self.state / "macro"
-
-    @property
-    def macro_latest(self) -> Path:
-        """L2 가 갱신하는 최신 거시 상태 (`state/macro/latest.json`). L3 의 기본 입력."""
-        return self.macro / "latest.json"
-
-    @property
     def theses(self) -> Path:
         return self.state / "theses"
 
@@ -99,7 +90,7 @@ class Paths:
 
     @property
     def fred_cache(self) -> Path:
-        """`state/physical/fred/<SYMBOL>.csv` — L1(실물 참조·CPI)과 L2(드라이버)가 같은 캐시다."""
+        """`state/physical/fred/<SYMBOL>.csv` — L1 실물 참조(축 1)·CPI 캐시."""
         return self.physical / "fred"
 
     @property
@@ -122,10 +113,6 @@ class Paths:
     @property
     def themes_yaml(self) -> Path:
         return self.state / "themes.yaml"
-
-    @property
-    def dag_yaml(self) -> Path:
-        return self.state / "macro-dag.yaml"
 
     @property
     def positions(self) -> Path:
@@ -185,6 +172,6 @@ def fred_api_key() -> str:
         raise MissingApiKey(
             "FRED_API_KEY 가 비어 있다. https://fred.stlouisfed.org/docs/api/api_key.html "
             "에서 무료 키를 받아 환경변수로 넣어라. "
-            "키 없이 FRED 단계를 건너뛰면 L2 드라이버가 조용히 빈 채로 진행된다."
+            "키가 없으면 L1 축 1 의 FRED 실물 참조·CPI 는 data_missing 으로 남는다."
         )
     return key

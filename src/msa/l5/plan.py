@@ -115,12 +115,11 @@ def _position_block(p: PositionPlan) -> list[str]:
 
 
 def _theme_header(r: ThemeRow) -> str:
-    tw = "" if r.tailwind is None else f", tailwind {r.tailwind:+.2f}"
     ct = "" if r.c_tilde is None else f", c̃={r.c_tilde:.2f}"
     ax = "축1 가능" if r.axis1_declared else "축1 불가"
     if r.axis1_available is False and r.axis1_declared:
         ax += "(thesis: false)"
-    head = f"{r.theme}  (c={r.c:.2f} [{_src_label(r.c_source)}]{ct}{tw}, {ax})"
+    head = f"{r.theme}  (c={r.c:.2f} [{_src_label(r.c_source)}]{ct}, {ax})"
     if not r.eligible:
         return f"{head:<60} 제외 — {r.excluded_reason}"
     return f"{head:<60} 테마 {_pct(r.weight)}"

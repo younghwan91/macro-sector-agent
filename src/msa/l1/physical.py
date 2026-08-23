@@ -63,7 +63,7 @@ def read_date_value_csv(path: Path) -> pd.Series:
     """`date,value` CSV → 값 시리즈 (`DatetimeIndex`, 결측 제거, 오름차순). 컬럼명은 대소문자 무관.
 
     컬럼이 없거나 값이 전부 결측이면 `StoreError` — 빈 시리즈를 돌려주지 않는다 (`CLAUDE.md` §2).
-    FRED 캐시·수동 CSV 가 같은 꼴이라 L1·L2 가 함께 쓴다.
+    FRED 캐시·수동 CSV 가 같은 꼴이다.
     """
     df = pd.read_csv(path)
     cols = {c.lower(): c for c in df.columns}
@@ -79,12 +79,12 @@ def read_date_value_csv(path: Path) -> pd.Series:
     return s
 
 
-#: 이전 이름 — L2·L4 가 옮겨 갈 때까지 남겨 둔다. `to_month_end` 도 `msa.dates` 의 것을 재노출한다.
+#: 이전 이름 — L4 가 옮겨 갈 때까지 남겨 둔다. `to_month_end` 도 `msa.dates` 의 것을 재노출한다.
 _read_csv_series = read_date_value_csv
 
 
 def fred_cache_path(symbol: str) -> Path:
-    """`state/physical/fred/<SYMBOL>.csv` — L1(실물 참조·CPI)과 L2(드라이버)가 같은 캐시를 쓴다."""
+    """`state/physical/fred/<SYMBOL>.csv` — L1 실물 참조(축 1)·CPI 캐시."""
     return paths().fred_cache / f"{symbol}.csv"
 
 
@@ -115,8 +115,8 @@ def write_fred_cache(symbol: str, series: pd.Series, meta: Mapping[str, Any] | N
 def fetch_fred_to_cache(symbol: str, *, min_obs: int = 12) -> pd.Series:
     """FRED 에서 받아 캐시에 쓴다. 키가 없거나 실패하면 **예외를 그대로 올린다.**
 
-    값 옆에 `<SYMBOL>.meta.json`(단위·주기·제목·받은 시각)을 남긴다 — 파생 드라이버
-    (`usd_liquidity`)의 단위 환산이 선언과 맞는지 L2 가 대조할 재료다.
+    값 옆에 `<SYMBOL>.meta.json`(단위·주기·제목·받은 시각)을 남긴다 — 실물 참조의 단위가
+    `themes.yaml` 선언(`kind`)과 맞는지 사람이 대조할 재료다.
     """
     from msa.data.fred import FredClient
 

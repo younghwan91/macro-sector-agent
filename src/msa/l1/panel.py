@@ -127,7 +127,7 @@ class ThemePanel:
 def load_cached_panel(cache_dir: Path | None = None, fingerprint: str | None = None) -> ThemePanel:
     """캐시된 패널을 읽는다. `fingerprint=None` 이면 수정시각이 가장 최근인 패널.
 
-    세 파일(frame·spy·json) 중 하나라도 없으면 `StoreError` — 다른 계층(L2·L5·ops)이 스토어 없이
+    세 파일(frame·spy·json) 중 하나라도 없으면 `StoreError` — 다른 계층(L5·ops)이 스토어 없이
     테마 지수를 쓸 때의 진입점이다.
     """
     fc = FingerprintCache.at(fingerprint or "", cache_dir)
