@@ -4,7 +4,7 @@
 |---|---|---|
 | 월간 (1영업일) | `1-3일 07:00` + `msa ops due monthly` | `msa run monthly` |
 | 주간 (월요일) | `월 07:30` | `msa run weekly` (스캔 + `check --weekly`) |
-| 일간 (평일) | `평일 18:30` | `msa check --daily` |
+| 일간 (평일) | `평일 18:30` | `msa run daily --send` (다이제스트 + `check --daily` 내장) |
 | 분기 (1·4·7·10월 1영업일) | `1-3일 08:00` + `due quarterly` | calibration · rejections |
 
 월간(`msa run monthly`, 배선 W4)은 스캔→상위 K→L3→적재→L4→L5 를 잇고 **제안·초안**에서 끝난다
@@ -70,9 +70,9 @@ JOBS: tuple[Job, ...] = (
         "daily",
         "30 18 * * 1-5",
         "Mon..Fri *-*-* 18:30:00",
-        ("msa check --daily",),
+        ("msa run daily --send",),
         None,
-        "무효화·사다리·TP·시간스탑 자동 확인 — 알림 시에만 본다",
+        "후보 다이제스트 + 무효화·사다리·TP·시간스탑 확인 (check 내장) — 알림·요약 시에만 본다",
     ),
     Job(
         "quarterly",

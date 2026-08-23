@@ -50,8 +50,8 @@ app.add_typer(backtest_app, name="backtest")
 run_app = typer.Typer(
     no_args_is_help=True,
     help=(
-        "케이던스 실행 (docs/09 §1) — monthly: 스캔→거시→상위 K→L3→적재→L4→L5 · "
-        "weekly: 스캔+점검 · "
+        "케이던스 실행 (docs/09 §1) — monthly: 스캔→상위 K→L3→적재→L4→L5 · "
+        "weekly: 스캔+점검 · daily: 후보 다이제스트+무효화 점검 · "
         "quarterly: 분기 명령 목록. 끝은 제안·초안이다 — 집행은 사람 (CLAUDE.md §8)"
     ),
 )
@@ -700,6 +700,59 @@ def run_weekly_cmd(
     if res.check is not None:
         typer.echo("")
         typer.echo(res.check.render())
+    _echo_saved(res.out_dir)
+    if res.exit_code:
+        raise typer.Exit(code=res.exit_code)
+
+
+@run_app.command("daily")
+@cli_guard
+def run_daily_cmd(
+    asof: str = typer.Option("", help="기준일 YYYY-MM-DD (기본 오늘)"),
+    top_k: int = typer.Option(
+        8, "--top-k", help="스코어보드 상위 K (자격 테마만 — docs/05 §1과 같은 K)"
+    ),
+    themes: str = typer.Option(
+        "", "--themes", help="사용자 지정 테마 쉼표 목록 — 순위와 무관하게 다이제스트에 넣는다"
+    ),
+    per_theme: int = typer.Option(
+        5, "--per-theme", help="테마당 표시 종목 수 (표시 개수 — 선정 규칙이 아니다)"
+    ),
+    no_write: bool = typer.Option(
+        False, "--no-write", help="state/daily/ 에 쓰지 않는다 (화면 출력만; --send 도 무효)"
+    ),
+    send: bool = typer.Option(
+        False, "--send", help="텔레그램 요약 전송 (MSA_TELEGRAM_* 둘 다 있을 때만)"
+    ),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """일간 후보 다이제스트 (docs/09 §1 일간 행): 스캔(캐시) → 상위 K → 테마별 L4 랭킹 →
+    직전 다이제스트 diff → 보유 점검(positions.yaml 이 있을 때).
+
+    산출물: state/daily/<date>/digest.json · digest.md · report.txt. 읽기 전용 후보 뷰다 —
+    측정값·후보 목록이지 투자 조언이 아니다 (L1 점수 예측력 약함, docs/02 §7.1).
+    결정 케이던스는 월간 그대로 (msa run monthly).
+    """
+    from msa.pipeline.daily import run_daily
+    from msa.pipeline.run import RunError
+
+    _setup_logging(verbose)
+    try:
+        res = run_daily(
+            asof=asof or None,
+            top_k=top_k,
+            extra_themes=[t for t in themes.split(",") if t.strip()],
+            picks_per_theme=per_theme,
+            write=not no_write,
+            send=send,
+        )
+    except RunError as e:
+        raise typer.BadParameter(str(e)) from e
+    _echo_run_report(res.report)
+    typer.echo("")
+    typer.echo(res.digest_md)
+    if res.telegram is not None:
+        typer.echo(f"텔레그램: {res.telegram}")
     _echo_saved(res.out_dir)
     if res.exit_code:
         raise typer.Exit(code=res.exit_code)

@@ -17,13 +17,14 @@ def test_cron_has_four_cadences_and_installs_nothing(tmp_path: Path) -> None:
     lines = [ln for ln in text.splitlines() if ln and not ln.startswith("#") and "=" not in ln[:9]]
     assert len(lines) == 4
     # 배선 W4: 월간·주간은 오케스트레이터(`msa run …`)를 부른다 — `msa scan`/`msa check --weekly`
-    # 직접 호출에서 바뀌었다. 일간은 그대로 `msa check --daily`.
+    # 직접 호출에서 바뀌었다. 일간도 `msa run daily --send` 다 (후보 다이제스트 + check 내장 —
+    # 옛 `msa check --daily` 직접 호출에서 바뀌었다).
     assert any(
         ln.startswith("0 7 1-3 * *") and "msa ops due monthly" in ln and "msa run monthly" in ln
         for ln in lines
     )
     assert any(ln.startswith("30 7 * * 1") and "msa run weekly" in ln for ln in lines)
-    assert any(ln.startswith("30 18 * * 1-5") and "msa check --daily" in ln for ln in lines)
+    assert any(ln.startswith("30 18 * * 1-5") and "msa run daily --send" in ln for ln in lines)
     assert any(
         ln.startswith("0 8 1-3 1,4,7,10 *")
         and "msa ops calibration" in ln

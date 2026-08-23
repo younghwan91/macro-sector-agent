@@ -8,7 +8,7 @@
 |---|---|---|---|
 | **월간** (1영업일) | L0 적재 → L1 전수 스캔 → 상위 K L3 → L4 → L5 | 사람 30~60분 검토 | 테마 스코어보드 + 매매계획서 |
 | **주간** (월요일) | 보유 포지션의 **트리거·무효화 점검** + L1 경량 갱신 (가격 블록만) | 사람 5~10분 | 점검 리포트 |
-| **일간** | 무효화 트리거 발동 여부만 자동 확인 | 0분 (알림 시에만) | 알림 |
+| **일간** | **후보 다이제스트 + 무효화 점검** (기계) — 상위 K 테마·테마별 랭킹 상위 N·직전 대비 변화 · 사람은 **고르는 것·저널**만 | 0~5분 (읽기 전용) | `state/daily/<date>/digest.md` + 알림 |
 | **분기** | 캘리브레이션 갱신(`10-validation.md` §4) + **기각 대장의 12·24M 수익률 갱신**(`10-validation.md` §5) — (L2 모순 감사는 2026-08-23 L2 제거로 없어졌다, `docs/13` §9) | 사람 1시간 | 감사 리포트 |
 | **수시** | 신규 테마 진입 검토 (사용자 발의) | | |
 
@@ -17,7 +17,9 @@
 > 와 사유를 남긴다 — **끝은 제안·초안**(진입 초안 · `positions-proposal.yaml` · 관찰 목록 행)이며 집행은
 > 사람이 한다. `msa run weekly` 가 주간 행(전수 스캔 + `msa check --weekly`)이다 — "L1 경량 갱신(가격
 > 블록만)" 은 따로 만들지 않았다: 캐시가 있으면 전수 스캔이 ~12 초라 경량 경로의 이유가 없다. 일간은
-> `msa check --daily` 그대로, 분기는 `msa run quarterly` 가 두 명령(`ops calibration` · `ops
+> `msa run daily --send` — 후보 다이제스트(스캔→상위 K→테마별 L4 랭킹→직전 diff)에 `msa check --daily` 와
+> 같은 점검이 **내장**돼 있다 (positions.yaml 이 있을 때만; 옛 cron 의 `msa check --daily` 직접 호출을
+> 대체한다). 분기는 `msa run quarterly` 가 두 명령(`ops calibration` · `ops
 > rejections-update`)을 **나열만** 한다 (같은 날 L2 제거로 `msa macro` 모순 감사는 목록에서 빠졌다). cron 은 `msa ops schedule --print-cron`.
 > 구현 노트는 이 문서 끝 "케이던스 오케스트레이터".
 
@@ -98,6 +100,7 @@ journal/
 | 텔레그램 | 사다리 조건 충족 (가격 + 논지 조건 **동시** 충족) | 일간 확인 |
 | 텔레그램 | **시간 스탑 30일 전 예고** | 해당 시 |
 | 텔레그램 | TP 조건 충족 | 일간 확인 |
+| 텔레그램 | **일간 후보 다이제스트** (`daily_digest`) — 오늘 새로 올라온 것 + 상위 3테마 한 줄씩 | 일간 (`msa run daily --send`) |
 
 알림 문구 규약 (`fin-checkup` 승계): **측정값과 사실만 전달하고 투자 권유를 하지 않는다.**
 "CCJ 사세요" 가 아니라 "CCJ 사다리 2단 조건 충족: 가격 −13.2%, 무효화 0건, 트리거 1/3 충족".
@@ -274,6 +277,27 @@ upsert (기존 `added_at` 유지). 스코어보드 순위는 `--scan` 의 `score
 `msa run weekly` = `run_scan` + `run_check(mode="weekly")` (알림 파일·텔레그램·`last_run.json` 은
 `msa check --weekly` 와 같다) + `weekly-report.md`. 점검의 문제(스냅샷 없음 등)는 리포트의 "사람이 할 것" 에
 들어가고 종료 코드에는 넣지 않는다. `state/runs/` 는 `.gitignore`.
+
+### 구현 노트 — 일간 후보 다이제스트 (`msa run daily`, `src/msa/pipeline/daily.py`)
+
+"오늘의 종목을 보고 싶다 — 무슨 먹을거리가 올라오는지 매일 보고, 그중에서 고른다" 를 위한 **읽기 전용
+후보 뷰**다. 월간이 결정 케이던스라는 사실은 바뀌지 않는다 — 일간은 보고 고르는 것뿐이다.
+
+순서: `run_scan`(캐시 덕에 ~12초, 스냅샷은 쓰지 않는다) → `select_themes`(월간과 같은 규칙 — S2 자격
+상위 K, 기본 8 = `05` §1 의 K, `--themes` 지정 추가) → 테마별 `run_picks`(테마별 격리, ~2초/테마,
+스냅샷 미기록) → **직전 다이제스트와의 diff**(`state/daily/<직전 날짜>/digest.json` — 상위 K 진입/이탈,
+순위 이동, 테마별 상위 N 신규·신규 하드 제외·신규 통과; 첫 실행이면 "기준일 없음, 전부 신규") →
+positions.yaml 이 있으면 `run_cadence_check(mode="daily")`(= `msa check --daily` 경로 재사용) →
+`state/daily/<asof>/digest.json`(기계) + `digest.md` = `report.txt`(사람).
+
+새 임계값은 없다 — `--top-k`(기본 8)와 `--per-theme`(기본 5)뿐이고 **5 는 표시 개수이지 선정 규칙이
+아니다** (랭킹 전체는 `msa picks`). LLM 도 부르지 않는다 — 전 단계 결정론 (`CLAUDE.md` §4). 다이제스트
+머리에는 정직성 한 줄이 붙는다: "측정값·후보 목록 — 투자 조언 아님; L1 점수 예측력 약함(docs/02 §7.1)"
+(`docs/backtest-l1.md` §12). `--send` 는 "오늘 새로 올라온 것" + 상위 3테마 한 줄씩을 `daily_digest`
+알림으로 기존 `deliver` 에 태운다 (≤4000자, 넘치면 자른 개수를 명시 — 조용한 절단 금지 `CLAUDE.md` §2;
+문구 규약은 `assert_wording_ok`). `--no-write` 는 파일을 쓰지 않고(`--send` 도 무효 — `deliver` 는
+`alerts.json` 을 쓰는 계약이다) 화면 출력만 한다. 스캔 실패만 exit 1, 테마별 실패·점검 실패는 격리·보고.
+`state/daily/` 는 `.gitignore`.
 
 ## 5. 실패 시 동작
 
