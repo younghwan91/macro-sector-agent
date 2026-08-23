@@ -6,9 +6,11 @@
 > **상태: M1~M8 전 마일스톤 1차 구현 (2026-08-23).** L0 데이터(M1) · 테마 134 버킷(M2) · L1 스캐너 `msa scan`(M3) ·
 > L1 백테스트 관문 `msa backtest l1`(M3.5) · L2 거시 런타임 `msa macro`(M4) · L4 종목 선정 `msa picks`(M5) ·
 > L5 포트 구성기 `msa portfolio`(M6) · L3 에이전트 `msa research`(M7) · 운영 `msa check`/`journal`/`ops`(M8).
-> **M3.5 판정: 복합 `score` 의 12M rank-IC 는 2011 년 이후 0 과 구분되지 않는다 (FAIL, `docs/backtest-l1.md`).**
-> C(턴) 블록만 뚜렷이 일하고 A(망각)·D(밸류)는 반대 부호다. 그래서 **복합 스코어의 순위는 순위 산출 근거가 아니라
-> 관찰 지표다** — 가중치는 바꾸지 않았다 (`CLAUDE.md` §1). 왜 그런지와 다음 절차는 `docs/12-design-question-a-block.md`(설계 질문 1·M3.6). 실측 블로커: `FRED_API_KEY`(L2 드라이버·CPI) ·
+> **L1 집계 구조: 2026-08-23 S2 채택.** M3.5 에서 구 복합 점수(6블록 가산)의 12M rank-IC 는 0 과 구분되지
+> 않았고(+0.048 [−0.024, +0.123], FAIL), 사전 등록된 M3.6 에서 "A·B 는 풀 자격, C·E·F 가 순위" 구조(S2)가
+> +0.078 [+0.015, +0.145] 로 합격해 채택했다 (`docs/02` §7.1, `docs/backtest-l1.md` §12). 한계도 같이 적혀
+> 있다 — DSR(632) 0.003, 12M 스프레드 0 포함, 원자재 클래스 미유의. 가중치 값은 바꾸지 않았다 (`CLAUDE.md` §1).
+> 설계 질문 기록은 `docs/12-design-question-a-block.md`. 실측 블로커: `FRED_API_KEY`(L2 드라이버·CPI) ·
 > `ANTHROPIC_API_KEY`(L3 실행) · manual 실물 시계열. 진행 상태는 `docs/11-roadmap.md`. 데이터는 `~/data/us_micro.duckdb`(Sharadar) 이며
 > 없으면 `docs/08-data-contract.md` §6 부트스트랩 절차를 먼저 밟는다.
 

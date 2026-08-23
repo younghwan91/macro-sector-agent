@@ -72,7 +72,7 @@ def test_s1_gate_and_renormalized_score(ind: Indicators, themes: ThemeSet) -> No
         num = sum(w[b] * sb.loc[key, f"{b}_pct"] for b in S1_BLOCKS)
         den = sum(w[b] for b in S1_BLOCKS)
         assert sc.loc[key, "S1"] == pytest.approx(num / den)
-    assert sc["S0"].equals(sb["score"])
+    assert sc["S0"].equals(sb["score_s0"])  # S0 = 구 복합(6블록 가산)
 
 
 def test_s2_pool_eligibility_and_timing_score(ind: Indicators, themes: ThemeSet) -> None:
@@ -82,6 +82,8 @@ def test_s2_pool_eligibility_and_timing_score(ind: Indicators, themes: ThemeSet)
     assert np.allclose(sc["S2_pool"].to_numpy(), pool.to_numpy(), equal_nan=True)
     assert (sc["S2_eligible"].to_numpy() == (pool >= S2_POOL_MIN).to_numpy()).all()
     assert sc.loc[~sc["S2_eligible"], "S2"].isna().all()
+    # 채택된 스코어보드 `score` 와 S2 는 같은 것이다
+    pd.testing.assert_series_equal(sc["S2"], sb["score"], check_names=False)
     # 자격 집합이 비지도, 전부도 아니다 (12 테마 난수라 정확한 절반은 아니다)
     n = sc.groupby(level="date")["S2_eligible"].sum()
     assert (n >= 1).all() and (n <= 11).all()

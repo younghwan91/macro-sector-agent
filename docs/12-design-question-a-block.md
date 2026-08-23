@@ -172,3 +172,10 @@ S2 의 0.5 는 "중앙값 이상" 이라는 무정보 컷이다. **둘 다 여�
 + README + 저널을 한 커밋으로. 이 문서는 여기서 닫는다 — 후속 질문(예: "S2 의 풀 점수에 D 를 넣으면" =
 S2′, "commodity_supply 만 다른 구조" 등)은 새 번호의 새 사전 등록이고 시도 수에 더해진다. S1 의 임계를
 푸는 것은 하지 않는다(§4.4).
+
+
+## 8. 채택 기록 (2026-08-23)
+
+사용자가 S2 채택을 결정했다. §4.3 의 네 가지를 한 커밋으로 했다 — `docs/02` §7.1 신설(근거 서술),
+`src/msa/l1/scoreboard.py` 집계 변경(`POOL_BLOCKS`·`POOL_MIN`·`TIMING_BLOCKS`·`aggregate_scores`, `score_s0` 보존),
+`README` 상태 문구, `journal/2026-08-23-l1-structure-s2-adoption.md`. 이 문서는 닫혔다.

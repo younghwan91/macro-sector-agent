@@ -30,6 +30,7 @@ from msa.l1.scan import scan_dirs
 from msa.l1.scoreboard import (
     BLOCKS,
     SCORED,
+    TIMING_BLOCKS,
     build_scoreboard,
     render_flags,
     scoreboard_history,
@@ -151,15 +152,27 @@ def test_pipeline_shapes_flags_and_weights(themes: ThemeSet, ind: Indicators) ->
     )
     t = sb.table
     assert t.columns[0] == "rank"
-    assert list(t["rank"].dropna().astype(int)) == [1, 2, 3, 4]
-    assert t["score"].between(0, 1).all()
+    # 2026-08-23 S2 채택: 순위는 자격(pool ≥ 0.5) 테마만 — 자격 수만큼 1..n, 나머지 NaN
+    n_elig = int(t["eligible"].sum())
+    assert list(t["rank"].dropna().astype(int)) == list(range(1, n_elig + 1))
+    assert t.loc[~t["eligible"], "score"].isna().all()
+    assert t.loc[t["eligible"], "score"].between(0, 1).all()
+    assert t["score_s0"].between(0, 1).all()
     for b in BLOCKS:
         assert t[f"{b}_pct"].between(0, 1).all()
-    # 가중합 재현: score = Σ w × block_pct (블록 전부 있을 때)
+    # 집계 재현 (블록 전부 있을 때): pool = mean(A,B) · score = Σ_{C,E,F} w·pct / Σw ·
+    # score_s0 = 6블록
     for _tid, r in t.iterrows():
         w = BLOCK_WEIGHTS[r["cycle_class"]]
         if not r["blocks_missing"]:
-            assert r["score"] == pytest.approx(sum(w[b] * r[f"{b}_pct"] for b in BLOCKS))
+            assert r["pool"] == pytest.approx((r["A_pct"] + r["B_pct"]) / 2)
+            assert r["score_s0"] == pytest.approx(sum(w[b] * r[f"{b}_pct"] for b in BLOCKS))
+            if r["eligible"]:
+                num = sum(w[b] * r[f"{b}_pct"] for b in TIMING_BLOCKS)
+                den = sum(w[b] for b in TIMING_BLOCKS)
+                assert r["score"] == pytest.approx(num / den)
+            else:
+                assert "풀 미달" in r["flags"]
     assert t.loc["alpha", "small_sample"]
     assert "소표본" in t.loc["alpha", "flags"]
     assert t.loc["beta", "secular"] and "SECULAR" in t.loc["beta", "flags"]
@@ -189,7 +202,11 @@ def test_missing_block_renormalizes_weights(themes: ThemeSet, ind_novcp: Indicat
         w = BLOCK_WEIGHTS[r["cycle_class"]]
         num = sum(w[b] * r[f"{b}_pct"] for b in BLOCKS if b != "F")
         den = sum(w[b] for b in BLOCKS if b != "F")
-        assert r["score"] == pytest.approx(num / den)
+        assert r["score_s0"] == pytest.approx(num / den)
+        if r["eligible"]:
+            num_t = sum(w[b] * r[f"{b}_pct"] for b in TIMING_BLOCKS if b != "F")
+            den_t = sum(w[b] for b in TIMING_BLOCKS if b != "F")
+            assert r["score"] == pytest.approx(num_t / den_t)
     assert "blocks_missing=F" in t["flags"].iloc[0]
 
 
@@ -198,7 +215,17 @@ def _ref_scoreboard_history(ind: Indicators, themes: ThemeSet) -> pd.DataFrame:
     frames = []
     for d in ind.dates:
         sb = build_scoreboard(ind, themes, d)
-        t = sb.table[["score", "cycle_class", *BLOCKS, *[f"{b}_pct" for b in BLOCKS]]].copy()
+        t = sb.table[
+            [
+                "score",
+                "score_s0",
+                "pool",
+                "eligible",
+                "cycle_class",
+                *BLOCKS,
+                *[f"{b}_pct" for b in BLOCKS],
+            ]
+        ].copy()
         t["date"] = d
         frames.append(t.reset_index())
     return pd.concat(frames, ignore_index=True).set_index(["date", "theme"]).sort_index()

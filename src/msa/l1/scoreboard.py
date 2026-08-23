@@ -24,12 +24,21 @@
 - **F** — `rev_yoy_d2`(+) `ebitda_margin_d4`(+) `unit_cagr_5y`(+, 있을 때만). 서프라이즈·리비전은
   데이터 없음.
 
-## 정규화
+## 정규화와 집계 — 2026-08-23 개정 (M3.6 S2 채택; `docs/02` §7.1 · `docs/12` §7)
 1. 지표별 **횡단면 백분위** (그 월말에 값이 있는 테마 사이의 rank/N, 방향 반영).
 2. 블록 점수 = 들어간 지표 백분위의 평균. 지표가 하나도 없으면 블록 NaN.
 3. 블록 점수를 다시 횡단면 백분위로 (§7 "각 블록을 0~1 로 정규화(pct 기반, 버킷 간 횡단면)").
-4. `score = Σ w_class[block] × block_pct`. 블록이 빠지면 남은 가중치로 재정규화하고
-   `blocks_missing` 플래그.
+4. **풀 점수** `pool = mean(A_pct, B_pct)` (하나만 있으면 그것).
+   **자격** = `pool ≥ POOL_MIN(0.5)`
+   — A(망각)·B(베이스)는 "어디를 볼지" 의 조건이지 타이밍 점수에 더하는 항이 아니다
+   (`docs/02` §A·§8 의 서술을 집계가 따른다).
+5. **순위 점수** `score = Σ_{b∈C,E,F} w_class[b] × block_pct_b` 를 가중치 재정규화 — 자격
+   테마만.
+   자격 미달은 `score=NaN`(순위 없음, 관찰 목록) + 플래그 `풀 미달`. 블록이 빠지면 남은 가중치로
+   재정규화하고 `blocks_missing` 플래그.
+6. `score_s0` = 2026-08-23 이전의 복합(6블록 가산) — 비교·감사용으로 남긴다. 순위에 쓰지 않는다.
+   D(밸류)는 어느 점수에도 들어가지 않고 프로필 표시용이다 (M3.5 에서 음/0 —
+   `docs/backtest-l1.md` §2).
 
 ## 플래그 (§9)
 - `n<min` 소표본: 생존 구성원 < `min_constituents`. 스코어는 계산하되 상위 K 선정에서 감점 —
@@ -54,6 +63,10 @@ from msa.status import Axis1Status
 from msa.themes import BLOCK_WEIGHTS, ThemeSet
 
 BLOCKS = ("A", "B", "C", "D", "E", "F")
+#: 2026-08-23 개정 — 집계 구조 S2 (`docs/12` §4.1·§7, `docs/backtest-l1.md` §12). 선언값이다.
+POOL_BLOCKS: tuple[str, ...] = ("A", "B")
+POOL_MIN = 0.5
+TIMING_BLOCKS: tuple[str, ...] = ("C", "E", "F")
 
 ORIENTATION: dict[str, int] = {
     # A
@@ -196,6 +209,22 @@ def _weighted_score(BP: pd.DataFrame, W: pd.DataFrame) -> tuple[pd.Series, pd.Da
     return score, avail
 
 
+def aggregate_scores(
+    BP: pd.DataFrame, W: pd.DataFrame
+) -> tuple[pd.Series, pd.Series, pd.Series, pd.Series, pd.DataFrame]:
+    """블록 백분위 표 → (score, score_s0, pool, eligible, avail). 머리말 4~6 의 S2 집계.
+
+    `score` 는 자격(`pool ≥ POOL_MIN`) 테마의 C·E·F 재정규화 가중합, 나머지는 NaN.
+    `score_s0` 는 6블록 가산(구 복합) — 감사용. `avail` 은 전 블록의 결측 표시(`blocks_missing` 용).
+    """
+    score_s0, avail = _weighted_score(BP, W)
+    pool = BP[list(POOL_BLOCKS)].mean(axis=1, skipna=True)
+    eligible = (pool >= POOL_MIN).fillna(False).astype(bool)
+    timing, _ = _weighted_score(BP[list(TIMING_BLOCKS)], W[list(TIMING_BLOCKS)])
+    score = timing.where(eligible)
+    return score, score_s0, pool, eligible, avail
+
+
 @dataclass(frozen=True)
 class Scoreboard:
     date: pd.Timestamp
@@ -266,11 +295,14 @@ def build_scoreboard(
     cls = pd.Series({t: by_id[t].cycle_class for t in tids})
     W = _weights(cls)
     BP = pd.DataFrame(block_pct)[list(BLOCKS)]
-    score, avail = _weighted_score(BP, W)
+    score, score_s0, pool, eligible, avail = aggregate_scores(BP, W)
 
     tab = pd.DataFrame(index=pd.Index(tids, name="theme"))
     tab["cycle_class"] = cls
     tab["score"] = score
+    tab["score_s0"] = score_s0
+    tab["pool"] = pool
+    tab["eligible"] = eligible
     for b in BLOCKS:
         tab[b] = block_scores[b]
         tab[f"{b}_pct"] = BP[b]
@@ -313,6 +345,8 @@ _AXIS1_OK = {Axis1Status.OK_EXTERNAL, Axis1Status.OK_FALLBACK}
 def render_flags(r: pd.Series) -> str:
     """스코어보드 한 행의 구조화 열 → `flags` 문자열 (CSV·리포트 표시 전용 파생값)."""
     f: list[str] = []
+    if "eligible" in r and not bool(r["eligible"]):
+        f.append("풀 미달(관찰)")
     if r["small_sample"]:
         f.append(f"n={int(r['n_live'])} 소표본")
     if r["secular"]:
@@ -337,7 +371,8 @@ def render_flags(r: pd.Series) -> str:
 def scoreboard_history(ind: Indicators, themes: ThemeSet) -> pd.DataFrame:
     """전 월말의 스코어보드를 쌓은 긴 표 — M3.5 백테스트 입력.
 
-    열: score, cycle_class, A..F, A_pct..F_pct. 월말마다 `build_scoreboard` 를 부른 것과 같은 값을
+    열: score(S2)·score_s0·pool·eligible, cycle_class, A..F, A_pct..F_pct. 월말마다
+    `build_scoreboard` 를 부른 것과 같은 값을
     한 번의 벡터 연산으로 만든다 (횡단면 백분위 = 월말별 `groupby(level="date").rank(pct=True)`).
     """
     by_id = themes.by_id()
@@ -358,9 +393,18 @@ def scoreboard_history(ind: Indicators, themes: ThemeSet) -> pd.DataFrame:
     cls = pd.Series(
         [by_id[t].cycle_class for t in m.index.get_level_values("theme")], index=m.index
     )
-    score, _avail = _weighted_score(BP, _weights(cls))
+    score, score_s0, pool, eligible, _avail = aggregate_scores(BP, _weights(cls))
 
-    out = pd.DataFrame({"score": score, "cycle_class": cls}, index=m.index)
+    out = pd.DataFrame(
+        {
+            "score": score,
+            "score_s0": score_s0,
+            "pool": pool,
+            "eligible": eligible,
+            "cycle_class": cls,
+        },
+        index=m.index,
+    )
     for b in BLOCKS:
         out[b] = bs[b]
     for b in BLOCKS:

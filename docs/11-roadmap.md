@@ -146,8 +146,9 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
 - [x] 시도 수 632 로 DSR 정산, `docs/backtest-l1.md` 에 **새 절(§12)** 로 기록 (기존 절 불변)
 - [x] 결과: **S1 FAIL · S2 PASS** (주 창 12M +0.078 [+0.015, +0.145]; 단 DSR(632) 0.003 · 12M 스프레드 0 포함 ·
       `commodity_supply` 에서 0 과 구분 안 됨 — 함께 기록)
-- [ ] **채택 여부는 사람이 결정한다** (`docs/12` §4.3) — 채택하면 `02` §7·§8 개정 + `scoreboard.py` + README 강등
-      문구 + 저널 항목을 **하나의 별도 커밋**으로. 미결정 상태에서는 S0 현행·"관찰 지표" 강등 유지
+- [x] **채택 — 2026-08-23 사용자 결정.** `02` §7.1 개정 + `scoreboard.py` (`aggregate_scores`: pool=mean(A,B)≥0.5
+      자격 · score=C·E·F 재정규화 · `score_s0` 감사용) + README + `journal/2026-08-23-l1-structure-s2-adoption.md`
+      를 한 커밋으로. 이후 `msa backtest l1` 의 `score` 는 S2 를 잰다 (S0 기록은 `backtest-l1.md` §0–§11)
 - [x] S2′(D 를 풀 점수에) 등 새 후보는 돌리지 않았다 — 새 사전 등록 대상
 
 ## M4 · L2 거시 DAG

@@ -101,7 +101,7 @@ def structure_scores(
 
     out = pd.DataFrame(
         {
-            "S0": sb["score"],
+            "S0": sb["score_s0"] if "score_s0" in sb.columns else sb["score"],
             "S1": s1,
             "S2": s2,
             "S1_eligible": g,
