@@ -31,7 +31,10 @@ from msa.thesis import REJECTION_PATHS
 
 # 열거형은 `Literal` 타입 한 곳에만 적고, 런타임 검사는 `get_args` 로 같은 값을 본다.
 Role = Literal["anchor", "torque"]
-PositionStatus = Literal["open", "closed"]
+#: `proposed` = L5 `msa portfolio --emit-positions` 가 낸 **미체결 제안** (`l5/positions.py`).
+#: `msa check` 는 이 행을 점검하지 않고 "미체결 제안 — 집행은 사람이" 로만 적는다.
+#: 사람이 체결을 반영하고 `open` 으로 올릴 때 `thesis_snapshot`·`journal_entry` 가 필수가 된다.
+PositionStatus = Literal["proposed", "open", "closed"]
 TpLevelName = Literal["tp1", "tp2", "runner"]
 Tier2Basis = Literal["avg_minus_35", "breakeven"]
 WatchReason = Literal["contested", "axis1_unavailable", "awaiting_condition", "human"]
@@ -119,6 +122,8 @@ class Position:
       ticker · theme · role · target_weight · opened_at · entry_price · ladder[] ·
       tier2_stop_price · tier2_basis · time_stop_date · horizon_months · tp[] ·
       runner_trail_pct · thesis_snapshot · journal_entry · status
+
+    `status: proposed` 행은 L5 제안(`l5/positions.py`)이다 — 체결·저널이 없으므로 점검하지 않는다.
     """
 
     ticker: str
@@ -131,8 +136,8 @@ class Position:
     tier2_stop_price: float  # 평단 −35% 를 가격으로 (TP1 후 본전으로 상향)
     time_stop_date: date  # opened_at + horizon 상한 개월
     horizon_months: tuple[int, int]
-    thesis_snapshot: str  # journal/....thesis.yaml (상대 경로)
-    journal_entry: str  # journal/....md
+    thesis_snapshot: str | None  # journal/....thesis.yaml (상대 경로). `proposed` 만 None 허용
+    journal_entry: str | None  # journal/....md. `proposed` 만 None 허용
     tier2_basis: Tier2Basis = "avg_minus_35"
     tp: list[TpLevel] = field(default_factory=list)
     runner_trail_pct: float = 0.25
@@ -198,6 +203,16 @@ def position_from_dict(d: dict[str, Any]) -> Position:
     status = d.get("status", "open")
     if status not in POSITION_STATUSES:
         raise StateFileError(f"{ctx}: status 값 불가 {status!r}")
+    # 저널 링크는 `open`·`closed` 에 필수다 — `proposed`(미체결 제안) 만 비워 둘 수 있다.
+    # 제안을 `open` 으로 올리는 사람이 채운다 (`state/portfolio/<date>/positions-proposal.md`).
+    snap: str | None
+    entry: str | None
+    if status == "proposed":
+        snap = None if d.get("thesis_snapshot") in (None, "") else str(d["thesis_snapshot"])
+        entry = None if d.get("journal_entry") in (None, "") else str(d["journal_entry"])
+    else:
+        snap = str(_req(d, "thesis_snapshot", ctx))
+        entry = str(_req(d, "journal_entry", ctx))
     return Position(
         ticker=str(_req(d, "ticker", ctx)).upper(),
         theme=str(_req(d, "theme", ctx)),
@@ -213,8 +228,8 @@ def position_from_dict(d: dict[str, Any]) -> Position:
         tp=[_tp_from(x, ctx) for x in d.get("tp", []) or []],
         runner_trail_pct=float(d.get("runner_trail_pct", 0.25)),
         runner_ma_weeks=int(d.get("runner_ma_weeks", 10)),
-        thesis_snapshot=str(_req(d, "thesis_snapshot", ctx)),
-        journal_entry=str(_req(d, "journal_entry", ctx)),
+        thesis_snapshot=snap,
+        journal_entry=entry,
         status=status,
         closed_at=_d(d.get("closed_at"), ctx),
         note=str(d.get("note", "")),
@@ -228,6 +243,10 @@ class PositionsFile:
 
     def open_positions(self) -> list[Position]:
         return [p for p in self.positions if p.status == "open"]
+
+    def proposed_positions(self) -> list[Position]:
+        """L5 가 낸 미체결 제안 — 점검 대상이 아니다 (`check.run_check` 가 목록만 적는다)."""
+        return [p for p in self.positions if p.status == "proposed"]
 
 
 def _load_yaml(path: Path) -> Any:

@@ -533,6 +533,9 @@ class CheckReport:
     alerts: list[Alert]
     out_dir: Path | None
     problems: list[str]
+    #: `status: proposed` 행 (L5 제안) — 점검 대상이 아니라서 목록만 적는다. 문제가 아니다
+    #: (종료 코드에 영향 없음). 승격 절차는 `state/portfolio/<date>/positions-proposal.md`.
+    unchecked: list[str] = field(default_factory=list)
 
     def render(self) -> str:
         """리포트 본문. 한 번 만들면 재사용한다 (`run_check` 가 쓰고 CLI 가 또 찍는다)."""
@@ -547,6 +550,13 @@ class CheckReport:
         ]
         if not self.positions:
             L.append("보유 포지션 없음 (state/positions.yaml)")
+        if self.unchecked:
+            L += [
+                f"미체결 제안 {len(self.unchecked)}건 — 점검하지 않았다. 집행은 사람이 한다 "
+                "(CLAUDE.md §8): " + ", ".join(self.unchecked),
+                "  → 체결 후 positions-proposal.md 의 절차대로 status: open 으로 올린다",
+                "",
+            ]
         for p in self.positions:
             L += [
                 "=" * 78,
@@ -643,9 +653,14 @@ def run_check(
 ) -> CheckReport:
     pf = positions if positions is not None else load_positions(positions_path)
     problems: list[str] = []
+    # 0) `proposed`(L5 미체결 제안) 는 점검하지 않는다 — 체결도 저널도 없다. 목록만 남긴다
+    unchecked = [f"{pos.ticker} ({pos.theme})" for pos in pf.proposed_positions()]
     # 1) thesis 스냅샷 로드 — 없는 포지션은 점검하지 않고 문제로 적는다
     todo: list[tuple[Position, dict[str, Any]]] = []
     for pos in pf.open_positions():
+        if not pos.thesis_snapshot:  # 스키마가 open 에는 요구한다 — 타입 좁히기용 방어
+            problems.append(f"{pos.ticker}: thesis_snapshot 이 비어 있다 — 점검하지 않았다")
+            continue
         snap = repo_root / pos.thesis_snapshot
         if not snap.exists():
             problems.append(
@@ -668,7 +683,13 @@ def run_check(
     ]
     alerts = [a for pc in checks for a in pc.alerts]
     report = CheckReport(
-        asof=asof, mode=mode, positions=checks, alerts=alerts, out_dir=None, problems=problems
+        asof=asof,
+        mode=mode,
+        positions=checks,
+        alerts=alerts,
+        out_dir=None,
+        problems=problems,
+        unchecked=unchecked,
     )
     if out_root is not None:
         out_dir = out_root / asof.isoformat()
