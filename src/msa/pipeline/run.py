@@ -1,8 +1,8 @@
 """케이던스 오케스트레이터 — `msa run monthly` · `msa run weekly` · `msa run quarterly` (배선 W4).
 
-`docs/09` §1 의 한 줄(월간 = L0 적재 → L1 전수 스캔 → L2 국면 갱신 → 상위 K L3 → L4 → L5)을
+`docs/09` §1 의 한 줄(월간 = L0 적재 → L1 전수 스캔 → 상위 K L3 → L4 → L5)을
 **순서대로 호출**하고, 각 단계의 결과를 `RunReport` 에 `{status, reason, outputs, seconds}` 로
-남긴다. 새 계산은 없다 — 각 계층의 진입점(`run_scan`·`run_macro`·`run_research`·`ingest_round`·
+남긴다. 새 계산은 없다 — 각 계층의 진입점(`run_scan`·`run_research`·`ingest_round`·
 `run_picks`·`assemble_inputs`·`run_portfolio`·`run_check`)을 그대로 부른다. 임계값도 가중치도
 만들지 않는다 (`CLAUDE.md` §1).
 
@@ -12,7 +12,6 @@
 |---|---|---|
 | `scan` | `run_scan` | **중단** — 데이터·커버리지 관문 실패면 부분 데이터로 진행하지 않는다 |
 | | | (`CLAUDE.md` §2). 뒤 단계는 전부 `skipped` |
-| `macro` | `run_macro` | 중단하지 않는다. FRED 결측은 중립 처리 · 예외/가용 0 → `unavailable` |
 | `select` | 상위 K **자격**(S2 `eligible`) + 사용자 지정 | 자격 < K 면 적는다 — 채우지 않는다 |
 | | | (`docs/02` §7.1 풀 미달 = 관찰) |
 | `research` | `none` → 사람 논지/직전 thesis 를 **찾기만** | 테마별 격리 — 스키마 기각은 제외 |
@@ -31,8 +30,11 @@
 한다) 끝나면 지운다. 저널·기각 대장·관찰 목록은 `ingest_round(write=False)` 로 판정만 한다.
 
 주간(`run_weekly`) = `run_scan` (전수 스캔이 캐시 덕에 ~12 초라 "경량 갱신" 을 따로 두지 않는다) +
-`run_check(mode="weekly")` + 주간 리포트. 분기(`run_quarterly`) 는 세 명령의 목록이다 — 모순 감사는
-`msa macro` 리포트의 한 절이고 읽는 것은 사람이라, 여기서 돌리지 않고 적는다.
+`run_check(mode="weekly")` + 주간 리포트. 분기(`run_quarterly`) 는 두 명령의 목록이다 — 읽는 것은
+사람이라 여기서 돌리지 않고 적는다.
+
+L2 거시 단계(`macro`)와 선정의 `hard_exclude` 오버레이는 **2026-08-23 에 제거됐다** (`docs/13` §9 ·
+`journal/2026-08-23-l2-removed.md`). 선정은 L1 순위(S2 자격)만으로 한다.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ import logging
 import shutil
 import tempfile
 import time
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -54,7 +56,6 @@ from msa.dates import parse_date
 from msa.errors import ProviderError
 from msa.io import write_snapshot
 from msa.l1.scan import ScanResult, run_scan, scan_dirs
-from msa.l2.runtime import MacroResult, run_macro
 from msa.l3.contracts import InputsError
 from msa.l3.contracts import assemble_inputs as l3_assemble_inputs
 from msa.l3.pipeline import ResearchResult, run_research
@@ -77,7 +78,6 @@ STATUSES: tuple[str, ...] = ("ok", "skipped", "unavailable", "failed")
 #: 월간 단계 이름 (순서 = 실행 순서 = 리포트 순서).
 MONTHLY_STEPS: tuple[str, ...] = (
     "scan",
-    "macro",
     "select",
     "research",
     "ingest",
@@ -92,13 +92,8 @@ WEEKLY_STEPS: tuple[str, ...] = ("scan", "check", "report")
 #: 찾는다).
 PROVIDERS: tuple[str, ...] = ("none", "mock", "fixture", "anthropic")
 
-#: 분기 작업 — 실행하지 않고 나열한다 (`docs/09` §1 분기 행). 모순 감사는 `msa macro` 리포트의
-#: 한 절이다.
+#: 분기 작업 — 실행하지 않고 나열한다 (`docs/09` §1 분기 행).
 QUARTERLY_COMMANDS: tuple[tuple[str, str], ...] = (
-    (
-        "msa macro",
-        "모순 감사 — 리포트의 [모순 감사 · contradicts_when] 절을 사람이 읽는다 (docs/03 §6)",
-    ),
     ("msa ops calibration", "cycle_confidence 캘리브레이션 — N<20 이면 결론 없음 (docs/10 §4)"),
     ("msa ops rejections-update", "기각 대장 r_12m/r_24m 갱신 + 세 질문 (docs/10 §5)"),
 )
@@ -298,7 +293,6 @@ def select_themes(
     *,
     top_k: int = 8,
     extra_themes: Sequence[str] = (),
-    hard_exclude: Collection[str] = (),
 ) -> ThemeSelection:
     """스코어보드(`Scoreboard.table` 또는 `scoreboard.csv`) → L3 투입 테마.
 
@@ -307,13 +301,7 @@ def select_themes(
     뒤로, 점수 내림차순)로 K 개 고른다. 자격 테마가 K 미만이면 **그만큼만** 고르고 그 사실을
     적는다 — 풀 미달 테마로 채우지 않는다. `extra_themes` 는 자격·순위와 무관하게 붙인다(사용자
     지정) — SECULAR·소표본·풀 미달·스코어보드에 없음 플래그를 같이 적는다. SECULAR 테마는 L3 의
-    게이트(`docs/04`)가 다룬다 — 여기서 빼지 않는다.
-
-    `hard_exclude` 는 L2 오버레이(`docs/03` §4, 2026-08-23 개정: 거시는 순위에 들어가지 않고
-    `tailwind < −0.5`(가중치 커버리지 ≥ 0.5) 인 테마만 후보에서 뺀다)가 세운 테마 집합이다 —
-    스코어보드
-    상위에서 제외하고 **제외한 이름과 수를 적는다.** 사용자 지정(`extra_themes`)은 제외하지 않되
-    `L2 hard_exclude` 플래그를 단다.
+    게이트(`docs/04`)가 다룬다 — 여기서 빼지 않는다. 거시 오버레이는 없다 (L2 제거, 2026-08-23).
     """
     if top_k < 0:
         raise RunError(f"top_k 는 0 이상: {top_k}")
@@ -330,10 +318,6 @@ def select_themes(
     else:
         elig["_penal"] = 0
     elig = elig.sort_values(["_penal", "score"], ascending=[True, False], kind="mergesort")
-    hx = {str(t) for t in hard_exclude}
-    excluded_l2 = tuple(str(t) for t in elig.index if str(t) in hx)
-    if hx:
-        elig = elig.loc[[t for t in elig.index if str(t) not in hx]]
     from_sb = tuple(str(t) for t in elig.index[:top_k])
 
     extra: list[str] = []
@@ -354,19 +338,10 @@ def select_themes(
         if row is not None and "rank" in row.index and pd.notna(row["rank"]):
             r = int(float(row["rank"]))
         ranks[t] = r
-        fl = _flags(row)
-        if t in hx:
-            fl = (*fl, "L2 hard_exclude (사용자 지정이라 유지)")
-        flags[t] = fl
+        flags[t] = _flags(row)
 
     notes: list[str] = []
     n_elig = int(elig_mask.sum())
-    if excluded_l2:
-        notes.append(
-            f"L2 hard_exclude 로 후보에서 뺀 자격 테마 {len(excluded_l2)}: "
-            + ", ".join(excluded_l2)
-            + " (docs/03 §4 — tailwind < −0.5, 커버리지 ≥ 0.5)"
-        )
     if "eligible" not in sb.columns:
         notes.append(
             "스코어보드에 `eligible` 열이 없다 (S2 이전) — 점수가 있는 테마를 자격으로 봤다"
@@ -473,7 +448,6 @@ class MonthlyRunResult:
     report: RunReport
     out_dir: Path | None
     scan: ScanResult | None = None
-    macro: MacroResult | None = None
     selection: ThemeSelection | None = None
     theses: dict[str, ThesisRecord] = field(default_factory=dict)
     research: dict[str, ResearchResult] = field(default_factory=dict)
@@ -543,7 +517,7 @@ class _Roots:
     이어지므로 `write=False` 여도 **어딘가에는** 써야 한다; 그곳이 샌드박스다."""
 
     state: Path  # 산출물 루트 (state/ 또는 샌드박스)
-    real: Path  # 진짜 state/ — 읽기 전용 입력(themes·macro/latest·cases·positions)
+    real: Path  # 진짜 state/ — 읽기 전용 입력(themes·cases·positions)
     sandbox: bool
 
     @property
@@ -591,7 +565,6 @@ def run_monthly(
     provider: str = "none",
     human_theses_dir: Path | None = None,
     write: bool = True,
-    skip_macro: bool = False,
     skip_research: bool = False,
     skip_picks: bool = False,
     skip_portfolio: bool = False,
@@ -630,7 +603,6 @@ def run_monthly(
             "provider": provider,
             "human_theses_dir": str(hdir) if hdir is not None else None,
             "skip": {
-                "macro": skip_macro,
                 "research": skip_research,
                 "picks": skip_picks,
                 "portfolio": skip_portfolio,
@@ -653,7 +625,6 @@ def run_monthly(
             extra_themes=extra_themes,
             provider=provider,
             hdir=hdir,
-            skip_macro=skip_macro,
             skip_research=skip_research,
             skip_picks=skip_picks,
             skip_portfolio=skip_portfolio,
@@ -677,7 +648,6 @@ def _monthly_steps(
     extra_themes: Sequence[str],
     provider: str,
     hdir: Path | None,
-    skip_macro: bool,
     skip_research: bool,
     skip_picks: bool,
     skip_portfolio: bool,
@@ -712,53 +682,9 @@ def _monthly_steps(
         )
     )
 
-    # 2) macro — 연성
+    # 2) select — L1 순위(S2 자격)만으로 고른다
     t = _Timer()
-    if skip_macro:
-        report.add(StepResult("macro", "skipped", "--skip-macro"))
-    else:
-        try:
-            macro = run_macro(asof=asof_s, write=not roots.sandbox)
-        except Exception as e:
-            log.warning("run monthly: macro 불가 — 계속 진행: %s", _err(e))
-            report.add(StepResult("macro", "unavailable", _err(e), seconds=t.seconds))
-            report.human_todo.append(
-                "L2 거시 상태 불가 — FRED_API_KEY 또는 state/physical/fred 캐시를 확인 "
-                "(msa data fred-fetch)"
-            )
-        else:
-            result.macro = macro
-            avail, miss = macro.drivers.available, macro.drivers.missing
-            tw = macro.meta.get("tailwind", {}).get("status_counts", {})
-            reason = (
-                f"드라이버 가용 {len(avail)}/{len(avail) + len(miss)} · 결측 {len(miss)} · "
-                f"tailwind 상태 {tw}"
-            )
-            status = "ok" if avail else "unavailable"
-            if not avail:
-                reason = "가용 드라이버 0 — " + reason
-            if miss:
-                report.notes.append(
-                    f"macro: 결측 드라이버 {len(miss)} — 중립(0) 처리됐다 (docs/09 §5). "
-                    "FRED 캐시가 없으면 msa data fred-fetch (키 필요)"
-                )
-            outs = [rel(macro.out_dir)] if macro.out_dir else []
-            if roots.sandbox:
-                reason += " · no-write: latest.json 미갱신"
-            report.add(StepResult("macro", status, reason, outs, t.seconds))
-
-    # 3) select — L2 는 오버레이: hard_exclude 만 넘긴다 (docs/03 §4 개정 2026-08-23)
-    t = _Timer()
-    hx: list[str] = []
-    if result.macro is not None:
-        try:
-            tt = result.macro.tailwind.table
-            hx = [str(i) for i in tt.index[tt["hard_exclude"].fillna(False).astype(bool)]]
-        except Exception as e:  # 표가 없거나 열이 다르면 오버레이 없음으로 — 이름을 남긴다
-            report.notes.append(f"L2 hard_exclude 를 읽지 못했다 — 오버레이 없이 선정: {_err(e)}")
-    else:
-        report.notes.append("L2 없음 — 오버레이(hard_exclude) 없이 L1 순위만으로 선정")
-    sel = select_themes(sb, top_k=top_k, extra_themes=extra_themes, hard_exclude=hx)
+    sel = select_themes(sb, top_k=top_k, extra_themes=extra_themes)
     result.selection = sel
     report.add(
         StepResult(
@@ -776,7 +702,7 @@ def _monthly_steps(
         _skip_rest(report, MONTHLY_STEPS[:-1], "선정 테마 0")
         return
 
-    # 4) research (+ 5 ingest)
+    # 3) research (+ 4 ingest)
     if skip_research:
         report.add(StepResult("research", "skipped", "--skip-research"))
         report.add(StepResult("ingest", "skipped", "--skip-research"))
@@ -811,7 +737,7 @@ def _monthly_steps(
         _research_step(result, roots, asof_s, sel.selected, provider, hdir)
         _ingest_step(result, roots, asof_s, scan_dir)
 
-    # 6) picks
+    # 5) picks
     eligible = [
         th for th in sel.selected if result.theses.get(th, None) and result.theses[th].eligible
     ]
@@ -828,7 +754,7 @@ def _monthly_steps(
     else:
         _picks_step(result, roots, asof_s, eligible)
 
-    # 7) assemble + portfolio
+    # 6) assemble + portfolio
     if skip_portfolio:
         report.add(StepResult("assemble", "skipped", "--skip-portfolio"))
         report.add(StepResult("portfolio", "skipped", "--skip-portfolio"))
@@ -888,9 +814,6 @@ def _research_step(
     report = result.report
     p = paths()
     t = _Timer()
-    macro_path: Path | None = None
-    if roots.sandbox and p.macro_latest.exists():
-        macro_path = p.macro_latest  # 샌드박스엔 latest.json 이 없다 — 실 state 의 것을 쓴다
     cost: dict[str, Any] = {}
     for th in themes:
         if hdir is not None:
@@ -906,7 +829,6 @@ def _research_step(
                 th,
                 state_dir=roots.state,
                 asof=asof_s,
-                macro_path=macro_path,
                 cases_dir=p.cases_dir,
                 with_store=True,
             )
@@ -991,7 +913,6 @@ def _ingest_step(
             journal_dir=journal_dir(REPO_ROOT),
             rejections_path=p.rejections,
             watchlist_path=p.watchlist,
-            macro_latest=p.macro_latest if p.macro_latest.exists() else None,
             write=not roots.sandbox,
         )
     except Exception as e:
@@ -1254,7 +1175,7 @@ def run_quarterly() -> str:
     ]
     for cmd, why in QUARTERLY_COMMANDS:
         L.append(f"  {cmd:<28} {why}")
-    L += ["", "cron 은 `msa ops schedule --print-cron` 의 quarterly 행이 이 셋을 잇는다."]
+    L += ["", "cron 은 `msa ops schedule --print-cron` 의 quarterly 행이 이 둘을 잇는다."]
     return "\n".join(L)
 
 

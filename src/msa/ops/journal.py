@@ -192,7 +192,6 @@ class EntryRecord(_Record):
     thesis: dict[str, Any]
     confidence_provenance: str  # human | referee — 누가 c 를 산출했는가
     l1_blocks: dict[str, float]  # A..F 블록 점수 6개
-    l2_tailwind: float
     axis_verdicts: dict[str, str]  # 5축 판정
     stocks: list[StockPlan]
     deviated_from_machine: bool
@@ -211,10 +210,6 @@ class EntryRecord(_Record):
             missing.append(f"l1_blocks 는 {BLOCKS} 6개 값 (있는 것: {sorted(self.l1_blocks)})")
         elif any(not _is_number(v) for v in self.l1_blocks.values()):
             missing.append("l1_blocks 값은 실수 — 스코어보드(scoreboard.csv) A..F 에서 채운다")
-        if not _is_number(self.l2_tailwind):
-            missing.append(
-                "l2_tailwind — L2 tailwind 실수 (state/macro/latest.json). null 은 값이 아니다"
-            )
         missing += _axis_problems(self.axis_verdicts)
         if not self.stocks:
             missing.append("stocks (종목·비중·사다리·스탑·TP) 최소 1개")
@@ -258,13 +253,11 @@ class EntryRecord(_Record):
             "",
             bear.strip(),
             "",
-            "## L1 블록 6개 · L2 tailwind · 가치함정 5축",
+            "## L1 블록 6개 · 가치함정 5축",
             "",
-            "| " + " | ".join(BLOCKS) + " | tailwind |",
-            "|" + "---|" * 7,
-            "| "
-            + " | ".join(f"{self.l1_blocks[b]:.2f}" for b in BLOCKS)
-            + f" | {self.l2_tailwind:+.2f} |",
+            "| " + " | ".join(BLOCKS) + " |",
+            "|" + "---|" * 6,
+            "| " + " | ".join(f"{self.l1_blocks[b]:.2f}" for b in BLOCKS) + " |",
             "",
             "| " + " | ".join(AXES) + " |",
             "|" + "---|" * 5,
@@ -846,6 +839,11 @@ def record_from_dict(d: dict[str, Any]) -> JournalRecord:
     body["date"] = _date(body["date"])
     try:
         if t == "entry":
+            if "l2_tailwind" in body:  # 2026-08-23 L2 제거 이전의 초안 — 조용히 버리지 않는다
+                raise IncompleteEntry(
+                    "l2_tailwind 는 더 이상 진입 항목의 필드가 아니다 (L2 제거, docs/13 §9 · "
+                    "journal/2026-08-23-l2-removed.md) — 줄을 지우고 다시 넣어라"
+                )
             stocks = [
                 StockPlan(**{**s, "time_stop_date": _date(s["time_stop_date"])})
                 for s in body.pop("stocks", [])
@@ -879,7 +877,6 @@ theme: uranium
 confidence_provenance: human        # human | referee
 scan: state/scans/2026-08-31/
 l1_blocks: {A: 0.0, B: 0.0, C: 0.0, D: 0.0, E: 0.0, F: 0.0}
-l2_tailwind: 0.0
 axis_verdicts:
   {unit_demand: cycle, capital_cycle: cycle, substitution: cycle, cost_curve: cycle,
    terminal_risk: warning}

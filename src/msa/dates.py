@@ -1,6 +1,6 @@
 """월말·기준일 계산의 단일 구현.
 
-L1(`fundamentals.month_ends`)·L2(`drivers.month_end_grid`·`last_month_end`)·L3(`_months_between`)·
+L1(`fundamentals.month_ends`)·L3(`_months_between`)·
 CLI(`_parse_date`) 가 각자 같은 계산을 들고 있었다. 한 곳에 두고 전부 여기서 가져간다 —
 월말 라벨 규약이 계층마다 조금씩 달라지면 `Indicators.bucket_for` 와 백테스트 라벨이 어긋난다
 (`docs/10` §2). 값·규약은 바꾸지 않았다.

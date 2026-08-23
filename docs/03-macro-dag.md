@@ -1,5 +1,27 @@
 # 03 · 거시 인과 DAG (L2)
 
+> ## **제거됨 (2026-08-23, 설계 질문 2 → C)**
+>
+> 이 계층은 **더 이상 파이프라인에 없다.** `docs/13-design-question-l2-macro.md` 가 세운
+> 설계 질문 2 — "거시로 테마를 골라도 되는가" — 에 대한 답은 **아니다** 였다: 거시 기반 선택의
+> 표본외 예측력이 약하고(`docs/13` §4~§6), 같은 날 채택했던 B 안(순위에서 빼고 오버레이만,
+> 58c006a)도 남길 만한 입력이 없었다. 그래서 C 안 — **계층 자체를 뺀다** — 를 택했다.
+> 결정 기록: `docs/13` §9 · `journal/2026-08-23-l2-removed.md`.
+>
+> | 무엇 | 어디로 |
+> |---|---|
+> | `src/msa/l2/*` · `msa macro` · `msa run monthly` 의 macro 단계 · 선정 `hard_exclude` 오버레이 | 삭제 |
+> | L3 확신도의 거시 순풍 항(+0.10) · `MacroState` · 저널 진입 항목 `l2_tailwind` · L5 `tailwind` | 삭제 (`docs/04` §4 · `docs/09` §2 · `docs/07`) |
+> | `state/macro-dag.yaml` · `specs/macro-dag.example.yaml` · `scripts/audit_dag.py` · `macro-dag-audit.md` · `macro-dag-sign-check.md` | `docs/archive/` (기록) |
+> | FRED 어댑터 | **남는다** — L1 축 1 실물 참조(`physical_ref.source == fred`)와 CPI 만 (`docs/08` §3) |
+>
+> **되살리는 길은 revert 가 아니다.** 새 설계 질문을 세우고(`docs/12`·`docs/13` 의 꼴), 무엇을
+> 재면 "거시가 일한다" 고 할지 **사전 등록**한 뒤에만 돌아온다. 아래 본문은 그때의 출발점이
+> 되도록 **원문 그대로** 남긴다 — 현행 명세가 아니라 역사 기록이다.
+
+---
+
+
 ## 1. 왜 회귀가 아니라 선언인가
 
 드라이버 26개(§2) × 테마 134개(`state/themes.yaml` 확정 기준) = **3,484개 잠재 엣지**.

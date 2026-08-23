@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
 from datetime import date
 from pathlib import Path
@@ -69,7 +68,7 @@ def _thesis(theme: str, *, gate: dict[str, Any], verdicts: dict[str, str], **ove
         generated_at=ASOF,
         value_trap_axes=_axes(verdicts, axis1_available=axis1_available),
         gate_result=g,
-        inputs={"scan_dir": SCAN_LABEL, "scoreboard_rank": 7, "macro_tailwind": 0.42},
+        inputs={"scan_dir": SCAN_LABEL, "scoreboard_rank": 7},
         **over,
     )
 
@@ -185,7 +184,6 @@ def _run(
         journal_dir=state.parent / "journal",
         rejections_path=state / "rejections.yaml",
         watchlist_path=state / "watchlist.yaml",
-        macro_latest=kw.pop("macro_latest", None),
         write=write,
         **kw,
     )
@@ -356,11 +354,8 @@ def _stock_plan() -> dict[str, Any]:
 def test_eligible_writes_entry_draft_that_journal_accepts_once_filled(state: Path) -> None:
     rdir = _round(state, eligible_thesis())
     scan = _scan(state, ("uranium",))
-    macro = state / "macro" / "latest.json"
-    macro.parent.mkdir(parents=True)
-    macro.write_text(json.dumps({"asof": ASOF, "tailwind": {"uranium": 0.55}}), encoding="utf-8")
 
-    rep = _run(state, rdir, scan=scan, macro_latest=macro)
+    rep = _run(state, rdir, scan=scan)
     assert rep.n_drafts == 1 and rep.n_rejected_ingested == 0 and rep.n_watchlist_upserts == 0
     draft = rdir / f"{DRAFT_PREFIX}uranium.yaml"
     assert draft.exists()
@@ -373,7 +368,7 @@ def test_eligible_writes_entry_draft_that_journal_accepts_once_filled(state: Pat
     assert d["type"] == "entry" and d["theme"] == "uranium" and str(d["date"]) == ASOF
     assert d["confidence_provenance"] == "referee"
     assert d["l1_blocks"] == {"A": 0.8, "B": 0.7, "C": 0.4, "D": 0.6, "E": 0.9, "F": 0.5}
-    assert d["l2_tailwind"] == 0.55  # latest.json 이 thesis 의 0.42 보다 우선
+    assert "l2_tailwind" not in d  # L2 제거 — 초안에 거시 필드가 없다
     assert d["axis_verdicts"]["terminal_risk"] == "warning"
     assert d["stocks"] == [] and d["deviated_from_machine"] is False
     assert d["thesis"]["theme_id"] == "uranium"
@@ -389,23 +384,35 @@ def test_eligible_writes_entry_draft_that_journal_accepts_once_filled(state: Pat
     d["stocks"] = [_stock_plan()]
     w = write_record(record_from_dict(d), state.parent / "journal")
     assert w.markdown.name == f"{ASOF}-uranium-entry.md" and w.thesis_snapshot is not None
-    assert load_entries(state.parent / "journal", "entry")[0]["l2_tailwind"] == 0.55
+    assert "l2_tailwind" not in load_entries(state.parent / "journal", "entry")[0]
 
 
-def test_eligible_draft_without_scoreboard_or_macro_leaves_blanks_not_zeros(state: Path) -> None:
+def test_eligible_draft_without_scoreboard_leaves_blanks_not_zeros(state: Path) -> None:
     t = eligible_thesis()
-    t["inputs"] = {"scan_dir": SCAN_LABEL}  # 순위·tailwind 없음
+    t["inputs"] = {"scan_dir": SCAN_LABEL}  # 순위 없음
     rdir = _round(state, t)
     rep = _run(state, rdir, scan=None)
     assert rep.n_drafts == 1
     todo = " ".join(rep.human_todo["uranium"])
-    assert "l1_blocks" in todo and "l2_tailwind" in todo
+    assert "l1_blocks" in todo and "l2_tailwind" not in todo
     d = yaml.safe_load((rdir / f"{DRAFT_PREFIX}uranium.yaml").read_text(encoding="utf-8"))
-    assert d["l1_blocks"] == {} and d["l2_tailwind"] is None
+    assert d["l1_blocks"] == {} and "l2_tailwind" not in d
     d["stocks"] = [_stock_plan()]
     with pytest.raises(IncompleteEntry) as ei:
         record_from_dict(d).validate()
-    assert "l1_blocks" in str(ei.value) and "l2_tailwind" in str(ei.value)
+    assert "l1_blocks" in str(ei.value)
+
+
+def test_stale_l2_tailwind_field_is_refused_not_ignored(state: Path) -> None:
+    """L2 제거 이전의 초안이 `l2_tailwind` 를 들고 오면 조용히 버리지 않고 거부한다
+    (CLAUDE.md §2)."""
+    rdir = _round(state, eligible_thesis())
+    _run(state, rdir, scan=_scan(state, ("uranium",)))
+    d = yaml.safe_load((rdir / f"{DRAFT_PREFIX}uranium.yaml").read_text(encoding="utf-8"))
+    d["stocks"] = [_stock_plan()]
+    d["l2_tailwind"] = 0.55
+    with pytest.raises(IncompleteEntry, match="l2_tailwind"):
+        record_from_dict(d)
 
 
 # ---------------------------------------------------------------------------

@@ -11,7 +11,6 @@ from conftest import make_thesis
 from msa.config import REPO_ROOT
 from msa.l3.contracts import (
     Axis1Inputs,
-    MacroState,
     MemberSummary,
     ResearchInputs,
     ThemeScorecard,
@@ -104,7 +103,6 @@ def inputs(
     *,
     theme: str = "uranium",
     a1: Axis1Inputs | None = None,
-    macro: MacroState | None = None,
     prior: dict[str, Any] | None = None,
     prior_path: str | None = None,
     cycle_class: str = "commodity_supply",
@@ -117,7 +115,6 @@ def inputs(
         industries=("Uranium",),
         scorecard=scorecard(theme, a1, cycle_class=cycle_class, **card_kw),
         members=MEMBERS,
-        macro=macro,
         prior_thesis=prior,
         prior_thesis_path=prior_path,
         cases=(),

@@ -15,12 +15,20 @@ def test_version() -> None:
 
 
 @pytest.mark.parametrize(
-    "cmd", ["scan", "macro", "picks", "portfolio", "check", "research", "journal", "ops"]
+    "cmd", ["scan", "picks", "portfolio", "check", "research", "journal", "ops"]
 )
 def test_stub_commands_appear_in_help(cmd: str) -> None:
     r = runner.invoke(app, ["--help"])
     assert r.exit_code == 0
     assert cmd in r.stdout
+
+
+def test_macro_command_is_gone() -> None:
+    """L2 제거(2026-08-23, docs/13 §9) — `msa macro` 는 명령 목록에 없고 호출하면 실패한다."""
+    r = runner.invoke(app, ["--help"])
+    assert "  macro " not in r.stdout
+    r = runner.invoke(app, ["macro"])
+    assert r.exit_code != 0
 
 
 def test_data_subcommands_registered() -> None:

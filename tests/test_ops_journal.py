@@ -64,7 +64,6 @@ def _entry(**over: object) -> EntryRecord:
         "thesis": make_thesis(),
         "confidence_provenance": "human",
         "l1_blocks": {b: 0.5 for b in "ABCDEF"},
-        "l2_tailwind": 0.41,
         "axis_verdicts": dict(AXES_OK),
         "stocks": [_stock()],
         "deviated_from_machine": False,

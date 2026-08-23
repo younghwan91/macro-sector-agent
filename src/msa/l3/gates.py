@@ -14,6 +14,8 @@ referee(LLM) 는 축 2~5 의 판정만 내고, 이 모듈이 게이트와 확신
    축1·축3 이 모두 cycle 이 아니면 편입 불가.
 
 확신도 (`docs/04` §4): base 0.5, 해당 항만 가감, [0,1] 클립, 위 3 의 상한 적용.
+거시 순풍 항(+0.10, `tailwind > 0.3`)은 **2026-08-23 L2 제거로 입력이 사라져 항 자체가 없다**
+(`docs/04` §4 개정 · `docs/13` §9). 다른 항은 손대지 않았다 — 재조정이 아니라 제거다.
 """
 
 from __future__ import annotations
@@ -32,7 +34,6 @@ CONF_BASE = 0.5
 CONF_CAP_ON_DEATH = 0.35
 PORTFOLIO_MIN_CONFIDENCE = 0.5  # docs/07 C6 최소 확신도
 CAPEX_BELOW1_QTRS = 8
-TAILWIND_MIN = 0.3
 DEBT_24M_TO_MCAP_MAX = 0.5
 
 #: (항목 이름, 증감) — 리포트에 적용 항을 그대로 싣는다.
@@ -41,7 +42,6 @@ CONF_TERMS: dict[str, float] = {
     "axis2_capex_below1_8q": +0.10,
     "axis3_no_substitution": +0.15,
     "axis4_strong_cycle": +0.10,
-    "macro_tailwind": +0.10,
     "axis1_warning": -0.20,
     "axis3_warning": -0.15,
     "axis5_severe": -0.15,
@@ -75,7 +75,6 @@ class ConfidenceInputs:
     capex_to_da_qtrs_below1: float | None  # L1 indicators
     axis4_strong_cycle: bool  # referee: 가격 < P90 현금원가 + 셧다운 발표 관측
     axis5_severe: bool  # referee: 축5 심각
-    tailwind: float | None  # L2 (없으면 항 미적용)
     small_sample: bool  # 소표본 버킷 (n < min_constituents)
     short_hist: bool  # 자기이력 < 7년
 
@@ -111,10 +110,6 @@ def cycle_confidence(ci: ConfidenceInputs) -> ConfidenceResult:
         terms["axis3_warning"] = CONF_TERMS["axis3_warning"]
     if ci.axis4_strong_cycle and v.cost_curve == "cycle":
         terms["axis4_strong_cycle"] = CONF_TERMS["axis4_strong_cycle"]
-    if ci.tailwind is not None and ci.tailwind > TAILWIND_MIN:
-        terms["macro_tailwind"] = CONF_TERMS["macro_tailwind"]
-    elif ci.tailwind is None:
-        notes.append("거시 순풍 값 없음 — +0.10 항 미적용")
     if ci.axis5_severe or v.terminal_risk == "death":
         terms["axis5_severe"] = CONF_TERMS["axis5_severe"]
     if ci.small_sample or ci.short_hist:

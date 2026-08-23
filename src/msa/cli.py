@@ -1,7 +1,7 @@
 """`msa` CLI.
 
-도는 것: `data status`·`data audit`·`data fred-lag`·`data fred-fetch`(M1·M4) · `scan`(M3) ·
-`backtest l1`(M3.5) · `macro`(M4) · `picks`(M5) · `portfolio`(M6) · `research`(M7) ·
+도는 것: `data status`·`data audit`·`data fred-lag`·`data fred-fetch`(M1) · `scan`(M3) ·
+`backtest l1`(M3.5) · `picks`(M5) · `portfolio`(M6) · `research`(M7) ·
 `check`·`journal *`·`ops *`(M8) · `portfolio-inputs`·`run *`(배선 W1·W4).
 남은 스텁은 없다. 새 스텁을 두게 되면 `--help` 에는 나오되 호출 시 `NotImplementedError` 를
 던지게 한다 — 있는 척하는 스텁이 조용히 빈 결과를 내는 것보다 낫다 (`CLAUDE.md` §2).
@@ -29,7 +29,7 @@ app = typer.Typer(
     no_args_is_help=True,
     help=(
         "macro-sector-agent — 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 "
-        "(M1~M8: 데이터·L1 스캐너·L2 거시 DAG·L4·L5·L3·운영)"
+        "(M1~M8: 데이터·L1 스캐너·L4·L5·L3·운영 — L2 거시 DAG 는 2026-08-23 제거, docs/13)"
     ),
 )
 data_app = typer.Typer(no_args_is_help=True, help="L0 데이터 — 스토어 상태와 커버리지 감사")
@@ -185,16 +185,28 @@ def data_status(
         typer.echo("  벌크 조회     : --etf GDX,SIL,URA 로 지정하면 funds.csv.zip 을 읽는다")
 
     typer.echo("")
-    typer.echo("FRED")
-    typer.echo(f"  대상 시리즈   : {len(fred.ALL_SERIES)}종 (docs/08 §6.3 의 '24종')")
+    typer.echo("FRED (L1 축 1 실물 참조 + CPI — docs/08 §3)")
+    try:
+        series = fred.l1_series()
+    except Exception as e:  # themes.yaml 을 못 읽으면 CPI 하나만 — 사유를 적는다
+        series = fred.L1_SERIES
+        typer.echo(f"  themes.yaml 을 읽지 못해 physical_ref 심볼은 셀 수 없다: {e}")
+    typer.echo(
+        f"  대상 시리즈   : {len(series)}종 (CPI {len(fred.L1_SERIES)} + "
+        f"physical_ref {len(series) - len(fred.L1_SERIES)})"
+    )
+    from msa.l1.physical import read_fred_cache
+
+    cached = [sym for sym in series if read_fred_cache(sym) is not None]
+    typer.echo(f"  캐시 있음     : {len(cached)}/{len(series)} (state/physical/fred/)")
     try:
         from msa.config import fred_api_key
 
         fred_api_key()
-        typer.echo("  API 키        : 있음 — `msa data fred-lag` 로 발표지연을 실측해라")
+        typer.echo("  API 키        : 있음 — `msa data fred-fetch` 로 받고 `fred-lag` 로 지연 실측")
     except MissingApiKey as e:
         typer.echo(f"  API 키        : 없음 — {type(e).__name__}")
-        typer.echo("  → §3 표의 `발표지연`·`개정` 열은 아직 실측되지 않았다 (M1 미완료 항목)")
+        typer.echo("  → 캐시 없는 시리즈는 L1 축 1 에서 data_missing 으로 남는다 (docs/09 §5)")
 
 
 @data_app.command("audit")
@@ -258,15 +270,16 @@ def data_fred_lag(
     ),
     verbose: bool = OPT_VERBOSE,
 ) -> None:
-    """FRED 시리즈의 발표 지연·개정 실측 — `docs/08` §3 표의 두 열을 채우는 명령."""
-    from msa.data.fred import ALL_SERIES, FredClient
+    """L1 이 쓰는 FRED 시리즈(CPI + physical_ref)의 발표 지연·개정 실측 — `docs/08` §3 표."""
+    from msa.data.fred import FredClient, l1_series
 
     _setup_logging(verbose)
+    series = l1_series()
     with FredClient() as client:
-        rows = client.measure_all(vintage_date=vintage or None)
+        rows = client.measure_all(series, vintage_date=vintage or None)
     for r in rows:
         typer.echo("  " + r.row())
-    typer.echo(f"\n{len(rows)}/{len(ALL_SERIES)} 시리즈 실측 완료")
+    typer.echo(f"\n{len(rows)}/{len(series)} 시리즈 실측 완료")
 
 
 @app.command()
@@ -315,26 +328,20 @@ def data_fred_fetch(
     force: bool = typer.Option(False, "--force", help="이미 캐시된 시리즈도 다시 받는다"),
     verbose: bool = OPT_VERBOSE,
 ) -> None:
-    """L2 드라이버 24종 + 테마 physical_ref FRED 심볼 + CPIAUCSL 을 state/physical/fred/ 에 캐시.
+    """L1 이 쓰는 FRED 시리즈(CPIAUCSL + 테마 physical_ref 심볼)를 state/physical/fred/ 에 캐시.
 
     키(`FRED_API_KEY`)가 없으면 첫 시리즈에서 던진다. 실패한 시리즈는 이름을 전부 찍고 종료코드 1.
+    (L2 드라이버 24종은 2026-08-23 L2 제거와 함께 받지 않는다 — docs/13 §9.)
     """
-    from msa.data.fred import ALL_SERIES
-    from msa.l1.physical import CPI_SERIES, fetch_fred_to_cache, read_fred_cache
-    from msa.themes import load_themes
+    from msa.data.fred import L1_SERIES, l1_series
+    from msa.l1.physical import fetch_fred_to_cache, read_fred_cache
 
     _setup_logging(verbose)
-    want = [*ALL_SERIES, CPI_SERIES]
     try:
-        themes = load_themes()
-        want += [
-            t.physical_ref.symbol
-            for t in themes
-            if t.physical_ref is not None and t.physical_ref.source == "fred"
-        ]
-    except Exception as e:  # themes.yaml 문제는 FRED 수집을 막지 않는다 — 그러나 알린다
+        symbols = list(l1_series())
+    except Exception as e:  # themes.yaml 문제는 CPI 수집을 막지 않는다 — 그러나 알린다
         typer.echo(f"themes.yaml 을 읽지 못해 physical_ref 심볼은 건너뛴다: {e}")
-    symbols = list(dict.fromkeys(want))
+        symbols = list(L1_SERIES)
     ok: list[str] = []
     skipped: list[str] = []
     failed: list[str] = []
@@ -401,44 +408,6 @@ def backtest_l1_structures(
 
 @app.command()
 @cli_guard
-def macro(
-    asof: str = typer.Option("", help="기준일 YYYY-MM-DD (그 이전 마지막 월말). 기본 = 오늘"),
-    no_fetch: bool = typer.Option(False, "--no-fetch", help="FRED 를 받지 않는다 (캐시만)"),
-    no_etf: bool = typer.Option(False, "--no-etf", help="ETF 벌크(GLD·CPER 프록시)를 읽지 않는다"),
-    no_store: bool = typer.Option(
-        False, "--no-store", help="DuckDB 스토어(hyperscaler_capex)를 읽지 않는다"
-    ),
-    no_write: bool = _no_write_option("state/macro/"),
-    no_sign_check: bool = typer.Option(
-        False, "--no-sign-check", help="엣지 부호 일치율 실측을 건너뛴다"
-    ),
-    doc_out: str = typer.Option(
-        "", "--doc-out", help="부호 실측 문서를 이 경로에도 쓴다 (예: docs/macro-dag-sign-check.md)"
-    ),
-    verbose: bool = OPT_VERBOSE,
-) -> None:
-    """L2 거시 DAG — 드라이버 상태 · tailwind · 국면 4분면 · 모순 감사 · 부호 실측 (docs/03).
-
-    산출물: state/macro/<date>/. 없는 드라이버는 이름으로 보고된다.
-    """
-    from msa.l2.runtime import render_report, run_macro
-
-    _setup_logging(verbose)
-    res = run_macro(
-        asof=asof or None,
-        allow_fetch=not no_fetch,
-        allow_etf=not no_etf,
-        allow_store=not no_store,
-        write=not no_write,
-        sign_check=not no_sign_check,
-        doc_out=Path(doc_out) if doc_out else None,
-    )
-    typer.echo(render_report(res))
-    _echo_saved(res.out_dir)
-
-
-@app.command()
-@cli_guard
 def research(
     theme: str = typer.Argument(..., help="테마 id (state/themes.yaml)"),
     asof: str = typer.Option(
@@ -455,9 +424,6 @@ def research(
     no_write: bool = _no_write_option("state/theses/"),
     no_store: bool = typer.Option(
         False, "--no-store", help="DuckDB 구성원 재무 요약 생략 (경고로 표시)"
-    ),
-    macro: str = typer.Option(
-        "", help="L2 거시 상태 JSON 경로 (기본 state/macro/latest.json 이 있으면 사용)"
     ),
     fixtures: str = typer.Option("", help="--provider fixture 의 루트 (기본 tests/fixtures/l3)"),
     verbose: bool = OPT_VERBOSE,
@@ -480,7 +446,6 @@ def research(
             theme,
             state_dir=paths().state,
             asof=asof or None,
-            macro_path=Path(macro) if macro else None,
             with_store=not no_store,
         )
     except InputsError as e:
@@ -673,7 +638,6 @@ def run_monthly_cmd(
         help="사람이 쓴 논지 디렉터리 <dir>/<theme>.yaml — 있으면 L3 보다 우선",
     ),
     capital: float = typer.Option(0.0, "--capital", help="총자본(USD). 주면 L5 C4 유동성 상한"),
-    skip_macro: bool = typer.Option(False, "--skip-macro", help="L2 거시 단계 생략"),
     skip_research: bool = typer.Option(
         False, "--skip-research", help="L3 단계 생략 (논지는 찾는다)"
     ),
@@ -684,11 +648,11 @@ def run_monthly_cmd(
     ),
     verbose: bool = OPT_VERBOSE,
 ) -> None:
-    """월간 실행 (docs/09 §1): scan → macro → 상위 K → research → ingest → picks → assemble → L5.
+    """월간 실행 (docs/09 §1): scan → 상위 K → research → ingest → picks → assemble → L5.
 
     산출물: state/runs/<date>/monthly-report.md · run.json (+ 각 계층의 state/ 산출물).
     끝은 진입 초안·미체결 제안이다 — 저널 확정·positions.yaml 승격·주문은 사람이 한다.
-    종료 코드 1 은 스캔 중단일 때만; 부분 가용(거시 불가·테마별 실패)은 0 + 리포트.
+    종료 코드 1 은 스캔 중단일 때만; 부분 가용(테마별 실패)은 0 + 리포트.
     """
     from msa.pipeline.run import RunError, run_monthly
 
@@ -701,7 +665,6 @@ def run_monthly_cmd(
             provider=provider,
             human_theses_dir=Path(human_theses) if human_theses else None,
             write=not no_write,
-            skip_macro=skip_macro,
             skip_research=skip_research,
             skip_picks=skip_picks,
             skip_portfolio=skip_portfolio,
@@ -745,7 +708,7 @@ def run_weekly_cmd(
 @run_app.command("quarterly")
 @cli_guard
 def run_quarterly_cmd() -> None:
-    """분기 작업 목록 (docs/09 §1): 모순 감사(msa macro) · 캘리브레이션 · 기각 대장. 실행 안 함."""
+    """분기 작업 목록 (docs/09 §1): 캘리브레이션 · 기각 대장. 실행 안 함."""
     from msa.pipeline.run import run_quarterly
 
     typer.echo(run_quarterly())
@@ -1059,7 +1022,6 @@ def ops_ingest_theses(
         journal_dir=Path(journal) if journal else journal_dir(REPO_ROOT),
         rejections_path=p.rejections,
         watchlist_path=p.watchlist,
-        macro_latest=p.macro_latest,
         write=not dry_run,
     )
     typer.echo(report.render())

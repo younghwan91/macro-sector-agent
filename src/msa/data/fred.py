@@ -1,22 +1,27 @@
-"""FRED 어댑터 — `docs/08-data-contract.md` §3 의 시리즈 24종.
+"""FRED 어댑터 — L1 이 쓰는 시리즈만 (`docs/08-data-contract.md` §3).
 
-## 24 의 구성 (`docs/08` §6.3 의 정의)
+## 무엇을 받는가
 
-§3 표의 FRED 직접 시리즈 20 + `usd_liquidity` 파생 3(`WALCL`·`WTREGEN`·`RRPONTSYD`)
-+ `DFEDTARU` = 24. 나머지 드라이버(`china_credit_impulse`·`china_property`·
-`policy_events`·`gold_price`·`hyperscaler_capex`)는 FRED 밖이라 여기 없다.
+L1 축 1(단위 수요, `docs/04` 축 1)의 **실물 참조**(`state/themes.yaml` 의
+`physical_ref.source == fred`)와 `dd_real`·실질화에 쓰는 **CPI**(`CPIAUCSL`) — 이 둘뿐이다.
+목록은 `l1_series()` 가 테마 정본에서 푼다; 고정 상수는 `L1_SERIES = ("CPIAUCSL",)` 하나다.
+
+L2 거시 DAG 의 드라이버 24종(`DRIVER_SERIES`·`ALL_SERIES`)은 **2026-08-23 L2 제거와 함께 없어졌다**
+(`docs/13-design-question-l2-macro.md` §9 · `journal/2026-08-23-l2-removed.md`). 그 목록은
+`docs/archive/macro-dag.yaml` 에 기록으로만 남아 있다.
 
 ## 발표 지연 실측
 
 `measure_release_lag()` 가 각 시리즈의 최신 관측일과 기준일의 차이를 잰다.
-이것이 §3 표의 `발표지연` 열을 채울 재료다. **개정 여부는 FRED 본 API 로는 알 수 없다** —
-같은 관측일의 값이 시간에 따라 바뀌었는지는 ALFRED(vintage) 가 답한다.
-그래서 `measure_revision()` 은 ALFRED `realtime_start`/`realtime_end` 를 쓴다.
+**개정 여부는 FRED 본 API 로는 알 수 없다** — 같은 관측일의 값이 시간에 따라 바뀌었는지는
+ALFRED(vintage) 가 답한다. 그래서 `measure_release_lag(vintage_date=…)` 가 ALFRED
+`realtime_start`/`realtime_end` 를 쓴다.
 
 ## 키 없으면 던진다
 
-`FRED_API_KEY` 가 없으면 `MissingApiKey`. 조용히 건너뛰면 L2 드라이버가 빈 채로
-파이프라인이 진행된다 (`CLAUDE.md` §2).
+`FRED_API_KEY` 가 없으면 `MissingApiKey`. 조용히 건너뛰면 축 1 이 `data_missing` 인 이유가
+"키 없음" 인지 "시리즈 없음" 인지 구별되지 않는다 (`CLAUDE.md` §2) — L1 은 그 예외를 받아
+상태(`data_missing` + 사유)로 적는다 (`l1/physical.load_fred_series`).
 
 ## 네트워크 없이 테스트되는 부분
 
@@ -41,40 +46,27 @@ log = logging.getLogger(__name__)
 
 FRED_BASE = "https://api.stlouisfed.org/fred"
 
-#: `docs/08` §3 의 드라이버 id → FRED 시리즈 id.
-#: 값이 튜플인 것은 여러 시리즈를 쓰는 드라이버다 (`employment` 는 2개,
-#: `usd_liquidity` 는 파생 3개).
-DRIVER_SERIES: dict[str, tuple[str, ...]] = {
-    "real_rate_10y": ("DFII10",),
-    "term_spread": ("T10Y2Y",),
-    "breakeven_10y": ("T10YIE",),
-    "dollar_broad": ("DTWEXBGS",),
-    "hy_spread": ("BAMLH0A0HYM2",),
-    "ig_spread": ("BAMLC0A0CM",),
-    "industrial_production": ("INDPRO",),
-    "new_orders_mfg": ("AMTMNO",),
-    "capex_orders_core": ("NEWORDER",),
-    "inventory_sales": ("ISRATIO",),
-    "housing_starts": ("HOUST",),
-    "employment": ("PAYEMS", "UNRATE"),
-    "cpi_yoy": ("CPIAUCSL",),
-    "ppi_yoy": ("PPIACO",),
-    "oil_wti": ("DCOILWTICO",),
-    "nat_gas": ("DHHNGSP",),
-    "m2_growth": ("M2SL",),
-    "usd_liquidity": ("WALCL", "WTREGEN", "RRPONTSYD"),
-    "defense_outlays": ("FDEFX",),
-    "copper_price": ("PCOPPUSDM",),
-    "fed_policy_path": ("DFEDTARU",),
-}
+#: L1 이 테마와 무관하게 항상 쓰는 FRED 시리즈 — CPI(`CPIAUCSL`, `dd_real`·`nominal` 참조의 실질화).
+#: `msa.l1.physical.CPI_SERIES` 와 같은 값이다 (임포트 순환을 피하려고 여기 한 번 더 적는다).
+L1_SERIES: tuple[str, ...] = ("CPIAUCSL",)
 
-#: 위 매핑을 펼친 목록. `docs/08` §6.3 의 "24종" 이 이것이다.
-ALL_SERIES: tuple[str, ...] = tuple(
-    dict.fromkeys(s for group in DRIVER_SERIES.values() for s in group)
-)
 
-#: `docs/08` §3 이 "M1 에서 실측 확인 필요" 로 표시한 시리즈.
-NEEDS_VERIFICATION: tuple[str, ...] = ("FDEFX", "PCOPPUSDM")
+def l1_series(themes: Iterable[Any] | None = None) -> tuple[str, ...]:
+    """L1 이 쓰는 FRED 시리즈 전부 — `L1_SERIES` + 테마 `physical_ref.source == "fred"` 심볼.
+
+    `themes` 가 None 이면 `state/themes.yaml` 을 읽는다 (`msa.themes.load_themes`). 테마 정본을
+    읽지 못하면 예외를 그대로 올린다 — 축 1 시리즈가 조용히 빠진 목록을 돌려주지 않는다.
+    """
+    if themes is None:
+        from msa.themes import load_themes
+
+        themes = load_themes()
+    refs = [
+        str(t.physical_ref.symbol)
+        for t in themes
+        if getattr(t, "physical_ref", None) is not None and t.physical_ref.source == "fred"
+    ]
+    return tuple(dict.fromkeys([*L1_SERIES, *refs]))
 
 
 class FredError(MsaError, RuntimeError):
@@ -166,7 +158,7 @@ def lag_days(latest_observation: date, as_of: date) -> int:
 
     엄밀히는 "관측 시점과 그 값을 볼 수 있게 된 시점의 차이" 이고, 이 계산은
     **최신 관측이 오늘 이미 발표돼 있다는 가정** 위에 있다. 월간 시리즈에서는
-    이 값이 최대 한 주기만큼 과대평가된다 — L2 가 시차를 쓸 때 이 점을 감안해야 한다.
+    이 값이 최대 한 주기만큼 과대평가된다.
     """
     return (as_of - latest_observation).days
 
@@ -197,8 +189,7 @@ def detect_revision(
 ) -> tuple[bool, str]:
     """같은 관측일의 값이 최신본과 과거 빈티지에서 다른지 본다.
 
-    다르면 개정이 있다는 뜻이다. `INDPRO`·`PAYEMS` 가 여기 걸릴 것으로 예상된다
-    (`docs/08` §3 각주).
+    다르면 개정이 있다는 뜻이다 (`CPIAUCSL` 은 계절조정 개정이 있다 — `docs/08` §3 각주).
     """
     latest = {o.date: o.value for o in original}
     diffs = 0
@@ -311,16 +302,17 @@ class FredClient:
 
     def measure_all(
         self,
-        series: Iterable[str] = ALL_SERIES,
+        series: Iterable[str] | None = None,
         *,
         as_of: date | None = None,
         vintage_date: str | None = None,
     ) -> list[LagMeasurement]:
-        """전 시리즈 실측. 실패한 시리즈는 **삼키지 않고 예외로 올린다.**
+        """시리즈 목록 실측 (기본 = `l1_series()`). 실패한 시리즈는 **삼키지 않고 예외로 올린다.**
 
-        `docs/08` §3 이 `FDEFX`·`PCOPPUSDM` 을 "실측 확인 필요" 로 남겼는데,
-        존재하지 않는 시리즈를 조용히 건너뛰면 그 표가 영원히 안 채워진다.
+        존재하지 않는 시리즈를 조용히 건너뛰면 `docs/08` §3 표의 그 행이 영원히 안 채워진다.
         """
+        if series is None:
+            series = l1_series()
         out: list[LagMeasurement] = []
         failures: list[str] = []
         for sid in series:

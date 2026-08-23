@@ -197,9 +197,9 @@ def test_l1_fund_panel_identical_to_cache_built_with_old_sql(store, tmp_path) ->
 @pytest.mark.data
 def test_l2_capex_ttm_dedup_matches_hand_rolled(store) -> None:  # type: ignore[no-untyped-def]
     """`pit_quarterly(asof=None)` 의 최초 보고분 규칙 == 옛 `sort_values + drop_duplicates`."""
-    from msa.l2.sources import HYPERSCALERS
+    hyperscalers = ("MSFT", "GOOGL", "AMZN", "META", "ORCL")  # 옛 l2/sources.HYPERSCALERS
 
-    fund = store.fundamentals(list(HYPERSCALERS), fields=["capex"], min_rows=4)
+    fund = store.fundamentals(list(hyperscalers), fields=["capex"], min_rows=4)
     f = fund.copy()
     f["calendardate"] = pd.to_datetime(f["calendardate"])
     f["datekey"] = pd.to_datetime(f["datekey"])

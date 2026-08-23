@@ -1,7 +1,7 @@
 """공용 기반 모듈 — `msa.dates`·`msa.io`·`msa.coerce`·`msa.fmt`·`msa.status`·`msa.errors`·`Paths`.
 
 전부 순수 함수라 데이터 없이 돈다. 값·규약은 이전 계층별 구현과 같아야 한다 — 여기 적힌
-기대값은 옮기기 전 구현(`l1/fundamentals.month_ends`·`l2/drivers.last_month_end`·
+기대값은 옮기기 전 구현(`l1/fundamentals.month_ends`·옛 `l2/drivers.last_month_end`·
 `ops/state_files._plain`·`l3/contracts._f` …)이 돌려주던 것이다.
 """
 
@@ -20,7 +20,7 @@ from msa import coerce, dates, fmt
 from msa.config import REPO_ROOT, MissingApiKey, paths, rel
 from msa.errors import Immutable, MsaError, ProviderError, RefusedInput, Rejected
 from msa.io import dump_json, dump_yaml, load_yaml_mapping, to_plain, write_snapshot, yaml_text
-from msa.status import Axis1Status, CoverageStatus, DeliveryStatus, FundStatus, SeriesStatus
+from msa.status import Axis1Status, DeliveryStatus, FundStatus, SeriesStatus
 
 # ---------------------------------------------------------------- dates
 
@@ -34,7 +34,8 @@ def test_month_ends_matches_pandas_me_grid() -> None:
 def test_month_end_label_and_last_month_end() -> None:
     assert dates.month_end_label("2026-08-23") == pd.Timestamp("2026-08-31")
     assert dates.month_end_label("2026-08-31") == pd.Timestamp("2026-08-31")
-    # l2/drivers.last_month_end 규약: 8/23 → 7/31, 월말이면 그대로
+    # 옛 l2/drivers.last_month_end 규약 (L2 는 제거됐지만 규약은 dates 에 남는다):
+    # 8/23 → 7/31, 월말이면 그대로
     assert dates.last_month_end(pd.Timestamp("2026-08-23")) == pd.Timestamp("2026-07-31")
     assert dates.last_month_end(pd.Timestamp("2026-08-31")) == pd.Timestamp("2026-08-31")
 
@@ -195,7 +196,6 @@ def test_status_values_are_the_existing_strings() -> None:
     ]
     assert Axis1Status.OK_FALLBACK.is_ok and not Axis1Status.DATA_MISSING.is_ok
     assert [s.value for s in FundStatus] == ["ok", "stale", "none"]
-    assert [s.value for s in CoverageStatus] == ["ok", "partial", "unavailable"]
     assert [s.value for s in DeliveryStatus] == [
         "sent",
         "partial",
@@ -235,14 +235,14 @@ def test_paths_properties_are_the_existing_names(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setenv("MSA_STATE", "/srv/st")
     p = paths()
     st = Path("/srv/st")
-    assert p.cache == st / "cache" and p.scans == st / "scans" and p.macro == st / "macro"
-    assert p.macro_latest == st / "macro" / "latest.json"
+    assert p.cache == st / "cache" and p.scans == st / "scans"
+    assert not hasattr(p, "macro") and not hasattr(p, "macro_latest")  # L2 제거
     assert p.theses == st / "theses" and p.picks == st / "picks" and p.portfolio == st / "portfolio"
     assert p.checks == st / "checks" and p.backtests_l1 == st / "backtests" / "l1"
     assert p.calibration == st / "calibration" and p.physical == st / "physical"
     assert p.fred_cache == st / "physical" / "fred" and p.manual_dir == st / "physical" / "manual"
     assert p.cases_dir == st / "cases" and p.cases == st / "cases" / "cases.yaml"
-    assert p.themes_yaml == st / "themes.yaml" and p.dag_yaml == st / "macro-dag.yaml"
+    assert p.themes_yaml == st / "themes.yaml" and not hasattr(p, "dag_yaml")  # L2 제거
     assert p.positions == st / "positions.yaml" and p.watchlist == st / "watchlist.yaml"
     assert p.rejections == st / "rejections.yaml"
     assert p.rejections_summary == st / "rejections-summary.md"

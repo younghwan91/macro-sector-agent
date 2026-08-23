@@ -31,7 +31,7 @@
 - `invalidations` ≥ 1건 — 비면 거부 (`CLAUDE.md` §5). Tier-1 스탑의 근거다
 - `horizon_months: [lo, hi]` — 시간 스탑 = 기준일 + hi 개월
 
-선택: `triggers` · `tailwind` · `gate_result.portfolio_eligible` (false 면 편입 불가로 제외하고
+선택: `triggers` · `gate_result.portfolio_eligible` (false 면 편입 불가로 제외하고
 그 사실을 적는다) · `value_trap_axes.unit_demand.axis1_available`. 그 밖의 필드
 (`key_uncertainties` · `generated_at` · …) 는 읽지 않는다 — 전문은 저널에 있다.
 
@@ -210,7 +210,6 @@ class ThesisInput:
     horizon_months: tuple[int, int]
     invalidations: tuple[str, ...]
     triggers: tuple[str, ...] = ()
-    tailwind: float | None = None
     portfolio_eligible: bool = True
     gate_status: str | None = None
     axis1_available: bool | None = None
@@ -284,7 +283,6 @@ def parse_thesis(raw: Mapping[str, Any], *, where: str = "<thesis>") -> ThesisIn
         ud = axes.get("unit_demand")
         if isinstance(ud, Mapping) and "axis1_available" in ud:
             axis1 = bool(ud["axis1_available"])
-    tw = raw.get("tailwind")
     return ThesisInput(
         theme=theme,
         cycle_confidence=float(c),
@@ -292,7 +290,6 @@ def parse_thesis(raw: Mapping[str, Any], *, where: str = "<thesis>") -> ThesisIn
         horizon_months=(lo, hi),
         invalidations=inv,
         triggers=_observables(raw.get("triggers"), field_name="triggers", where=where),
-        tailwind=float(tw) if isinstance(tw, int | float) and not isinstance(tw, bool) else None,
         portfolio_eligible=eligible,
         gate_status=str(gate_status) if gate_status else None,
         axis1_available=axis1,

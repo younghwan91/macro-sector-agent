@@ -94,7 +94,6 @@ def _thesis(theme: str, c: float, **over: object) -> ThesisInput:
         "horizon_months": (6, 18),
         "invalidations": ("카자흐 쿼터 +20% 발표 [Kazatomprom]", "원전승인 2건 철회 [NRC]"),
         "triggers": ("현물 $80 회복 [UxC]",),
-        "tailwind": 0.41,
     }
     base.update(over)
     return ThesisInput(**base)  # type: ignore[arg-type]
@@ -611,7 +610,6 @@ def _write_inputs(
                     {"observable": f"{theme} 무효화 1", "source": "src", "action": "exit"}
                 ],
                 "triggers": [{"observable": f"{theme} 트리거 1", "source": "src", "by": "2027-02"}],
-                "tailwind": 0.41,
             },
             (d / "theses" / f"{theme}.yaml").open("w", encoding="utf-8"),
             allow_unicode=True,

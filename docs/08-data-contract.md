@@ -5,7 +5,7 @@
 | 소스 | 테이블/시리즈 | 쓰는 곳 | 키 |
 |---|---|---|---|
 | **Sharadar** (직판 API + 벌크 CSV) | `SF1` 분기재무 · `SEP` 일별가격 · `DAILY` 시총/EV · `TICKERS` 섹터·산업 메타 · `ACTIONS` 상폐/파산/합병 · `SP500` 편입이력 · `SFP` ETF 가격 | L1 전 블록, L4 전 축 | `SHARADAR_API_KEY` |
-| **FRED** | §3 시리즈 표 | L2 드라이버 | `FRED_API_KEY` (무료) |
+| **FRED** | §3 (CPI + 테마 `physical_ref`) | L1 축 1 실물 참조·CPI — 선택 | `FRED_API_KEY` (무료) |
 | **ETF 프록시** | Sharadar `SFP` 우선, 없으면 yfinance | L1 지수 프록시 검증 | — |
 | **웹 검색** | 에이전트 | L3 | (에이전트 런타임) |
 
@@ -132,49 +132,22 @@ M1(2026-08-22)에 `~/data/us_micro.duckdb`(2.1GB)와 벌크 원본을 실측한 
 
 ## 3. FRED 시리즈
 
-| id | FRED | 확인 상태 | 발표지연 | 개정 |
-|---|---|---|---|---|
-| `real_rate_10y` | `DFII10` | 확인됨 | M1 실측 | M1 실측 |
-| `term_spread` | `T10Y2Y` | 확인됨 | M1 실측 | M1 실측 |
-| `breakeven_10y` | `T10YIE` | 확인됨 | M1 실측 | M1 실측 |
-| `dollar_broad` | `DTWEXBGS` | 확인됨 | M1 실측 | M1 실측 |
-| `hy_spread` | `BAMLH0A0HYM2` | 확인됨 | M1 실측 | M1 실측 |
-| `ig_spread` | `BAMLC0A0CM` | 확인됨 | M1 실측 | M1 실측 |
-| `industrial_production` | `INDPRO` | 확인됨 | M1 실측 | **큼** — M1 실측 |
-| `new_orders_mfg` | `AMTMNO` | 확인됨 | M1 실측 | M1 실측 |
-| `capex_orders_core` | `NEWORDER` | 확인됨 | M1 실측 | M1 실측 |
-| `inventory_sales` | `ISRATIO` | 확인됨 | M1 실측 | M1 실측 |
-| `housing_starts` | `HOUST` | 확인됨 | M1 실측 | M1 실측 |
-| `employment` | `PAYEMS`, `UNRATE` | 확인됨 | M1 실측 | **큼** — M1 실측 |
-| `cpi_yoy` | `CPIAUCSL` | 확인됨 | M1 실측 | M1 실측 |
-| `ppi_yoy` | `PPIACO` | 확인됨 | M1 실측 | M1 실측 |
-| `oil_wti` | `DCOILWTICO` | 확인됨 | M1 실측 | M1 실측 |
-| `nat_gas` | `DHHNGSP` | 확인됨 | M1 실측 | M1 실측 |
-| `m2_growth` | `M2SL` | 확인됨 | M1 실측 | M1 실측 |
-| `usd_liquidity` | `WALCL − WTREGEN − RRPONTSYD` | 파생 — 세 시리즈 주기(주간/주간/일간) 정렬 필요 | M1 실측 | M1 실측 |
-| `defense_outlays` | `FDEFX` | **M1 에서 실측 확인 필요** | M1 실측 | M1 실측 |
-| `copper_price` | `PCOPPUSDM` | **M1 에서 실측 확인 필요.** 폴백 ETF `CPER` | M1 실측 | M1 실측 |
-| `gold_price` | — | FRED 직접 시리즈 불안정 → **ETF `GLD` 프록시 사용** | M1 실측 | M1 실측 |
-| `china_credit_impulse` | 없음 | 수동/에이전트 월 갱신 | M1 실측 | M1 실측 |
-| `hyperscaler_capex` | 없음 | **Sharadar SF1 에서 직접 계산** (MSFT·GOOGL·AMZN·META·ORCL `capex` 합, YoY). 재무제표라 늦고 정확하다 — 시점은 가이던스가 준다 (`03-macro-dag.md` §2) | **분기말 +4~8주** (실적발표 종료 시점) | M1 실측 |
-| `fed_policy_path` | `DFEDTARU` | 확인됨 — 다만 **선물 곡선은 FRED 에 없다**. 정책 경로의 시장 기대는 외부 소스 또는 에이전트 | M1 실측 | M1 실측 |
-| `china_property` | 없음 | 수동/에이전트 월 갱신 (착공·판매). `china_credit_impulse` 와 같은 경로 | 해당 없음 | 해당 없음 |
-| `policy_events` | 없음 | 에이전트 이벤트 캘린더 (IRA·관세·수출통제·원전 승인). 시계열이 아니라 **날짜 목록**이라 `state_rule` 이 다른 드라이버와 다르다 | 해당 없음 | 해당 없음 |
+> **개정 2026-08-23.** L2 거시 계층이 제거되면서 드라이버 24종 표는 여기서 빠졌다 — 원문은
+> `docs/archive/fred-driver-series.md`, 결정은 `docs/13` §9 · `journal/2026-08-23-l2-removed.md`.
+> FRED 는 이제 **L1 축 1(단위 수요, `docs/04` 축 1)의 선택적 소스**로만 남는다.
 
-> "확인됨" 은 시리즈 ID 가 존재한다는 뜻이지, **주기·개정 이력·PIT 특성을 검증했다는 뜻이 아니다.**
-> 그래서 `발표지연`·`개정` 두 열을 표에 두고 전부 `M1 실측` 으로 채웠다 — 값을 채워 넣는 대신
-> **아직 모른다는 사실을 표 안에서 보이게** 하는 것이 목적이다. 각주로만 두면 표를 읽는 사람이 놓친다.
-> M1 에서 각 시리즈의 발표 지연(release lag)과 개정 여부를 실측해 두 열을 채운다.
->
-> **M1 결과: 두 열은 채워지지 않았다.** 작업 환경에 `FRED_API_KEY` 가 없어 실측을 돌리지
-> 못했다. 키가 없을 때 조용히 건너뛰지 않도록 `msa.config.fred_api_key()` 가 `MissingApiKey`
-> 를 던지게 해 뒀고, `msa data status` 는 "API 키 없음 → 두 열 미실측" 을 매번 출력한다.
-> 키가 생기면 `uv run msa data fred-lag`(개정까지 보려면 `--vintage 2024-01-02`)가
-> 전 시리즈를 한 번에 재고, `uv run pytest -m net` 이 `FDEFX`·`PCOPPUSDM` 존재 여부와
-> `INDPRO` 개정을 검증한다. 실패한 시리즈가 하나라도 있으면 `measure_all()` 이 예외를
-> 던지므로 **일부만 채워진 표가 완성된 것처럼 보이는 일은 없다.**
-> 이미 아는 것 하나: `INDPRO`·`PAYEMS` 는 개정이 크고, 개정 전 값으로 국면을 판정해야
-> 실시간 판단과 일치한다 (§4 의 "FRED 국면 판정 PIT 권장" 이 여기서 나온다).
+L1 이 쓰는 FRED 시리즈는 두 종류뿐이고, 목록은 코드가 테마 정본에서 푼다
+(`msa.data.fred.l1_series()` = `L1_SERIES` + `state/themes.yaml` 의 `physical_ref.source == fred`).
+
+| 용도 | 시리즈 | 어디서 | 없으면 |
+|---|---|---|---|
+| CPI — `dd_real`(A 블록)·`nominal` 참조의 실질화 | `CPIAUCSL` | `msa.l1.physical.CPI_SERIES` | `cpi: missing` — 실질화 생략을 리포트에 표시 |
+| 축 1 실물 참조 (테마별 단위 시리즈) | `state/themes.yaml` 의 `physical_ref` — 2026-08-23 기준 19 테마 · 16 시리즈 (`PALUMUSDM`·`PIORECRUSDM`·`PCOALAUUSDM`·`WPU0652`·`WPU0811`·`WPU061`·`IPN32731S`·`WGFUPUS2`·`RAILFRTCARLOADSD11`·`TRUCKD11`·`AIRRPMTSID11`·`ALTSALES`·`HOUST`·`EXHOSLUSM495S`·`MRTSSM4521USS`·`IPG2211S`) | `msa.l1.physical.load_fred_series` | 해당 테마 `axis1_status = data_missing` (`docs/09` §5) |
+
+캐시는 `state/physical/fred/<SYMBOL>.csv` (`msa data fred-fetch`, 키 필요). 키가 없으면 받지 않고
+**캐시에 없는 시리즈는 `data_missing` 으로 남는다** — 조용히 0 으로 채우지 않는다. 발표 지연·개정은
+`msa data fred-lag`(ALFRED 빈티지는 `--vintage YYYY-MM-DD`)가 같은 목록에 대해 잰다; `CPIAUCSL` 은
+계절조정 개정(매년 2월)이 있다는 것만 미리 안다.
 
 ## 4. PIT 정책 — `portfolio-research` 와 갈리는 지점
 
@@ -186,7 +159,7 @@ M1(2026-08-22)에 `~/data/us_micro.duckdb`(2.1GB)와 벌크 원본을 실측한 
 | 자본 사이클 시계열 (`capex_to_da`, `asset_growth`) | **필요** | 좌동 |
 | 테마 지수 구성 (폐지 종목 포함) | **필요** | 생존 편향 — `01-theme-universe.md` §5 |
 | 오늘의 스냅샷 (런웨이, 만기벽, 부채비율) | 불필요 | 최신 정정치가 오히려 정확 |
-| FRED 국면 판정 | **권장** | 개정 전 값으로 판정해야 실시간과 일치. M1 에서 ALFRED 사용 여부 결정 |
+| FRED 실물 참조·CPI (L1 축 1) | 불필요 — 최신 개정치 | 단위 수요의 10년 CAGR 판정이라 개정 전 값이 더 정확하지 않다. (옛 L2 국면 판정의 "PIT 권장" 은 L2 와 함께 빠졌다) |
 
 > 코드는 각 지표가 어느 쪽인지 **명시**한다. 애매하게 두면 몇 달 뒤 백분위가 조용히 틀어진다.
 > `portfolio-research` 의 `PanelContext` 는 PIT 를 강제하므로, 완화가 필요한 스냅샷 지표는
@@ -235,7 +208,7 @@ echo "${SHARADAR_API_KEY:+SHARADAR ok}" "${FRED_API_KEY:+FRED ok}"
 | `ACTIONS` 테이블 | 자본 사이클 E 블록의 `exit_count`/`entry_count` | **있다** — 665,817행, `action` 19종 |
 | `SFP` (ETF 가격) | 테마 ETF 프록시 ~60종 | **없다** — `prices` 안의 ETF 는 `SPY` 뿐. 벌크 `funds.csv.zip` 에서 읽는다 (§2.1) |
 | `TICKERS.industry` 전체 | 테마 버킷 매칭 | **있다** — `industry` 152종, `sector` 11종. 다만 결측 51.6% (대부분 `Institutional Investor` 행) |
-| FRED 시리즈 24종 | L2 | **미해결** — `FRED_API_KEY` 가 환경에 없어 실측하지 못했다 |
+| FRED CPI + 축 1 실물 참조 (§3) | L1 | **미해결** — `FRED_API_KEY` 가 환경에 없어 캐시가 비어 있다. 축 1 은 `data_missing` 으로 돈다 (드라이버 24종 요구는 L2 와 함께 빠졌다) |
 | 1997년 이전 | 사이클 2바퀴를 보려면 부족할 수 있음 | Sharadar SEP 는 1997-12-31 시작 — **한계로 수용**하고 문서화 |
 
 > **마지막 항목이 이 저장소의 근본적 제약이다.** SEP 가 1998년부터라
@@ -249,12 +222,10 @@ echo "${SHARADAR_API_KEY:+SHARADAR ok}" "${FRED_API_KEY:+FRED ok}"
       — `ACTIONS`·`TICKERS.industry` 는 있다. **`SFP` 는 스토어에 없다** (§2.1 #10).
         벌크 `funds.csv.zip` 직독으로 우회했고 프록시 21종은 전부 확인됐다.
         스토어 적재는 M2 로 넘긴다
-- [ ] FRED 시리즈 24종 적재 + 발표 지연 실측 표 작성 (§3 의 "확인 필요" 3건 해소)
-      — **키 미보유로 미착수.** 어댑터(`msa.data.fred`)와 명령(`msa data fred-lag`)은 준비됐다
-      — 24 = §3 표의 FRED 직접 시리즈 20 + `usd_liquidity` 파생 3(`WALCL`·`WTREGEN`·`RRPONTSYD`) + `DFEDTARU`.
-      드라이버 26개 중 나머지 2개(`china_property`·`policy_events`)와 `china_credit_impulse`·`gold_price`·`hyperscaler_capex` 는 FRED 밖이다
-- [ ] **§3 표의 `발표지연`·`개정` 두 열에 `M1 실측` 이 하나도 남지 않음** (전 시리즈 실측 완료)
-- [ ] `hyperscaler_capex` 파생 계산 검증 (5사 capex 합이 공개 수치와 일치)
+- [ ] FRED 시리즈 적재 + 발표 지연 실측 — **2026-08-23 개정:** 대상은 §3 의 CPI + 축 1 실물 참조
+      (`l1_series()`, 17종)뿐이다. 드라이버 24종·`hyperscaler_capex` 검증은 L2 와 함께 빠졌다
+      (`docs/archive/fred-driver-series.md`). **키 미보유로 미착수.** 어댑터(`msa.data.fred`)와
+      명령(`msa data fred-fetch`·`fred-lag`)은 준비됐다
 - [ ] 커버리지 감사(`01-theme-universe.md` §5) 전 항목 통과
 
 ## 7. 조용한 절단 금지 (승계)

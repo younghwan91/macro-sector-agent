@@ -13,7 +13,7 @@ LLM 이 파이프라인의 **좁은 허리**에만 있는 것이 설계 의도�
 **에이전트가 하지 않는 것**:
 - **종목 추천** — `CLAUDE.md` §4. 훈련 데이터의 유명세 편향이 들어온다
 - 가격 예측·목표주가
-- 스코어 계산 (L1·L2 는 결정론)
+- 스코어 계산 (L1 은 결정론)
 - 비중·스탑·TP 결정 (L5 는 최적화)
 
 **투입 대상**: `final(t)` 상위 **K=8** 테마 + 사용자가 수동 지정한 테마.
@@ -23,7 +23,7 @@ LLM 이 파이프라인의 **좁은 허리**에만 있는 것이 설계 의도�
 ## 2. 4역할 구조
 
 ```
-              테마 스코어카드 + 거시 상태 + 구성종목 재무 요약
+              테마 스코어카드 + 구성종목 재무 요약
                               │
         ┌─────────────────────┼─────────────────────┐
         ▼                     ▼                     ▼
@@ -244,8 +244,8 @@ evidence:                         # 비면 스키마 검증 실패 (CLAUDE.md §
 스키마를 실제로 만족하는가, (2) 서버 검색 쿼리 수가 `usage.server_tool_use.web_search_requests` 로 잡히는가,
 (3) `referee` 가 `axis1_contested` 에서 `referee_ruling` + 증거를 내는가 (못 내면 기각으로 닫힌다).
 
-**입력 계약.** L2·L4·L5 모듈을 임포트하지 않는다. 스코어카드는 `state/scans/<date>/` 파일, 거시 상태는 선택
-JSON(`state/macro/latest.json`, `tailwind` 키), 구성원 PIT 재무 요약은 DuckDB 에서 직접(시총 상위 12),
+**입력 계약.** L4·L5 모듈을 임포트하지 않는다. 스코어카드는 `state/scans/<date>/` 파일, 구성원 PIT 재무
+요약은 DuckDB 에서 직접(시총 상위 12), (거시 상태 입력은 2026-08-23 L2 제거로 없다 — `docs/13` §9),
 이전 thesis 는 `state/theses/<이전 date>/`, few-shot 은 `state/cases/*.md`(없으면 "few-shot 없음").
 
 **축 1 은 L1 값을 그대로 옮긴다.** `verdict_post_ss`·`axis1_contested`·`ss_n`·`ss_coverage`·`ma_flag` 를 thesis 에

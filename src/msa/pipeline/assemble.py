@@ -28,7 +28,7 @@ L5 는 L4·L3 를 임포트하지 않고 **파일 계약**(`src/msa/l5/inputs.py
 `thesis_input_from_l3` 가 `docs/specs/thesis.schema.yaml` 객체에서 `parse_thesis` 가 읽는 부분집합만
 꺼낸다: `theme_id` · `horizon_months` · `cycle_confidence` · **`cycle_confidence_source`**
 (L3 산출은 `referee`, 사람 논지는 `human` — yaml 이 `confidence_provenance` 를 선언하면 **그 선언이
-이긴다**) · `invalidations` · `triggers` · `tailwind` (L3 는 `inputs.macro_tailwind` 에 둔다) ·
+이긴다**) · `invalidations` · `triggers` ·
 `gate_result{status, portfolio_eligible, rule, path}` · `value_trap_axes.unit_demand{verdict,
 axis1_available, unit_series_source}`. 게이트 편입 불가(`contested`·`rejected`·`portfolio_eligible:
 false`)인 테마는 **묶음에서 빠지고 사유가 남는다.**
@@ -317,7 +317,6 @@ def thesis_input_from_l3(
     `referee`, 사람 논지 디렉터리면 `human`. yaml 이 스스로 `confidence_provenance`(저널 용어) 또는
     `cycle_confidence_source` 를 선언했으면 **그 선언이 이긴다** — 파일이 어디 있든 누가 `c` 를
     만들었는지는 파일이 더 잘 안다 (`docs/09` §2 · `docs/11` M6). 선언값이 enum 밖이면 거부.
-    `tailwind` 는 최상위 `tailwind` 가 없으면 L3 가 두는 `inputs.macro_tailwind` 에서 온다.
     나머지 필드(evidence·bear_case·…)는 옮기지 않는다 — 전문은 `state/theses/`·저널에 있다.
     """
     if confidence_source not in CONFIDENCE_PROVENANCE:
@@ -347,12 +346,6 @@ def thesis_input_from_l3(
         out["cycle_confidence_by"] = str(thesis["cycle_confidence_by"])
     out["triggers"] = _obs_items(thesis.get("triggers"))
     out["invalidations"] = _obs_items(thesis.get("invalidations"))
-    tw = thesis.get("tailwind")
-    if tw is None:
-        inp = thesis.get("inputs")
-        tw = inp.get("macro_tailwind") if isinstance(inp, Mapping) else None
-    if isinstance(tw, int | float) and not isinstance(tw, bool):
-        out["tailwind"] = float(tw)
     gate = thesis.get("gate_result")
     if isinstance(gate, Mapping):
         out["gate_result"] = {

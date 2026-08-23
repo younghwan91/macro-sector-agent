@@ -17,7 +17,7 @@ import pytest
 from typer.testing import CliRunner
 
 from conftest import make_thesis
-from msa.config import MissingApiKey, paths
+from msa.config import paths
 from msa.l3.schema import ThesisRejected, ValidationResult
 from msa.ops.ingest import Ingested, IngestReport
 from msa.pipeline import run as R
@@ -79,25 +79,6 @@ def _fake_scan(out_root: Path | None, **_: Any) -> _Scan:
         d.mkdir(parents=True, exist_ok=True)
         _scoreboard().to_csv(d / "scoreboard.csv")
     return _Scan(_SB(_scoreboard()), {"asof": ASOF, "store_end": ASOF}, d)
-
-
-@dataclass
-class _Drivers:
-    available: list[str]
-    missing: list[str]
-
-
-@dataclass
-class _Macro:
-    drivers: _Drivers
-    meta: dict[str, Any]
-    out_dir: Path | None
-
-
-def _fake_macro(**_: Any) -> _Macro:
-    return _Macro(
-        _Drivers(["a", "b"], ["c"]), {"tailwind": {"status_counts": {"partial": 3}}}, None
-    )
 
 
 @dataclass
@@ -181,17 +162,11 @@ def fakes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
     state = tmp_path / "state"
     state.mkdir()
     monkeypatch.setenv("MSA_STATE", str(state))
-    calls: dict[str, list[Any]] = {
-        k: [] for k in ("scan", "macro", "picks", "assemble", "portfolio")
-    }
+    calls: dict[str, list[Any]] = {k: [] for k in ("scan", "picks", "assemble", "portfolio")}
 
     def scan(**kw: Any) -> _Scan:
         calls["scan"].append(kw)
         return _fake_scan(kw.get("out_root"))
-
-    def macro(**kw: Any) -> _Macro:
-        calls["macro"].append(kw)
-        return _fake_macro()
 
     def picks(theme: str, **kw: Any) -> _Picks:
         calls["picks"].append(theme)
@@ -214,7 +189,6 @@ def fakes(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         return _PF((1, 2), (1, 2, 3), (), out)
 
     monkeypatch.setattr(R, "run_scan", scan)
-    monkeypatch.setattr(R, "run_macro", macro)
     monkeypatch.setattr(R, "run_picks", picks)
     monkeypatch.setattr(R, "assemble_inputs", assemble)
     monkeypatch.setattr(R, "run_portfolio", portfolio)
@@ -276,7 +250,6 @@ def test_monthly_step_order_and_report_files(fakes: dict[str, Any], tmp_path: Pa
     assert [s.name for s in rep.steps] == list(R.MONTHLY_STEPS)
     assert rep.statuses() == {
         "scan": "ok",
-        "macro": "ok",
         "select": "ok",
         "research": "ok",
         "ingest": "skipped",  # provider none — 새 라운드 없음
@@ -321,35 +294,22 @@ def test_monthly_scan_failure_stops_everything(
     assert "커버리지" in rep.step("scan").reason  # type: ignore[union-attr]
     for name in R.MONTHLY_STEPS[1:-1]:
         assert rep.step(name).status == "skipped"  # type: ignore[union-attr]
-    assert fakes["calls"]["macro"] == [] and fakes["calls"]["picks"] == []
+    assert fakes["calls"]["picks"] == []
     # 중단돼도 리포트는 남는다
     assert rep.step("report").status == "ok"  # type: ignore[union-attr]
     assert (fakes["state"] / "runs" / ASOF / "run.json").exists()
 
 
-def test_monthly_macro_unavailable_does_not_stop(
-    fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    def no_fred(**kw: Any) -> Any:
-        raise MissingApiKey("FRED_API_KEY 가 비어 있다")
-
-    monkeypatch.setattr(R, "run_macro", no_fred)
+def test_monthly_has_no_macro_step(fakes: dict[str, Any]) -> None:
+    """L2 제거(2026-08-23, docs/13 §9) — 월간 단계에 `macro` 가 없고 선정은 L1 순위만 본다."""
+    assert "macro" not in R.MONTHLY_STEPS
+    assert not hasattr(R, "run_macro")
     res = R.run_monthly(asof=ASOF, top_k=2, provider="none")
     st = res.report.statuses()
-    assert st["macro"] == "unavailable" and "FRED_API_KEY" in res.report.step("macro").reason  # type: ignore[union-attr]
-    assert st["select"] == "ok" and st["research"] == "ok" and res.exit_code == 0
-    assert any("FRED" in x for x in res.report.human_todo)
-
-
-def test_monthly_macro_zero_drivers_is_unavailable(
-    fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        R, "run_macro", lambda **kw: _Macro(_Drivers([], ["x", "y"]), {"tailwind": {}}, None)
-    )
-    res = R.run_monthly(asof=ASOF, top_k=1, provider="none")
-    assert res.report.statuses()["macro"] == "unavailable"
-    assert "가용 드라이버 0" in res.report.step("macro").reason  # type: ignore[union-attr]
+    assert "macro" not in st and st["select"] == "ok" and res.exit_code == 0
+    assert not any("L2" in x or "FRED" in x for x in res.report.human_todo)
+    assert not any("L2" in x or "hard_exclude" in x for x in res.report.notes)
+    assert not hasattr(res, "macro")
 
 
 def test_monthly_provider_none_without_any_thesis_skips_downstream(fakes: dict[str, Any]) -> None:
@@ -447,16 +407,16 @@ def test_monthly_skip_flags(fakes: dict[str, Any]) -> None:
         asof=ASOF,
         top_k=2,
         provider="mock",
-        skip_macro=True,
         skip_research=True,
         skip_picks=True,
         skip_portfolio=True,
     )
     st = res.report.statuses()
-    assert st["macro"] == "skipped" and st["research"] == "skipped" and st["ingest"] == "skipped"
+    assert st["research"] == "skipped" and st["ingest"] == "skipped"
     assert st["picks"] == "skipped" and st["assemble"] == "skipped" and st["portfolio"] == "skipped"
-    assert fakes["calls"]["macro"] == [] and fakes["calls"]["picks"] == []
-    assert "--skip-macro" in res.report.step("macro").reason  # type: ignore[union-attr]
+    assert fakes["calls"]["picks"] == []
+    with pytest.raises(TypeError):  # L2 제거 — 옵션 자체가 없다
+        R.run_monthly(asof=ASOF, provider="none", skip_macro=True)  # type: ignore[call-arg]
 
 
 def test_monthly_no_write_uses_sandbox_and_leaves_state_untouched(
@@ -473,7 +433,6 @@ def test_monthly_no_write_uses_sandbox_and_leaves_state_untouched(
     assert (sandbox / "scans" / ASOF / "scoreboard.csv").exists()
     assert (sandbox / "runs" / ASOF / "monthly-report.md").exists()
     assert fakes["calls"]["scan"][0]["out_root"] == sandbox / "scans"
-    assert fakes["calls"]["macro"][0]["write"] is False
     assert fakes["calls"]["portfolio"][0]["state_dir"] == sandbox
     assert "no-write" in res.report.render()
 
@@ -573,11 +532,12 @@ def test_weekly_check_failure_is_reported_not_fatal(
 # ---------------------------------------------------------------- quarterly · CLI
 
 
-def test_quarterly_lists_three_commands() -> None:
+def test_quarterly_lists_two_commands() -> None:
     text = R.run_quarterly()
     for cmd, _why in R.QUARTERLY_COMMANDS:
         assert cmd in text
-    assert "msa macro" in text and "calibration" in text and "rejections-update" in text
+    assert "msa macro" not in text  # L2 제거 — 분기 모순 감사 없음
+    assert "calibration" in text and "rejections-update" in text
     assert "실행하지 않는다" in text
 
 
@@ -627,10 +587,8 @@ def test_monthly_mock_smoke_on_real_cache(tmp_path: Path) -> None:
     assert (tmp_path / "sb" / "runs" / res.report.asof / "monthly-report.md").exists()
 
 
-def test_select_themes_applies_l2_hard_exclude_overlay() -> None:
-    """L2 는 오버레이 — hard_exclude 테마는 상위 K 후보에서 빠지고 이름이 기록된다.
-
-    사용자 지정은 유지하되 플래그를 단다."""
+def test_select_themes_has_no_l2_overlay() -> None:
+    """L2 제거(2026-08-23) — `hard_exclude` 오버레이는 없다. 선정은 L1 순위(S2 자격) 그대로."""
     import pandas as pd
 
     from msa.pipeline.run import select_themes
@@ -644,10 +602,8 @@ def test_select_themes_applies_l2_hard_exclude_overlay() -> None:
         },
         index=pd.Index(["a", "b", "c", "d", "e"], name="theme"),
     )
-    sel = select_themes(sb, top_k=3, hard_exclude={"b"})
-    assert sel.from_scoreboard == ("a", "c", "d")
-    assert any("hard_exclude" in n and "b" in n for n in sel.notes)
-    sel2 = select_themes(sb, top_k=2, extra_themes=["b"], hard_exclude={"b"})
-    assert "b" in sel2.selected and any("hard_exclude" in f for f in sel2.flags["b"])
-    # 오버레이가 없으면 순위 그대로
-    assert select_themes(sb, top_k=3).from_scoreboard == ("a", "b", "c")
+    sel = select_themes(sb, top_k=3)
+    assert sel.from_scoreboard == ("a", "b", "c")
+    assert not any("hard_exclude" in n or "L2" in n for n in sel.notes)
+    with pytest.raises(TypeError):
+        select_themes(sb, top_k=3, hard_exclude={"b"})  # type: ignore[call-arg]

@@ -5,13 +5,13 @@
 | 월간 (1영업일) | `1-3일 07:00` + `msa ops due monthly` | `msa run monthly` |
 | 주간 (월요일) | `월 07:30` | `msa run weekly` (스캔 + `check --weekly`) |
 | 일간 (평일) | `평일 18:30` | `msa check --daily` |
-| 분기 (1·4·7·10월 1영업일) | `1-3일 08:00` + `due quarterly` | calibration · rejections · macro |
+| 분기 (1·4·7·10월 1영업일) | `1-3일 08:00` + `due quarterly` | calibration · rejections |
 
-월간(`msa run monthly`, 배선 W4)은 스캔→거시→상위 K→L3→적재→L4→L5 를 잇고 **제안·초안**에서 끝난다
+월간(`msa run monthly`, 배선 W4)은 스캔→상위 K→L3→적재→L4→L5 를 잇고 **제안·초안**에서 끝난다
 (`docs/09` §1 "기계 vs 사람"). 키가 없으면 기본 `--provider none` 으로 L3 를 부르지 않고 사람
 논지/직전 thesis 만 찾는다; `ANTHROPIC_API_KEY` 가 있으면 cron 행에 `--provider anthropic` 을
-사람이 붙인다 — 비용이 드는 호출을 기본값으로 두지 않는다. 분기의 `msa macro` 는 모순 감사 절을
-만들기 위한 것이고 읽는 것은 사람이다.
+사람이 붙인다 — 비용이 드는 호출을 기본값으로 두지 않는다. (분기의 `msa macro` 모순 감사는
+2026-08-23 L2 제거와 함께 없어졌다 — `docs/13` §9.)
 
 cron 은 "1영업일" 을 표현하지 못하므로 1~3일에 매일 깨우고 `msa ops due <cadence>` 가 그날이
 그 달의 첫 평일일 때만 0 을 돌려준다 (미국 공휴일은 보지 않는다 — 공휴일이 1일이면 하루 늦게 돈다.
@@ -54,7 +54,7 @@ JOBS: tuple[Job, ...] = (
         "*-*-01..03 07:00:00",
         ("msa run monthly",),
         "monthly",
-        "L0 적재 → L1 전수 스캔 → L2 국면 → 상위 K L3 → L4 → L5 (제안·초안까지) → 사람 검토 "
+        "L0 적재 → L1 전수 스캔 → 상위 K L3 → L4 → L5 (제안·초안까지) → 사람 검토 "
         "30~60분. ANTHROPIC_API_KEY 가 있으면 `--provider anthropic` 을 붙인다 "
         "(기본 none = L3 미호출)",
     ),
@@ -78,10 +78,9 @@ JOBS: tuple[Job, ...] = (
         "quarterly",
         "0 8 1-3 1,4,7,10 *",
         "*-01,04,07,10-01..03 08:00:00",
-        ("msa ops calibration", "msa ops rejections-update", "msa macro"),
+        ("msa ops calibration", "msa ops rejections-update"),
         "quarterly",
-        "캘리브레이션 · 기각 대장 12·24M 갱신 · 모순 감사(03 §6 — `msa macro` 리포트의 절을 사람이 "
-        "읽는다)",
+        "캘리브레이션 · 기각 대장 12·24M 갱신",
     ),
 )
 

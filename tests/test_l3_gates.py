@@ -7,6 +7,7 @@ import pytest
 from _l3_synth import axis1
 from msa.l3.gates import (
     CONF_CAP_ON_DEATH,
+    CONF_TERMS,
     AxisVerdicts,
     ConfidenceInputs,
     apply_gates,
@@ -26,7 +27,6 @@ def _ci(v: AxisVerdicts, **kw) -> ConfidenceInputs:  # type: ignore[no-untyped-d
         "capex_to_da_qtrs_below1": 10.0,
         "axis4_strong_cycle": True,
         "axis5_severe": False,
-        "tailwind": 0.5,
         "small_sample": False,
         "short_hist": False,
     }
@@ -39,16 +39,16 @@ def _ci(v: AxisVerdicts, **kw) -> ConfidenceInputs:  # type: ignore[no-untyped-d
 
 def test_confidence_all_positive_terms_clips_to_one() -> None:
     r = cycle_confidence(_ci(_v()))
-    # 0.5 +0.15 +0.10 +0.15 +0.10 +0.10 = 1.10 → 1.0
-    assert r.raw == pytest.approx(1.10)
+    # 0.5 +0.15 +0.10 +0.15 +0.10 = 1.00 → 1.0 (거시 순풍 +0.10 항은 L2 제거로 없다 — docs/04 §4)
+    assert r.raw == pytest.approx(1.00)
     assert r.value == 1.0
     assert set(r.terms) == {
         "axis1_cycle",
         "axis2_capex_below1_8q",
         "axis3_no_substitution",
         "axis4_strong_cycle",
-        "macro_tailwind",
     }
+    assert "macro_tailwind" not in CONF_TERMS
 
 
 def test_confidence_base_only() -> None:
@@ -57,7 +57,6 @@ def test_confidence_base_only() -> None:
             _v("not_applicable", "cycle", "not_applicable", "warning", "warning"),
             capex_to_da_qtrs_below1=3.0,
             axis4_strong_cycle=False,
-            tailwind=0.1,
         )
     )
     assert r.value == 0.5 and r.terms == {}
@@ -69,20 +68,18 @@ def test_confidence_negative_terms() -> None:
             _v("warning", "cycle", "warning", "warning", "death"),
             capex_to_da_qtrs_below1=None,
             axis4_strong_cycle=False,
-            tailwind=None,
             small_sample=True,
         )
     )
     # 0.5 −0.20 −0.15 −0.15 −0.10 = −0.10 → 0
     assert r.raw == pytest.approx(-0.10)
     assert r.value == 0.0
-    assert "거시 순풍 값 없음" in " ".join(r.notes)
 
 
 def test_confidence_death_cap() -> None:
     r = cycle_confidence(_ci(_v("death", "cycle", "cycle", "cycle", "warning")))
-    # 0.5 +0.10 +0.15 +0.10 +0.10 = 0.95 → cap 0.35
-    assert r.raw == pytest.approx(0.95)
+    # 0.5 +0.10 +0.15 +0.10 = 0.85 → cap 0.35 (거시 순풍 +0.10 항은 L2 제거로 없다)
+    assert r.raw == pytest.approx(0.85)
     assert r.cap == CONF_CAP_ON_DEATH and r.value == CONF_CAP_ON_DEATH
     r3 = cycle_confidence(_ci(_v("cycle", "cycle", "death", "cycle", "warning")))
     assert r3.value == CONF_CAP_ON_DEATH

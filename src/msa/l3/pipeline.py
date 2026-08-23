@@ -276,7 +276,6 @@ def _judge(
             capex_to_da_qtrs_below1=card.capex_to_da_qtrs_below1,
             axis4_strong_cycle=bool(cc.get("strong_cycle", False)),
             axis5_severe=bool(tr.get("severe", False)),
-            tailwind=inputs.macro.tailwind if inputs.macro else None,
             small_sample=card.small_sample,
             short_hist=card.short_hist,
         )
@@ -357,7 +356,6 @@ def build_thesis(
             "scoreboard_rank": card.rank,
             "cycle_class": card.cycle_class,
             "members_summarized": len(inputs.members),
-            "macro_tailwind": inputs.macro.tailwind if inputs.macro else None,
             "few_shot_cases": [c.case_id for c in inputs.cases],
             "warnings": list(inputs.warnings),
         },

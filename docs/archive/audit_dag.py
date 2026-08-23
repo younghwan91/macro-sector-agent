@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""거시 인과 DAG 커버리지 감사 (M4).
+"""거시 인과 DAG 커버리지 감사 (M4) — **L2 제거(2026-08-23) 이전 기록**.
+
+`docs/archive/macro-dag.yaml` 을 대상으로 여전히 돈다 (`uv run --with pyyaml python docs/archive/audit_dag.py`).
+`msa.l2` 를 임포트하지 않는 독립 스크립트라 보존한다. 현행 파이프라인의 일부가 아니다.
 
 검사 항목 (docs/11-roadmap.md M4, docs/03-macro-dag.md §3):
   1. 모든 테마가 입력 엣지 >= 2 (공통 인자 엣지는 세지 않는다)
@@ -24,8 +27,8 @@ from pathlib import Path
 
 import yaml
 
-ROOT = Path(__file__).resolve().parent.parent
-DAG_PATH = ROOT / "state" / "macro-dag.yaml"
+ROOT = Path(__file__).resolve().parents[2]
+DAG_PATH = ROOT / "docs" / "archive" / "macro-dag.yaml"
 THEMES_PATH = ROOT / "state" / "themes.yaml"
 THEME_DOC = ROOT / "docs" / "01-theme-universe.md"
 

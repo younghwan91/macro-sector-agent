@@ -28,7 +28,7 @@ def test_cron_has_four_cadences_and_installs_nothing(tmp_path: Path) -> None:
         ln.startswith("0 8 1-3 1,4,7,10 *")
         and "msa ops calibration" in ln
         and "msa ops rejections-update" in ln
-        and "msa macro" in ln
+        and "msa macro" not in ln  # L2 제거 — 분기에 모순 감사 없음
         for ln in lines
     )
     assert f"MSA_REPO={tmp_path}" in text
