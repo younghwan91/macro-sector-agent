@@ -470,11 +470,11 @@ REFEREE_SCHEMA: dict[str, Any] = {
     "properties": {
         "claim": {"type": "string"},
         "mechanism": {"type": "string"},
+        # 구조화 출력은 minItems 를 0/1 만 지원한다 (API 400). 길이 2 는 프롬프트로
+        # 지시하고 `l3/schema.py` R_HORIZON 이 검증한다 — 미달이면 저장을 거부한다.
         "horizon_months": {
             "type": "array",
             "items": {"type": "integer"},
-            "minItems": 2,
-            "maxItems": 2,
         },
         "triggers": {
             "type": "array",

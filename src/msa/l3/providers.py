@@ -13,10 +13,9 @@
 값은 `ModelConfig` 에 있고 환경변수 `MSA_L3_MODEL_TOP` / `MSA_L3_MODEL_STANDARD` 로 덮어쓴다.
 모델 ID 는 `claude-api` 스킬 기준(2026-06 캐시): 상위 `claude-opus-5`, 표준 `claude-sonnet-5`.
 
-**웹 검색**: `SearchTool` 프로토콜. 지금 런타임엔 검색 도구가 없으므로 기본은 `StubSearchTool`
-(호출하면 `NotConfigured`). Anthropic 서버 도구(`web_search_20260209`)를 쓰려면
-`AnthropicWebSearch` 를
-넘긴다 — 쿼리 수는 응답 `usage.server_tool_use.web_search_requests` 로 센다. 역할당 예산 ~15
+**웹 검색**: `SearchTool` 프로토콜. `make_provider("anthropic")` 은 기본으로 Anthropic 서버 도구
+(`web_search_20260209`, `AnthropicWebSearch`)를 단다 — 끄려면 `StubSearchTool` 을 명시적으로
+넘긴다. 쿼리 수는 응답 `usage.server_tool_use.web_search_requests` 로 센다. 역할당 예산 ~15
 (`docs/05` §5)
 은 `SearchBudget` 이 들고 있고, 서버 도구에는 `max_uses` 로 전달된다.
 
@@ -456,7 +455,9 @@ def make_provider(
     kind: str, *, theme_id: str, fixture_root: Path | None = None, search: SearchTool | None = None
 ) -> LLMProvider:
     if kind == "anthropic":
-        return AnthropicProvider(search=search)
+        # 검색을 명시하지 않으면 서버 도구를 단다 — 검색 없이 돌리면 evidence 가
+        # LLM 기억에 의존하고, 그건 `CLAUDE.md` §3 이 금지하는 출처 없는 주장이다.
+        return AnthropicProvider(search=search or AnthropicWebSearch())
     if kind == "mock":
         return MockProvider()
     if kind == "fixture":
