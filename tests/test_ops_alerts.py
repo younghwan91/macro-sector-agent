@@ -26,6 +26,19 @@ D = date(2026, 12, 15)
 def _all_alerts() -> list[Alert]:
     return [
         Alert(
+            AlertKind.DAILY_DIGEST,
+            D,
+            "-",
+            None,
+            {
+                "asof": "2026-12-15",
+                "new_items": ["uranium: 상위 N 신규 CCJ, UEC", "copper: 신규 하드 제외 XYZ"],
+                "omitted": 3,
+                "top3": ["uranium — 점수 0.91 · pool 0.88", "copper — 점수 0.85 · pool 0.80"],
+                "path": "state/daily/2026-12-15/digest.md",
+            },
+        ),
+        Alert(
             AlertKind.MONTHLY_REPORT,
             D,
             "-",
@@ -111,7 +124,7 @@ def _all_alerts() -> list[Alert]:
 
 
 def test_six_kinds_plus_tier2_all_format_and_pass_wording_rule() -> None:
-    assert len(SIX_KINDS) == 6 and len(AlertKind) == 7
+    assert len(SIX_KINDS) == 6 and len(AlertKind) == 8
     kinds = {a.kind for a in _all_alerts()}
     assert kinds == set(AlertKind)
     for a in _all_alerts():
@@ -157,7 +170,7 @@ def test_deliver_not_configured_still_writes_json(
     res = deliver(_all_alerts()[:2], tmp_path)
     assert res.status == "not_configured" and res.sent == 0
     data = json.loads((tmp_path / "alerts.json").read_text())
-    assert len(data) == 2 and data[0]["kind"] == "monthly_report" and data[0]["text"]
+    assert len(data) == 2 and data[0]["kind"] == "daily_digest" and data[0]["text"]
     # 토큰만 있고 chat_id 없음 → 여전히 not configured
     monkeypatch.setenv("MSA_TELEGRAM_TOKEN", "x")
     assert telegram_config() is None
@@ -182,12 +195,12 @@ def test_deliver_sends_when_configured(tmp_path: Path) -> None:
 
     fake = Fake()
     res = deliver(_all_alerts(), tmp_path, cfg=TelegramConfig("t", "42"), notifier=fake)
-    assert res.status == "sent" and res.sent == 7 and all(c == "42" for c, _ in fake.sent)
+    assert res.status == "sent" and res.sent == 8 and all(c == "42" for c, _ in fake.sent)
     assert fake.batches == 1  # 한 루프로 전부
     assert deliver([], tmp_path).status == "nothing_to_send"
     partial = Fake(fail_every=3)
     res = deliver(_all_alerts(), tmp_path, cfg=TelegramConfig("t", "42"), notifier=partial)
-    assert res.status == "partial" and (res.sent, res.failed) == (5, 2)
+    assert res.status == "partial" and (res.sent, res.failed) == (6, 2)
     assert (
         deliver(_all_alerts()[:1], tmp_path, cfg=TelegramConfig("t", "42"), notifier=Fake(1)).status
         == "failed"

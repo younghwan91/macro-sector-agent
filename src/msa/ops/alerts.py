@@ -29,7 +29,8 @@ from msa.vendor.telegram import TelegramConfig, TelegramNotifier, telegram_confi
 
 
 class AlertKind(StrEnum):
-    """docs/09 §3 표의 6행 + Tier-2 자본 스탑 (docs/07 §4 — 점검이 평가하므로 알림도 필요하다)."""
+    """docs/09 §3 표의 6행 + Tier-2 자본 스탑 (docs/07 §4 — 점검이 평가하므로 알림도 필요하다)
+    + 일간 후보 다이제스트 (docs/09 §1 일간 행 — 후보 목록의 요약이지 권유가 아니다)."""
 
     MONTHLY_REPORT = "monthly_report"  # 마크다운 리포트 생성 — 경로·요약 (월간)
     MONTHLY_SUMMARY = "monthly_summary"  # 상위 5테마 + 계획 변경분 (월간)
@@ -38,6 +39,7 @@ class AlertKind(StrEnum):
     TIME_STOP_WARNING = "time_stop_warning"  # 30일 전 예고
     TP_MET = "tp_met"  # TP 조건 충족 (일간)
     TIER2_STOP_HIT = "tier2_stop_hit"  # 07 §4 자본 스탑 (09 §3 표 밖 — 추가)
+    DAILY_DIGEST = "daily_digest"  # 일간 후보 다이제스트 요약 (msa run daily --send)
 
 
 #: 6종 (09 §3) — 로드맵 체크박스가 세는 단위. TIER2 는 07 §4 에서 온 추가분이다.
@@ -147,6 +149,19 @@ def format_alert(a: Alert) -> str:
         body = (
             f"경로: {f.get('path')}\n테마 {f.get('n_themes')}개 · 상위 {f.get('top_k')} 검토 대상"
         )
+    elif a.kind is AlertKind.DAILY_DIGEST:
+        head = f"[일간 후보 다이제스트] {f.get('asof')}"
+        news = f.get("new_items") or []
+        top3 = f.get("top3") or []
+        L = ["오늘 새로 올라온 것:"]
+        L += [f"  - {x}" for x in news] if news else ["  (없음)"]
+        omitted = int(f.get("omitted") or 0)
+        if omitted:  # 조용한 절단 금지 — 자른 개수를 적는다 (CLAUDE.md §2)
+            L.append(f"  … 외 {omitted}건 (전문: {f.get('path', 'state/daily/')})")
+        L.append("상위 3테마:")
+        L += [f"  {i + 1}. {t}" for i, t in enumerate(top3)] or ["  (없음)"]
+        L.append("측정값·후보 목록이다 — L1 점수의 예측력은 약하다 (docs/02 §7.1)")
+        body = "\n".join(L)
     elif a.kind is AlertKind.MONTHLY_SUMMARY:
         head = f"[월간 요약] {f.get('asof')}"
         tops = f.get("top5") or []

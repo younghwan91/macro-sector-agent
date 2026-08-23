@@ -142,6 +142,10 @@ msa run monthly       # 월간 한 번 (배선 W4): scan → 상위 K 선정 →
                       #   산출물 state/runs/<date>/ (monthly-report.md·run.json) — 끝은 제안·초안, 집행은 사람.
                       #   기본 --provider none = L3 미호출(키 없음): 사람 논지/직전 thesis 만 찾는다. exit 1 은 스캔 중단만
 msa run weekly        # 주간: 전수 스캔 + msa check --weekly + weekly-report.md. --asof --no-write
+msa run daily         # 일간: 후보 다이제스트 (스캔→상위 K→테마별 L4 랭킹→직전 diff→보유 점검).
+                      #   --asof --top-k 8 --themes a,b --per-theme 5 --no-write --send
+                      #   산출물 state/daily/<date>/ (digest.json·digest.md·report.txt) — 읽기 전용 후보 뷰,
+                      #   측정값·후보 목록이지 투자 조언이 아니다. 결정 케이던스는 월간 그대로
 msa run quarterly     # 분기 명령 목록 (ops calibration · ops rejections-update) — 나열만
 msa backtest l1       # L1 백테스트 관문 0 (M3.5) — rank-IC·스프레드·breadth_lead·DSR/PBO.
                       #   산출물 state/backtests/l1/<date>/ · 판정 docs/backtest-l1.md. 튜닝 루프가 아니다

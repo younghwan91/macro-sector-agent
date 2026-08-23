@@ -77,6 +77,11 @@ class Paths:
         return self.state / "runs"
 
     @property
+    def daily(self) -> Path:
+        """일간 후보 다이제스트 (`state/daily/<asof>/digest.json`·`digest.md`, `msa run daily`)."""
+        return self.state / "daily"
+
+    @property
     def backtests_l1(self) -> Path:
         return self.state / "backtests" / "l1"
 

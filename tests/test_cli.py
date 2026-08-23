@@ -70,7 +70,7 @@ def test_m8_subcommands_registered() -> None:
 def test_ops_schedule_prints_cron_without_installing(tmp_path) -> None:
     r = runner.invoke(app, ["ops", "schedule", "--print-cron"])
     assert r.exit_code == 0
-    assert "msa check --daily" in r.stdout
+    assert "msa run daily --send" in r.stdout  # 일간 = 다이제스트 + check 내장
     assert "crontab -e" in r.stdout
 
 

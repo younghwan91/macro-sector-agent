@@ -1058,21 +1058,21 @@ def _portfolio_step(
 # ---------------------------------------------------------------- 주간
 
 
-def run_weekly_check(asof_s: str, *, write: bool) -> tuple[CheckReport, dict[str, Any]]:
-    """`msa check --weekly` 와 같은 경로 — 스토어 가격으로 점검하고, `write` 면 알림 파일·텔레그램·
-    마지막 성공 시각까지 남긴다. (실패·제공자 오류는 호출자가 받는다.) 테스트는 이 함수를
-    갈아끼운다."""
+def run_cadence_check(asof_s: str, *, mode: str, write: bool) -> tuple[CheckReport, dict[str, Any]]:
+    """`msa check --daily|--weekly` 와 같은 경로 — 스토어 가격으로 점검하고, `write` 면 알림
+    파일·텔레그램·마지막 성공 시각까지 남긴다. (실패·제공자 오류는 호출자가 받는다.)
+    주간(`run_weekly`)과 일간(`run_daily`)이 공유한다 — 점검 논리는 여기 한 벌뿐이다."""
     from msa.data.store import Store
     from msa.vendor.scheduler import LastRunStore, RunTracker
 
     p = paths()
     asof_d = parse_date(asof_s)
-    tracker = RunTracker(LastRunStore(p.checks / "last_run.json"), key="check.weekly")
+    tracker = RunTracker(LastRunStore(p.checks / "last_run.json"), key=f"check.{mode}")
     info: dict[str, Any] = {"lookback_days": tracker.lookback_days(asof_d)}
     with Store(p.duckdb) as store:
         rep = run_check(
             asof=asof_d,
-            mode="weekly",
+            mode=mode,
             prices=StorePriceSource(store),
             positions_path=p.positions,
             journal_dir=journal_dir(REPO_ROOT),
@@ -1086,6 +1086,11 @@ def run_weekly_check(asof_s: str, *, write: bool) -> tuple[CheckReport, dict[str
         if write:
             tracker.mark_polled()
     return rep, info
+
+
+def run_weekly_check(asof_s: str, *, write: bool) -> tuple[CheckReport, dict[str, Any]]:
+    """`run_cadence_check(mode="weekly")` — 테스트는 이 함수를 갈아끼운다."""
+    return run_cadence_check(asof_s, mode="weekly", write=write)
 
 
 def run_weekly(
@@ -1220,6 +1225,7 @@ __all__ = [
     "ThesisRecord",
     "WeeklyRunResult",
     "gate_eligible",
+    "run_cadence_check",
     "run_monthly",
     "run_quarterly",
     "run_weekly",
