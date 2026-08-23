@@ -179,3 +179,15 @@ MP · rare_earth · TORQUE
 - 로열티/스트리밍·미드스트림 옵션 그룹 태깅 (§5) — Sharadar 에 라벨이 없다. 실측에서 MTA·ELE·VOXR·TFPM 같은 로열티사가 일반 생산자와 섞여 랭킹된다
 - 에이전트 thesis 입력 (§7 의 `주의:` 줄 재료) — M7 뒤
 - L4 축별 rank-IC 백테스트 — `10-validation.md` §2. 특성 함수는 PIT 라 `asof` 만 바꾸면 된다
+
+### 8.5 L5 로 넘어가는 것 — `msa portfolio-inputs` (배선 W1, 2026-08-23)
+
+`ranking.csv` 는 L5 가 직접 읽지 않는다. `src/msa/pipeline/assemble.py` 가 `state/picks/<date≤asof>/<theme>/ranking.csv`
+에서 **`group`(앵커/토크 라벨) · `rank` · `composite` · `price` · `adv20_usd` · S̃/T̃/M̃ · `penalties` · `red_flags` ·
+`composite_partial` · 축 입력 결측** 만 꺼내 L5 의 `picks.csv` (`docs/07` 구현 노트 "배선 W1") 로 옮긴다
+(`picks.RANKING_EXPORT_COLUMNS` · `picks.read_ranking` · `features.ENTRY_PRICE_FEATURE/LIQUIDITY_FEATURE`).
+- `role` 은 `group` 에서만 온다 — `ANCHOR`→`anchor`, `TORQUE`→`torque`. 라벨이 빈 행(하드 필터는 통과했으나
+  바벨에 들지 않은 종목)은 L5 로 가지 않고 **수와 사유**로 보고된다. §5 옵션 그룹(로열티·미드스트림·ETF)은
+  §8.4 그대로 태깅이 없어 매핑도 없다.
+- L4 가 내지 않는 것은 L5 쪽 열을 비운다 (`idio_vol_ann`·밸류 P50/P75 회복가·직전 사이클 고점가·`split_first_leg`)
+  — 채우려면 **이 계층**이 특성을 추가해야 한다 (§8.4 에 추가: 종목 고유 변동성 · 테마 밸류 백분위 가격).

@@ -429,3 +429,52 @@ C6 `c ≥ 0.5` 는 풀기 전 필터. `cvxpy` + CLARABEL (설치된 원뿔 솔�
 **남은 것.** (a) 케이스 스터디 6건 → `state/cases/cases.yaml` (`verified: true` + 출처) — 들어오는 순간
 C1-(ii) 가 살아난다. (b) `msa picks` → `picks.csv` 배선 (M5 뒤). (c) §7.4 기존 보유 병합 — 미구현.
 (d) `× 0.5` 재검토는 (a) 와 같은 시점이다 (§2.4).
+
+### 배선 W1 (2026-08-23) — `msa picks` → `picks.csv` · L3 thesis → `theses/*.yaml` (`msa portfolio-inputs`)
+
+위 "남은 것 (b)" 가 `src/msa/pipeline/assemble.py` 로 닫혔다. L5 는 여전히 L4·L3 를 임포트하지 않는다 —
+배선은 `msa.pipeline` 패키지만 하고, 산출물은 `state/portfolio_inputs/<asof>/` 디렉터리이며
+`msa portfolio --inputs <그 디렉터리>` 가 **바뀐 것 없이** 읽는다. 쓰고 나서 `load_picks`·`load_theses` 로
+자기 산출물을 다시 읽어 계약을 확인한다.
+
+```
+msa portfolio-inputs --asof 2026-08-14 --themes rare_earth,uranium [--human-theses DIR] [--top N] [--no-write]
+```
+
+`state/picks/<date≤asof>/<theme>/ranking.csv` 와 `state/theses/<date≤asof>/<theme>.thesis.yaml` 의 **최신**을
+테마별로 고른다 (`--human-theses DIR` 의 `<theme>.yaml` 이 있으면 그것이 우선).
+
+**`picks.csv` — 지금 L4 에서 채울 수 있는 열과 없는 열** (`assemble.OMITTED_COLUMNS` 가 정본, 리포트에 매번 찍힌다)
+
+| 열 | 원천 | 상태 |
+|---|---|---|
+| `theme` · `ticker` | 디렉터리 · `ranking.csv` index | 쓴다 |
+| `role` | `group` — `ANCHOR`→`anchor` · `TORQUE`→`torque` | 쓴다. 라벨이 빈 행(순위만 있음)·모르는 라벨은 **제외하고 센다**. `royalty`·`midstream`·`etf` 는 L4 가 태깅하지 않아 (`06` §8.4) 나오지 않는다 |
+| `entry_price` | `price` (asof 이하 마지막 **비조정** 종가) | 쓴다 |
+| `adv20_usd` | `adv20_usd` | 쓴다 |
+| `rank_score` | `composite` | 쓴다 |
+| `notes` | `rank`·`group`·S̃/T̃/M̃·`penalties`·`red_flags`·`composite_partial`·축 입력 결측 | 쓴다 (표기용) |
+| `idio_vol_ann` | — | **안 쓴다.** L4 특성 표에 종목 고유 변동성이 없다 → 위 구현 노트 4 의 "없으면 0" 경로 |
+| `split_first_leg` | — | **안 쓴다.** §3 "M 축이 낮으면" 의 컷이 문서에 없다 — 컷을 만들지 않는다 (`CLAUDE.md` §1). M̃ 는 `notes` 에 있어 사람이 넣을 수 있다 |
+| `tp_p50_price` · `tp_p75_price` | — | **안 쓴다.** 밸류 백분위 회복가는 L4 가 아직 내지 않는다 (구현 노트 8) |
+| `prev_cycle_peak_price` | — | **안 쓴다.** L4 특성 표에 없다 |
+| `min_weight` | — | **안 쓴다.** L4 산출이 아니다 — 필요하면 사람이 넣는다 (기본 0) |
+
+한 티커는 한 테마에만 — 먼저 온 테마가 갖고 뒤는 제외하고 센다 (`load_picks` 규칙). `--top N` 은 L4 바벨을
+더 줄일 때만 쓰고 기본은 바벨 전부다.
+
+**`theses/<theme>.yaml` — thesis 객체의 부분집합.** `theme_id` · `generated_at` · `claim` · `horizon_months` ·
+`cycle_confidence` · **`cycle_confidence_source`** · `triggers`/`invalidations` (`observable·source·by·action·status`
+만) · `tailwind` (최상위 없으면 L3 의 `inputs.macro_tailwind`) · `gate_result{status, portfolio_eligible, rule, path}`
+· `value_trap_axes.unit_demand{verdict, axis1_available, unit_series_source}` · `assembled_from`(원본 경로).
+evidence·bear_case 등 전문은 옮기지 않는다 — `state/theses/`·저널에 있다.
+
+`cycle_confidence_source` 는 **위치로** 정한다 — `state/theses/` 산출은 `referee`, `--human-theses` 디렉터리는
+`human`. 단 yaml 이 스스로 `confidence_provenance`(저널 용어) 또는 `cycle_confidence_source` 를 선언했으면
+**그 선언이 이긴다** — 파일이 어디 있든 누가 `c` 를 만들었는지는 파일이 더 잘 안다. 리포트에 어느 쪽으로
+정했는지(`yaml 선언` / `위치(...)`) 가 찍힌다.
+
+**건너뛰는 테마와 사유** (전부 `report.txt`·`assemble_report.json` 에) — thesis 없음 · thesis 계약 위반
+(`parse_thesis` 거부 — 예: `invalidations` 빈 것) · 게이트 편입 불가 (`contested`/`rejected`/`portfolio_eligible:
+false`) · picks 없음 · picks 0건(바벨 라벨 없음). 전부 건너뛰면 예외다 (빈 묶음을 만들지 않는다). 실측
+(`rare_earth` 2026-08-14): 순위 5 → 바벨 2 (앵커 2) · 나머지 3 은 "바벨 미배정" 으로 셈.

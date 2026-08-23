@@ -113,6 +113,9 @@ msa data fred-fetch   # FRED 드라이버 24종 + physical_ref + CPI 를 state/p
 msa portfolio --inputs <dir>   # L5 SOCP + 사다리·스탑·TP + 매매계획서 (M6). --asof --cases --capital
                       #   --cluster-cap name=cap --no-write · 입력 계약: src/msa/l5/inputs.py
                       #   산출물 state/portfolio/<date>/ (weights.csv·plan.md·diagnostics.json)
+msa portfolio-inputs --asof DATE --themes a,b,c   # L4 picks + L3/사람 thesis → L5 입력 묶음 (배선 W1)
+                      #   [--human-theses DIR] [--top N] [--no-write] · 산출물 state/portfolio_inputs/<date>/
+                      #   (picks.csv·theses/·assemble_report.json·report.txt) → msa portfolio --inputs 그대로
 msa research <theme>  # L3 에이전트 4역할(supply·catalyst·bear·referee) → thesis 객체 (M7)
                       #   실제 실행은 ANTHROPIC_API_KEY 필요 (--provider anthropic, 기본값)
                       #   오프라인: --dry-run (Mock) · --provider fixture (tests/fixtures/l3/)
