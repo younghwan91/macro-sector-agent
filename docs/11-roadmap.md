@@ -164,6 +164,7 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
       엣지 14개 추가로 해소했다 (`docs/macro-dag-audit.md` §10)
 - [x] `channel` 없는 엣지 0개 (스키마 검증) — `scripts/audit_dag.py`
 - [x] `tailwind` 계산 + 공통 인자 횡단면 중앙값 차감 — `src/msa/l2/tailwind.py`, `msa macro`
+      — **2026-08-23 결정(B안, `docs/13`·`docs/03` §4.1): tailwind 는 순위 가중 0. 오버레이(hard_exclude·모순 감사·credit_stress·L3 컨텍스트)만 남긴다**
       (`03-macro-dag.md` §8.3). 단, **오늘 실제 값은 3개 드라이버(GLD·CPER·hyperscaler_capex)로만**
       계산된다 — FRED 23개 드라이버가 `FRED_API_KEY` 없음으로 결측
 - [x] 국면 4분면 시각화 — ASCII 차트 + 24개월 CSV (`regime.txt`·`regime.csv`, §8.4). PNG 없음.
@@ -175,6 +176,18 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
       36·60개월 창 상관의 부호가 맞는 비율. **불일치 엣지를 고치는 것이 아니라 세는 것**이다.
       기계는 있다 (`src/msa/l2/signcheck.py`, `docs/macro-dag-sign-check.md` 는 실행 불가 기록).
       **실측은 안 됐다** — 451쌍 중 29쌍(ETF·Sharadar 드라이버)만 계산, FRED·수동 기반 422쌍은 키/CSV 대기
+
+## M4.5 · 설계 질문 2 — 거시(L2)를 순위에 다시 넣을 이유가 있는가 (사전 등록, FRED 확보 후)
+
+> 2026-08-23 B안 채택으로 L2 는 오버레이만(순위 가중 0). `docs/13` §5 가 **실행 전에** 고정한 증분 검정 —
+> F0 = S2 단독 vs F1 = 0.70·S2 + 0.30·pct_cs(tailwind) 의 주 창·12M rank-IC 차이(ΔIC) 블록 부트스트랩 CI,
+> hard_exclude 가 뺀 테마의 사후 12M 초과수익, 시도 수 632 → 646 — 를 FRED 드라이버가 들어온 뒤 돌린다.
+
+**완료 기준**
+- [ ] `FRED_API_KEY` → `msa data fred-fetch` → `msa macro` 전 구간 tailwind 시계열 (드라이버 ≥ 20/26 실측)
+- [ ] `docs/13` §5 를 정의 그대로 구현·실행 (`msa backtest l2-increment` 또는 유사), 결과를 `docs/13` §9 로 기록 (기존 절 불변)
+- [ ] ΔIC CI 하한 > 0 이면 **자동 복귀 아님** — 사람이 A 복귀 여부를 별도 커밋으로 결정. 아니면 B 유지
+- [ ] FRED 가 영영 없으면 B 유지를 기본으로 하되 그 사실을 적는다
 
 ## M5 · L4 종목 선정
 **완료 기준**

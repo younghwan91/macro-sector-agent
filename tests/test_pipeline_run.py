@@ -625,3 +625,29 @@ def test_monthly_mock_smoke_on_real_cache(tmp_path: Path) -> None:
         step = res.report.step(name)
         assert step is not None and (step.status == "ok" or step.reason), name
     assert (tmp_path / "sb" / "runs" / res.report.asof / "monthly-report.md").exists()
+
+
+def test_select_themes_applies_l2_hard_exclude_overlay() -> None:
+    """L2 는 오버레이 — hard_exclude 테마는 상위 K 후보에서 빠지고 이름이 기록된다.
+
+    사용자 지정은 유지하되 플래그를 단다."""
+    import pandas as pd
+
+    from msa.pipeline.run import select_themes
+
+    sb = pd.DataFrame(
+        {
+            "score": [0.9, 0.8, 0.7, 0.6, float("nan")],
+            "eligible": [True, True, True, True, False],
+            "rank": [1, 2, 3, 4, float("nan")],
+            "small_sample": [False] * 5,
+        },
+        index=pd.Index(["a", "b", "c", "d", "e"], name="theme"),
+    )
+    sel = select_themes(sb, top_k=3, hard_exclude={"b"})
+    assert sel.from_scoreboard == ("a", "c", "d")
+    assert any("hard_exclude" in n and "b" in n for n in sel.notes)
+    sel2 = select_themes(sb, top_k=2, extra_themes=["b"], hard_exclude={"b"})
+    assert "b" in sel2.selected and any("hard_exclude" in f for f in sel2.flags["b"])
+    # 오버레이가 없으면 순위 그대로
+    assert select_themes(sb, top_k=3).from_scoreboard == ("a", "b", "c")

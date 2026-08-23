@@ -41,7 +41,7 @@ import logging
 import shutil
 import tempfile
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -294,7 +294,11 @@ def _flags(row: pd.Series | None) -> tuple[str, ...]:
 
 
 def select_themes(
-    scoreboard: pd.DataFrame, *, top_k: int = 8, extra_themes: Sequence[str] = ()
+    scoreboard: pd.DataFrame,
+    *,
+    top_k: int = 8,
+    extra_themes: Sequence[str] = (),
+    hard_exclude: Collection[str] = (),
 ) -> ThemeSelection:
     """스코어보드(`Scoreboard.table` 또는 `scoreboard.csv`) → L3 투입 테마.
 
@@ -304,6 +308,12 @@ def select_themes(
     적는다 — 풀 미달 테마로 채우지 않는다. `extra_themes` 는 자격·순위와 무관하게 붙인다(사용자
     지정) — SECULAR·소표본·풀 미달·스코어보드에 없음 플래그를 같이 적는다. SECULAR 테마는 L3 의
     게이트(`docs/04`)가 다룬다 — 여기서 빼지 않는다.
+
+    `hard_exclude` 는 L2 오버레이(`docs/03` §4, 2026-08-23 개정: 거시는 순위에 들어가지 않고
+    `tailwind < −0.5`(가중치 커버리지 ≥ 0.5) 인 테마만 후보에서 뺀다)가 세운 테마 집합이다 —
+    스코어보드
+    상위에서 제외하고 **제외한 이름과 수를 적는다.** 사용자 지정(`extra_themes`)은 제외하지 않되
+    `L2 hard_exclude` 플래그를 단다.
     """
     if top_k < 0:
         raise RunError(f"top_k 는 0 이상: {top_k}")
@@ -320,6 +330,10 @@ def select_themes(
     else:
         elig["_penal"] = 0
     elig = elig.sort_values(["_penal", "score"], ascending=[True, False], kind="mergesort")
+    hx = {str(t) for t in hard_exclude}
+    excluded_l2 = tuple(str(t) for t in elig.index if str(t) in hx)
+    if hx:
+        elig = elig.loc[[t for t in elig.index if str(t) not in hx]]
     from_sb = tuple(str(t) for t in elig.index[:top_k])
 
     extra: list[str] = []
@@ -340,10 +354,19 @@ def select_themes(
         if row is not None and "rank" in row.index and pd.notna(row["rank"]):
             r = int(float(row["rank"]))
         ranks[t] = r
-        flags[t] = _flags(row)
+        fl = _flags(row)
+        if t in hx:
+            fl = (*fl, "L2 hard_exclude (사용자 지정이라 유지)")
+        flags[t] = fl
 
     notes: list[str] = []
     n_elig = int(elig_mask.sum())
+    if excluded_l2:
+        notes.append(
+            f"L2 hard_exclude 로 후보에서 뺀 자격 테마 {len(excluded_l2)}: "
+            + ", ".join(excluded_l2)
+            + " (docs/03 §4 — tailwind < −0.5, 커버리지 ≥ 0.5)"
+        )
     if "eligible" not in sb.columns:
         notes.append(
             "스코어보드에 `eligible` 열이 없다 (S2 이전) — 점수가 있는 테마를 자격으로 봤다"
@@ -724,9 +747,18 @@ def _monthly_steps(
                 reason += " · no-write: latest.json 미갱신"
             report.add(StepResult("macro", status, reason, outs, t.seconds))
 
-    # 3) select
+    # 3) select — L2 는 오버레이: hard_exclude 만 넘긴다 (docs/03 §4 개정 2026-08-23)
     t = _Timer()
-    sel = select_themes(sb, top_k=top_k, extra_themes=extra_themes)
+    hx: list[str] = []
+    if result.macro is not None:
+        try:
+            tt = result.macro.tailwind.table
+            hx = [str(i) for i in tt.index[tt["hard_exclude"].fillna(False).astype(bool)]]
+        except Exception as e:  # 표가 없거나 열이 다르면 오버레이 없음으로 — 이름을 남긴다
+            report.notes.append(f"L2 hard_exclude 를 읽지 못했다 — 오버레이 없이 선정: {_err(e)}")
+    else:
+        report.notes.append("L2 없음 — 오버레이(hard_exclude) 없이 L1 순위만으로 선정")
+    sel = select_themes(sb, top_k=top_k, extra_themes=extra_themes, hard_exclude=hx)
     result.selection = sel
     report.add(
         StepResult(
