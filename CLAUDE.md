@@ -1,6 +1,6 @@
 # macro-sector-agent — 작업 규약
 
-거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 하향식 리서치 파이프라인.
+산업 사이클 → 테마 → 종목 → 포트폴리오 하향식 리서치 파이프라인.
 **현재 M3~M8 구현** (`src/msa/` — L0 데이터 · 테마 유니버스 · L1 스캐너 `msa scan` ·
 L4 종목 선정 `msa picks` · L5 포트 구성기 `msa portfolio` ·
 L3 에이전트 `msa research` · 운영 `msa check`/`msa journal`/`msa ops` · 케이던스 `msa run monthly|weekly`).

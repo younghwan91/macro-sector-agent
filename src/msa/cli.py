@@ -28,7 +28,7 @@ app = typer.Typer(
     add_completion=False,
     no_args_is_help=True,
     help=(
-        "macro-sector-agent — 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 "
+        "macro-sector-agent — 산업 사이클 → 테마 → 종목 → 포트폴리오 "
         "(M1~M8: 데이터·L1 스캐너·L4·L5·L3·운영 — L2 거시 DAG 는 2026-08-23 제거, docs/13)"
     ),
 )
