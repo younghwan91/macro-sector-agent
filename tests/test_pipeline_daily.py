@@ -301,7 +301,9 @@ def test_digest_alert_passes_wording_rule_and_caps_length(env: dict[str, Any]) -
     a = D.build_digest_alert(res.digest, _d.fromisoformat(ASOF2))
     assert_wording_ok(a.text)
     assert len(a.text) <= D.TELEGRAM_MAX_CHARS
-    assert "[일간 후보 다이제스트]" in a.text and "상위 3테마" in a.text
+    assert "[일간 후보 다이제스트]" in a.text and "후보 테마" in a.text
+    # 테마·종목·플래그 뜻이 다 실린다 (사람이 알림만 보고 판단할 수 있어야 한다)
+    assert "종합" in a.text and "전문:" in a.text
     assert "투자 조언이 아니다" in a.text and "docs/02 §7.1" in a.text
     if "외 " in a.text:  # 잘랐다면 자른 개수를 적는다 — 조용한 절단 금지
         assert "건" in a.text

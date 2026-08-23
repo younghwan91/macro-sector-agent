@@ -399,20 +399,76 @@ def render_digest_md(digest: dict[str, Any]) -> str:
 # ---------------------------------------------------------------- 텔레그램
 
 
-def build_digest_alert(digest: dict[str, Any], asof_d: date) -> Alert:
-    """다이제스트 → `AlertKind.DAILY_DIGEST` 알림. "오늘 새로 올라온 것" + 상위 3테마 한 줄씩,
-    본문 ≤ `TELEGRAM_MAX_CHARS`(4000) 자 — 넘치면 새 항목을 줄이고 **자른 개수를 적는다**
-    (`CLAUDE.md` §2 조용한 절단 금지). 문구 규약은 `format_alert` 안의 `assert_wording_ok` 가
-    강제한다."""
-    news = new_item_lines(digest["diff"])
-    top3 = [
-        f"{t['theme']} — 점수 {_f2(t['score'])} · pool {_f2(t['pool'])}"
-        + (f" · {', '.join(t['flags'])}" if t["flags"] else "")
-        for t in digest["themes"][:3]
-    ]
-    path = f"state/daily/{digest['asof']}/digest.md"
+#: 플래그 → 사람이 읽는 뜻. 알림에 쓴 플래그만 범례로 붙인다 (`docs/02` §9 · `docs/04` §3).
+FLAG_MEANING: tuple[tuple[str, str], ...] = (
+    ("SECULAR", "SECULAR = 사양산업일 수 있어 5축 게이트 통과를 입증해야 후보다 (docs/04 §3)"),
+    (
+        "소표본",
+        "소표본 = 생존 구성원이 min_constituents 미만 — 중앙값 통계 신뢰 불가, 상위 K 에서 뒤로",
+    ),
+    ("풀 미달", "풀 미달 = A·B 자격(≥0.5) 미달 — 순위 없이 관찰 목록 (docs/02 §7.1)"),
+    ("short_hist", "short_hist = 자기이력 7년 미만이라 백분위 대신 z-score 를 썼다"),
+    (
+        "axis1:data_missing",
+        "axis1:data_missing = 물량 시계열이 없어 가치함정 축 1 을 계산하지 못했다",
+    ),
+    ("breadth_lead", "breadth_lead=Nm = 구성원 절반이 200일선을 지수보다 N개월 먼저 넘었다"),
+    ("no_etf_proxy", "no_etf_proxy = 대조할 ETF 가 없어 자체지수 검증이 불가하다"),
+    ("blocks_missing", "blocks_missing = 그 블록의 지표가 전부 없어 남은 가중치로 재정규화했다"),
+)
 
-    def make(kept: int) -> Alert:
+
+def _alert_pick_line(p: dict[str, Any]) -> str:
+    """알림용 종목 한 줄 — 사실만. md 의 `_pick_line` 과 달리 NEW 표시를 항목 자체에서 읽는다."""
+    grp = p.get("group") or "—"
+    bits = [f"{p['ticker']} {grp} 종합 {_f2(p.get('composite'))}"]
+    stm = [p.get("s_pct"), p.get("t_pct"), p.get("m_pct")]
+    if any(x is not None for x in stm):
+        bits.append("S/T/M " + "/".join(_f2(x) for x in stm))
+    if p.get("price") is not None:
+        bits.append(f"${float(p['price']):,.2f}")
+    if p.get("adv20_usd") is not None:
+        bits.append(f"ADV ${float(p['adv20_usd']) / 1e6:,.1f}M")
+    rf = p.get("red_flags")
+    if rf:  # ranking.csv 는 ";" 로 이어붙인 문자열이다 — 리스트로 다루면 글자 단위로 쪼개진다
+        bits.append("레드플래그[" + (rf if isinstance(rf, str) else ";".join(rf)) + "]")
+    if p.get("new_in_top"):
+        bits.append("NEW")
+    return " · ".join(bits)
+
+
+def build_digest_alert(digest: dict[str, Any], asof_d: date, *, picks_per_theme: int = 3) -> Alert:
+    """다이제스트 → `AlertKind.DAILY_DIGEST` 알림.
+
+    담는 것: 오늘 새로 올라온 것 · **상위 K 테마 전부**(점수·pool·플래그) · **테마별 종목**
+    (그룹·종합·S/T/M·가격·거래대금·레드플래그) · 쓰인 플래그의 뜻 · 보유 점검 요약.
+    본문 ≤ `TELEGRAM_MAX_CHARS`(4000). 넘치면 **종목 → 테마 → 새 항목** 순으로 줄이고
+    **줄인 개수를 본문에 적는다** (`CLAUDE.md` §2 조용한 절단 금지). 문구 규약은
+    `format_alert` 안의 `assert_wording_ok` 가 강제한다."""
+    news = new_item_lines(digest["diff"])
+    path = f"state/daily/{digest['asof']}/digest.md"
+    all_themes = digest["themes"]
+
+    def theme_blocks(n_themes: int, n_picks: int) -> list[dict[str, Any]]:
+        out = []
+        for t in all_themes[:n_themes]:
+            head = f"{t['theme']} — 점수 {_f2(t['score'])} · pool {_f2(t['pool'])}"
+            if t.get("rank") is not None:
+                head += f" · 스코어보드 {int(t['rank'])}위"
+            if t.get("flags"):
+                head += f" · {', '.join(t['flags'])}"
+            picks = [_alert_pick_line(p) for p in (t.get("picks") or [])[:n_picks]]
+            n_elig = len(t.get("eligible_tickers") or [])
+            out.append({"head": head, "picks": picks, "n_eligible": n_elig})
+        return out
+
+    def legend_for(blocks: list[dict[str, Any]]) -> list[str]:
+        text = " ".join(b["head"] for b in blocks)
+        return [meaning for key, meaning in FLAG_MEANING if key in text]
+
+    def make(n_themes: int, n_picks: int, kept_news: int) -> Alert:
+        blocks = theme_blocks(n_themes, n_picks)
+        pc = digest.get("positions_check")
         return Alert(
             AlertKind.DAILY_DIGEST,
             asof_d,
@@ -420,20 +476,34 @@ def build_digest_alert(digest: dict[str, Any], asof_d: date) -> Alert:
             None,
             {
                 "asof": digest["asof"],
-                "new_items": news[:kept],
-                "omitted": len(news) - kept,
-                "top3": top3,
+                "new_items": news[:kept_news],
+                "omitted": len(news) - kept_news,
+                "themes": blocks,
+                "themes_omitted": len(all_themes) - n_themes,
+                "picks_per_theme": n_picks,
+                "legend": legend_for(blocks),
+                "check": pc,
                 "path": path,
             },
         )
 
-    kept = len(news)
-    a = make(kept)
-    a.text = format_alert(a)
+    def built(n_themes: int, n_picks: int, kept_news: int) -> Alert:
+        a = make(n_themes, n_picks, kept_news)
+        a.text = format_alert(a)
+        return a
+
+    n_t, n_p, kept = len(all_themes), picks_per_theme, len(news)
+    a = built(n_t, n_p, kept)
+    # 줄이는 순서: 종목 → 테마 → 새 항목. 줄인 사실은 본문에 남는다.
+    while len(a.text) > TELEGRAM_MAX_CHARS and n_p > 1:
+        n_p -= 1
+        a = built(n_t, n_p, kept)
+    while len(a.text) > TELEGRAM_MAX_CHARS and n_t > 3:
+        n_t -= 1
+        a = built(n_t, n_p, kept)
     while len(a.text) > TELEGRAM_MAX_CHARS and kept > 0:
         kept -= 1
-        a = make(kept)
-        a.text = format_alert(a)
+        a = built(n_t, n_p, kept)
     return a
 
 

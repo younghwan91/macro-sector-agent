@@ -152,14 +152,39 @@ def format_alert(a: Alert) -> str:
     elif a.kind is AlertKind.DAILY_DIGEST:
         head = f"[일간 후보 다이제스트] {f.get('asof')}"
         news = f.get("new_items") or []
-        top3 = f.get("top3") or []
         L = ["오늘 새로 올라온 것:"]
         L += [f"  - {x}" for x in news] if news else ["  (없음)"]
         omitted = int(f.get("omitted") or 0)
         if omitted:  # 조용한 절단 금지 — 자른 개수를 적는다 (CLAUDE.md §2)
             L.append(f"  … 외 {omitted}건 (전문: {f.get('path', 'state/daily/')})")
-        L.append("상위 3테마:")
-        L += [f"  {i + 1}. {t}" for i, t in enumerate(top3)] or ["  (없음)"]
+        blocks = f.get("themes") or []
+        n_p = int(f.get("picks_per_theme") or 0)
+        L.append("")
+        L.append(f"후보 테마 {len(blocks)}개 (테마당 종목 {n_p}개까지):")
+        for i, b in enumerate(blocks):
+            L.append(f"  {i + 1}. {b['head']}")
+            L += [f"     · {x}" for x in b.get("picks") or []] or ["     · (적격 종목 없음)"]
+            n_e = int(b.get("n_eligible") or 0)
+            if n_e > len(b.get("picks") or []):
+                L.append(f"     ({n_e}개 적격 중 {len(b['picks'])}개 표시)")
+        t_om = int(f.get("themes_omitted") or 0)
+        if t_om:
+            L.append(f"  … 외 테마 {t_om}개 (전문: {f.get('path', 'state/daily/')})")
+        legend = f.get("legend") or []
+        if legend:
+            L.append("")
+            L.append("플래그 뜻:")
+            L += [f"  - {x}" for x in legend]
+        pc = f.get("check")
+        if pc:
+            L.append("")
+            L.append(
+                f"보유 점검: 포지션 {pc.get('positions')} · 알림 {pc.get('alerts')} · "
+                f"문제 {len(pc.get('problems') or [])} · 미체결 제안 {pc.get('unchecked')}"
+            )
+            L += [f"  - {x}" for x in (pc.get("problems") or [])]
+        L.append("")
+        L.append(f"전문: {f.get('path', 'state/daily/')}")
         L.append("측정값·후보 목록이다 — L1 점수의 예측력은 약하다 (docs/02 §7.1)")
         body = "\n".join(L)
     elif a.kind is AlertKind.MONTHLY_SUMMARY:
