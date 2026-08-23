@@ -168,8 +168,15 @@ positions:
     runner_ma_weeks: 10
     thesis_snapshot: journal/2026-09-01-uranium-entry.thesis.yaml
     journal_entry: journal/2026-09-01-uranium-entry.md
-    status: open                      # open | closed
+    status: open                      # proposed | open | closed
 ```
+
+`status: proposed` 는 L5 가 낸 **미체결 제안** 행이다 (`msa portfolio --emit-positions` →
+`state/portfolio/<date>/positions-proposal.yaml`, 배선 W2 2026-08-23). 이 상태에서만 `thesis_snapshot`·
+`journal_entry` 를 비워 둘 수 있고, `msa check` 는 이 행을 **점검하지 않고** 리포트 머리에 "미체결 제안 N건 — 점검하지
+않았다. 집행은 사람이 한다" 로만 적는다 (문제·종료 코드에 넣지 않는다 — 제안은 오류가 아니다). 사람이 체결을 반영해
+`open` 으로 올리면 그때부터 저널 링크가 필수가 되고 점검 대상이 된다. 승격 절차는 같은 디렉터리의
+`positions-proposal.md`. **기계는 `state/positions.yaml` 을 쓰지 않는다.**
 
 **`watchlist.yaml`** (`state_files.WatchItem`): `theme` · `added_at` · `reason`
 (`contested` | `axis1_unavailable` | `awaiting_condition` | `human`) · `waiting_condition`(비면 거부 —
@@ -206,10 +213,10 @@ check: {kind: drawdown_from_high, ticker: CCJ, pct: 0.30, lookback_days: 252}
 "1영업일" 을 못 쓰므로 1~3일에 깨우고 `msa ops due monthly` 가 그 달 첫 평일일 때만 0 을 돌려준다 —
 미국 공휴일은 보지 않는다 (1일이 공휴일이면 하루 늦게 돈다).
 
-**아직 연결되지 않은 것**: `positions.yaml` 은 L5(M6) 가, thesis 스냅샷은 L3(M7) 또는 사람(M6 구간)이,
-`rejections.yaml` 의 행 적재는 월간 스캔(L3/L4 게이트 결과)이 만든다. M8 은 그 파일들을 **읽는 쪽**과
-사람이 쓰는 쪽(`msa journal new`)만 구현했다. 월간 요약 알림(`monthly_summary`)의 "계획 변경분" 도 L5
-산출물이 생긴 뒤에 채운다.
+**아직 연결되지 않은 것**: thesis 스냅샷은 L3(M7) 또는 사람(M6 구간)이, `rejections.yaml` 의 행 적재는
+월간 스캔(L3/L4 게이트 결과)이 만든다. M8 은 그 파일들을 **읽는 쪽**과 사람이 쓰는 쪽(`msa journal new`)만
+구현했다. `positions.yaml` 은 L5 가 **제안**(`positions-proposal.yaml`, 위 `proposed`)까지만 만들고 실제 파일은
+사람이 쓴다 — 배선 W2. 월간 요약 알림(`monthly_summary`)의 "계획 변경분" 도 L5 산출물이 생긴 뒤에 채운다.
 
 ## 5. 실패 시 동작
 

@@ -429,3 +429,16 @@ C6 `c ≥ 0.5` 는 풀기 전 필터. `cvxpy` + CLARABEL (설치된 원뿔 솔�
 **남은 것.** (a) 케이스 스터디 6건 → `state/cases/cases.yaml` (`verified: true` + 출처) — 들어오는 순간
 C1-(ii) 가 살아난다. (b) `msa picks` → `picks.csv` 배선 (M5 뒤). (c) §7.4 기존 보유 병합 — 미구현.
 (d) `× 0.5` 재검토는 (a) 와 같은 시점이다 (§2.4).
+
+**배선 W2 (2026-08-23) — 계획 → `positions.yaml` 제안 (`l5/positions.py`, `msa portfolio --emit-positions`).**
+`PortfolioResult.positions` 를 `msa check` 가 읽는 `state_files.Position` 모양으로 옮겨
+`state/portfolio/<date>/positions-proposal.yaml` (+ `positions-proposal.md` 승격 체크리스트) 에 쓴다.
+**`state/positions.yaml` 은 쓰지 않는다** — 체결 반영은 사람의 일이고(`CLAUDE.md` §8), 행 복사·`status: open`
+승격·저널 링크(`thesis_snapshot`·`journal_entry`) 채우기는 체크리스트의 절차다. 사상은 모듈 머리말의 표가 정본이다.
+코드가 선언한 것 둘: (i) **`tier2_stop_price` 는 진입가 × (1 − 0.35)** — 1단만 체결된 시점의 평단이 진입가이고
+`msa check` 가 "평단 −35% 와 1% 이내" 로 대조하기 때문이다. §4 표의 완납 시 값(초기가 −40.5% 등,
+`tier2_effective_price`)은 행의 `note` 에 남기고 사다리가 채워질 때마다 사람이 갱신한다. (ii) **TP 의 기계 가격은
+"또는" 조건 중 먼저 오는(낮은) 쪽** (TP1 `min(+2R, P50)` · TP2 `min(P75, 고점 50%)`), 둘 다 없으면 manual.
+`role` 은 `anchor`/`royalty`/`midstream` → `anchor`, 그 외 → `torque` (`Pick.is_anchor` 와 같은 묶음, 원 role 은
+`note`). `entry_price` 가 없는 종목이 하나라도 있으면 제안 전체를 거부한다 — 가격 없는 사다리는 합칠 수 없다.
+테스트 `tests/test_l5_positions.py`.

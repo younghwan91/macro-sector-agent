@@ -5,6 +5,8 @@
 - `plan.md` — `docs/07` §6 형식의 매매계획서 (코드 블록)
 - `diagnostics.json` — 솔버·상태·완화 · λ·c·c̃·출처 · C1 두 방식과 구속 · `L_i` 두 항과 사유 ·
   ENB·p₁₂₃ · 공분산 출처 · 축 1 가능 목록 · 경고 전부
+- `positions-proposal.{yaml,md}` (선택, `emit_positions=True` / `--emit-positions`) —
+  `state/positions.yaml` 모양의 **미체결 제안** + 승격 체크리스트 (`l5/positions.py`)
 
 **자동 주문은 없다** (`CLAUDE.md` §8). 이 모듈은 파일을 쓴다. 주문은 사람이 낸다.
 """
@@ -459,9 +461,11 @@ def run_portfolio(
     cache_dir: Path | str | None = None,
     themes_path: Path | str | None = None,
     state_dir: Path | str | None = None,
+    emit_positions: bool = False,
 ) -> PortfolioResult:
     """CLI 진입점. 캐시의 테마 EW 수익률을 읽고, `<inputs>/returns.csv` 가 있으면 종목 공분산에
-    쓴다."""
+    쓴다. `emit_positions` 면 산출 디렉터리에 `positions-proposal.yaml` 도 남긴다 (`write` 일 때만 —
+    `state/positions.yaml` 은 건드리지 않는다)."""
     p = paths()
     out_root = replace(p, state=Path(state_dir)).portfolio if state_dir is not None else p.portfolio
     d = Path(inputs_dir)
@@ -485,6 +489,15 @@ def run_portfolio(
     )
     if write:
         res = write_outputs(res, out_root / str(res.asof))
+        if emit_positions:
+            from msa.l5.positions import emit_positions_proposal
+
+            assert res.out_dir is not None
+            emit_positions_proposal(res, res.out_dir)
+    elif emit_positions:
+        raise ValueError(
+            "emit_positions 는 write=True 일 때만 — 제안은 파일로만 낸다 (--no-write 와 양립 불가)"
+        )
     return res
 
 

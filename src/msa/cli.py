@@ -552,6 +552,12 @@ def portfolio(
         [], "--cluster-cap", help="선택적 클러스터 상한 name=cap (docs/07 §2.5 — 요구했을 때만)"
     ),
     no_write: bool = _no_write_option("state/portfolio/"),
+    emit_positions: bool = typer.Option(
+        False,
+        "--emit-positions",
+        help="positions.yaml 모양의 미체결 제안(positions-proposal.yaml + .md 체크리스트)도 쓴다. "
+        "state/positions.yaml 은 건드리지 않는다 — 승격은 사람이 (--no-write 와 양립 불가)",
+    ),
     verbose: bool = OPT_VERBOSE,
 ) -> None:
     """L5 포트 구성 + 매매계획서 (docs/07). 산출물: state/portfolio/<date>/"""
@@ -559,6 +565,10 @@ def portfolio(
     from msa.l5.run import cluster_caps_from_args, run_portfolio
 
     _setup_logging(verbose)
+    if emit_positions and no_write:
+        raise typer.BadParameter(
+            "--emit-positions 는 --no-write 와 같이 줄 수 없다 (제안은 파일이다)"
+        )
     res = run_portfolio(
         asof=asof or None,
         inputs_dir=inputs,
@@ -566,9 +576,15 @@ def portfolio(
         capital_usd=capital if capital > 0 else None,
         cluster_caps=cluster_caps_from_args(cluster_cap),
         write=not no_write,
+        emit_positions=emit_positions,
     )
     typer.echo(render_plan(res))
     _echo_saved(res.out_dir)
+    if emit_positions and res.out_dir is not None:
+        typer.echo(
+            f"positions 제안: {res.out_dir / 'positions-proposal.yaml'} (미체결 — "
+            "승격 절차는 positions-proposal.md · state/positions.yaml 은 쓰지 않았다)"
+        )
 
 
 # ---------------------------------------------------------------------------
