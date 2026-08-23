@@ -492,6 +492,25 @@ def block_bootstrap_mean(
     return out
 
 
+def mean_pairwise_corr(x: pd.DataFrame, *, min_months: int = 60) -> tuple[int, float, float]:
+    """열 간 평균 쌍별 상관 ρ̄ 와 유효 열 수 `n/(1+(n−1)ρ̄)`. 반환 (n, ρ̄, n_eff).
+
+    `min_months` 관측 미만인 열은 버리고, 남은 열이 2개 미만이면 (n, NaN, NaN).
+    `avg_cross_corr`(테마 간)와 L4 백테스트(테마 내 종목 간·테마 간 IC)가 같은 식을 쓴다.
+    """
+    x = x.loc[:, x.notna().sum() >= min_months]
+    n = x.shape[1]
+    if n < 2:
+        return n, float("nan"), float("nan")
+    c = x.corr(min_periods=min_months).to_numpy()
+    vals = c[np.triu_indices(n, 1)]
+    vals = vals[~np.isnan(vals)]
+    rho = float(vals.mean()) if len(vals) else float("nan")
+    if math.isnan(rho):
+        return n, rho, float("nan")
+    return n, rho, float(n / (1.0 + (n - 1) * rho))
+
+
 def avg_cross_corr(
     panel: ThemePanel, start: pd.Timestamp | None, *, min_months: int = 60
 ) -> dict[str, float]:
@@ -507,20 +526,10 @@ def avg_cross_corr(
     out: dict[str, float] = {}
     for name, rr in (("raw", r), ("excess", r.sub(spy, axis=0))):
         x = rr.loc[start:] if start is not None else rr
-        x = x.loc[:, x.notna().sum() >= min_months]
-        n = x.shape[1]
-        if n < 2:
-            out.update({f"n_themes_{name}": float(n), f"avg_corr_{name}": float("nan")})
-            out[f"n_eff_themes_{name}"] = float("nan")
-            continue
-        c = x.corr(min_periods=min_months).to_numpy()
-        vals = c[np.triu_indices(n, 1)]
-        vals = vals[~np.isnan(vals)]
-        rho = float(vals.mean()) if len(vals) else float("nan")
-        neff = n / (1.0 + (n - 1) * rho) if not math.isnan(rho) else float("nan")
+        n, rho, neff = mean_pairwise_corr(x, min_months=min_months)
         out[f"n_themes_{name}"] = float(n)
         out[f"avg_corr_{name}"] = rho
-        out[f"n_eff_themes_{name}"] = float(neff)
+        out[f"n_eff_themes_{name}"] = neff
     return out
 
 
@@ -746,17 +755,22 @@ def dsr_of_series(x: pd.Series, n_trials: int, *, horizon: int) -> dict[str, flo
 
 
 def pbo_of_spreads(
-    sp: pd.DataFrame, *, window: str, horizon: int, max_splits: int = PBO_MAX_SPLITS
+    sp: pd.DataFrame,
+    *,
+    window: str,
+    horizon: int,
+    max_splits: int = PBO_MAX_SPLITS,
+    variants: Sequence[str] = VARIANTS,
 ) -> dict[str, Any]:
-    """열 = 스코어 변형 7 의 월별 스프레드 → CSCV PBO (S=16, 기본 전수 조합)."""
+    """열 = 스코어 변형(L1 은 7)의 월별 스프레드 → CSCV PBO (S=16, 기본 전수 조합)."""
     sub = _window_slice(sp[sp["horizon"] == horizon], window)
-    mat = sub.pivot(index="date", columns="variant", values="spread")[list(VARIANTS)].sort_index()
+    mat = sub.pivot(index="date", columns="variant", values="spread")[list(variants)].sort_index()
     mat = mat.dropna(how="any")
     rec: dict[str, Any] = {
         "window": window,
         "horizon": horizon,
         "n_months": len(mat),
-        "strategies": list(VARIANTS),
+        "strategies": list(variants),
     }
     if len(mat) < PBO_BLOCKS * 2:
         rec.update(pbo=float("nan"), note=f"관측 {len(mat)} < {PBO_BLOCKS * 2}")

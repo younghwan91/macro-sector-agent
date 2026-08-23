@@ -75,6 +75,10 @@ T_COMPONENTS: tuple[str, ...] = (
 T_BOOLEAN = ("marginal_producer",)
 M_BOOLEAN = ("stage2", "vcp_base", "above_50d")
 M_PCT = ("from_52w_low", "rvol_expansion")
+#: M 축이 평균하는 6개 — `timing_components` 의 열 순서다 (합산 순서를 바꾸지 않는다).
+M_COMPONENTS: tuple[str, ...] = (*M_BOOLEAN, "rs_rating", *M_PCT)
+#: S 원점수의 3개 하위 항목 (`survival` 이 내놓는 열 이름). `docs/14` §1 Q4 의 "S 3개".
+S_COMPONENTS: tuple[str, ...] = ("runway_score", "leverage_score", "penalty_score")
 #: 레드플래그 감점 4종 — `features.red_flags` 문자열(`;` 구분)에 키가 들어 있으면 발동.
 RED_FLAG_KEYS: tuple[str, ...] = (
     "full_capital_impairment",
@@ -98,6 +102,19 @@ assert abs(sum(AXIS_WEIGHTS.values()) - 1.0) < 1e-9
 _REASON_NO_SF1 = "재무 없음 (SF1 에 행 0개 — 20-F 해외발행사 등 미수록) — 생존 필터 판정 불가"
 _REASON_STALE = "재무 없음 (asof 이전 15개월 내 분기 없음) — 생존 필터 판정 불가"
 _REASON_RUNWAY_NA = "런웨이 판정 불가 (현금흐름표 또는 현금 없음) — 하드 필터 미통과"
+
+#: 하드 제외 **사유 코드** — `docs/14` §1 Q3 의 E1~E5. 앞 셋이 알파 주장, 뒤 둘은 데이터 사정.
+#: 한 종목이 여러 사유에 동시에 걸릴 수 있다 (코드별로 따로 센다).
+HARD_REASON_CODES: tuple[str, ...] = ("E1", "E2", "E3", "E4", "E5")
+HARD_REASON_LABELS: dict[str, str] = {
+    "E1": f"cash_runway_q < {RUNWAY_MIN_Q:.0f}",
+    "E2": f"net_debt_ebitda > {ND_EBITDA_EXCLUDE:.0f}x",
+    "E3": f"maturity_wall_12m > {MATURITY_WALL_EXCLUDE}",
+    "E4": "런웨이 판정 불가 (현금흐름표 없음)",
+    "E5": "fund_status ∈ {none, stale}",
+}
+#: 알파 주장인 사유 — `docs/14` §4.1 이 합격 판정을 거는 것은 이 셋뿐이다.
+HARD_REASON_ALPHA: tuple[str, ...] = ("E1", "E2", "E3")
 
 
 def _num(s: pd.Series) -> pd.Series:
@@ -133,6 +150,26 @@ def _tagged(mask: pd.Series, text: Any) -> pd.Series:
     return pd.Series(np.where(mask.fillna(False).astype(bool), text, ""), index=mask.index)
 
 
+def hard_filter_flags(frame: pd.DataFrame) -> pd.DataFrame:
+    """사유 **코드별** 하드 제외 불리언 (index ticker · 열 `HARD_REASON_CODES`).
+
+    `hard_filters` 의 문구가 붙는 마스크와 **같은 마스크**다 (그 함수가 이것을 쓴다). 백테스트가
+    사유별로 제외군을 나눠 재기 위해 필요하다 (`docs/14` §1 Q3 · §2.5). 판정값은 바뀌지 않는다.
+    """
+    _check_columns(frame)
+    has_fund = frame["fund_calendardate"].notna()
+    runway = _num(frame["cash_runway_q"])
+    nd = _num(frame["net_debt_ebitda"])
+    wall = _num(frame["maturity_wall_12m"])
+    out = pd.DataFrame(index=frame.index)
+    out["E1"] = (has_fund & (runway < RUNWAY_MIN_Q)).fillna(False).astype(bool)
+    out["E2"] = (has_fund & (nd > ND_EBITDA_EXCLUDE)).fillna(False).astype(bool)
+    out["E3"] = (has_fund & (wall > MATURITY_WALL_EXCLUDE)).fillna(False).astype(bool)
+    out["E4"] = (has_fund & runway.isna()).fillna(False).astype(bool)
+    out["E5"] = (~has_fund).fillna(False).astype(bool)
+    return out[list(HARD_REASON_CODES)]
+
+
 def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
     """하드 제외 판정. 반환 index ticker: `excluded`(bool), `reason`(str; 복수는 ' · ' 로 연결).
 
@@ -140,21 +177,21 @@ def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
     필터가 있는 척하는 것이다. 사유에 그렇게 적는다. `going_concern` 은 입력이 없어 적용하지 못한다.
     """
     _check_columns(frame)
-    has_fund = frame["fund_calendardate"].notna()
+    flags = hard_filter_flags(frame)
     runway = _num(frame["cash_runway_q"])
     nd = _num(frame["net_debt_ebitda"])
     wall = _num(frame["maturity_wall_12m"])
     no_sf1 = frame["fund_status"].astype(str) == FundStatus.NONE
     nd_unit = (frame["nd_basis"] == "ebitda").map({True: "EBITDA", False: "시총(EBITDA≤0 대체)"})
 
-    no_fund = _tagged(~has_fund, np.where(no_sf1, _REASON_NO_SF1, _REASON_STALE))
-    runway_na = _tagged(has_fund & runway.isna(), _REASON_RUNWAY_NA)
+    no_fund = _tagged(flags["E5"], np.where(no_sf1, _REASON_NO_SF1, _REASON_STALE))
+    runway_na = _tagged(flags["E4"], _REASON_RUNWAY_NA)
     runway_low = _tagged(
-        has_fund & (runway < RUNWAY_MIN_Q),
+        flags["E1"],
         runway.map(lambda r: f"런웨이 {r:.2f}분기 < {RUNWAY_MIN_Q:.0f}"),
     )
     nd_high = _tagged(
-        has_fund & (nd > ND_EBITDA_EXCLUDE),
+        flags["E2"],
         pd.Series(
             [
                 f"순부채/{b} {x:.1f}× > {ND_EBITDA_EXCLUDE:.0f}"
@@ -164,7 +201,7 @@ def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
         ),
     )
     wall_high = _tagged(
-        has_fund & (wall > MATURITY_WALL_EXCLUDE),
+        flags["E3"],
         wall.map(lambda w: f"만기벽(12m 대용) {w:.2f} > {MATURITY_WALL_EXCLUDE}"),
     )
     out = pd.DataFrame(index=frame.index)
@@ -250,17 +287,26 @@ def torque(frame: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def timing(frame: pd.DataFrame) -> pd.DataFrame:
-    """M 원점수. 열: m_raw, m_n_inputs."""
-    idx = frame.index
-    comps = pd.DataFrame(index=idx)
+def timing_components(frame: pd.DataFrame) -> pd.DataFrame:
+    """M 축이 평균하는 6개 구성 요소 (index ticker · 열 `M_COMPONENTS`).
+
+    `torque` 가 `tp_<comp>` 로 이미 내놓는 것의 M 판이다 — 백테스트의 지표 단독 IC(`docs/14` §1 Q4)
+    가 축이 실제로 먹는 값을 읽어야 하기 때문에 함수로 뺐다. `timing` 이 이것을 그대로 평균한다.
+    """
+    comps = pd.DataFrame(index=frame.index)
     for c in M_BOOLEAN:
         comps[c] = _bool01(frame[c])
     comps["rs_rating"] = _num(frame["rs_rating"]) / 100.0
     for c in M_PCT:
         comps[c] = _pct(frame[c])
+    return comps[list(M_COMPONENTS)]
+
+
+def timing(frame: pd.DataFrame) -> pd.DataFrame:
+    """M 원점수. 열: m_raw, m_n_inputs."""
+    comps = timing_components(frame)
     n = comps.notna().sum(axis=1)
-    out = pd.DataFrame(index=idx)
+    out = pd.DataFrame(index=frame.index)
     out["m_raw"] = comps.mean(axis=1).where(n >= M_MIN_INPUTS, np.nan)
     out["m_n_inputs"] = n
     return out

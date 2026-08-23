@@ -1,7 +1,7 @@
 """`msa` CLI.
 
 도는 것: `data status`·`data audit`·`data fred-lag`·`data fred-fetch`(M1) · `scan`(M3) ·
-`backtest l1`(M3.5) · `picks`(M5) · `portfolio`(M6) · `research`(M7) ·
+`backtest l1`(M3.5) · `backtest l4`(docs/14) · `picks`(M5) · `portfolio`(M6) · `research`(M7) ·
 `check`·`journal *`·`ops *`(M8) · `portfolio-inputs`·`run *`(배선 W1·W4).
 남은 스텁은 없다. 새 스텁을 두게 되면 `--help` 에는 나오되 호출 시 `NotImplementedError` 를
 던지게 한다 — 있는 척하는 스텁이 조용히 빈 결과를 내는 것보다 낫다 (`CLAUDE.md` §2).
@@ -404,6 +404,41 @@ def backtest_l1_structures(
     _setup_logging(verbose)
     res = run_structures(write=not no_write, force=force)
     typer.echo(render_structure_report(res))
+
+
+@backtest_app.command("l4")
+@cli_guard
+def backtest_l4(
+    force: bool = typer.Option(
+        False, "--force", help="테마별 특성 패널 parquet 캐시를 무시하고 다시 만든다"
+    ),
+    jobs: int = typer.Option(0, "--jobs", help="테마 단위 병렬 프로세스 수 (0 = min(14, cpu−2))"),
+    themes: str = typer.Option(
+        "", "--themes", help="스모크 전용 — 이 테마들만 (쉼표). 주면 산출물이 -smoke 로 갈린다"
+    ),
+    max_months: int = typer.Option(
+        0, "--max-months", help="스모크 전용 — 격자 마지막 N 개월만. 주면 판정하지 않는다"
+    ),
+    no_write: bool = _no_write_option("state/backtests/"),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """L4 종목 선정 백테스트 — docs/14 사전 등록의 집행 (테마 내 rank-IC · 축 · 하드 필터 · 지표).
+
+    산출물: state/backtests/l4/<store_end>/. 결과로 축 가중치·하드 임계를 바꾸지 않는다
+    (CLAUDE.md §1, docs/14 §4.2·§4.3). --themes/--max-months 는 스모크용이며 판정을 내지 않는다.
+    """
+    from msa.l4.backtest import render_report, run_backtest
+
+    _setup_logging(verbose)
+    res = run_backtest(
+        write=not no_write,
+        force=force,
+        jobs=jobs or None,
+        themes_filter=[t.strip() for t in themes.split(",") if t.strip()] or None,
+        max_months=max_months or None,
+    )
+    typer.echo(render_report(res))
+    _echo_saved(res.out_dir)
 
 
 @app.command()

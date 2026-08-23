@@ -86,6 +86,11 @@ class Paths:
         return self.state / "backtests" / "l1"
 
     @property
+    def backtests_l4(self) -> Path:
+        """L4 백테스트 (`state/backtests/l4/<store_end>/`, `docs/14` · `msa backtest l4`)."""
+        return self.state / "backtests" / "l4"
+
+    @property
     def calibration(self) -> Path:
         return self.state / "calibration"
 

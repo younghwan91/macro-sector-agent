@@ -91,3 +91,9 @@ def test_backtest_subgroup_registered() -> None:
     r2 = runner.invoke(app, ["backtest", "l1", "--help"])
     assert r2.exit_code == 0
     assert "--no-write" in r2.stdout
+    # L4 (docs/14 사전 등록의 집행)
+    assert "l4" in r.stdout
+    r3 = runner.invoke(app, ["backtest", "l4", "--help"])
+    assert r3.exit_code == 0
+    for opt in ("--no-write", "--force", "--jobs", "--themes", "--max-months"):
+        assert opt in r3.stdout
