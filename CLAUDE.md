@@ -150,6 +150,8 @@ msa run quarterly     # 분기 명령 목록 (ops calibration · ops rejections-
 msa backtest l1       # L1 백테스트 관문 0 (M3.5) — rank-IC·스프레드·breadth_lead·DSR/PBO.
                       #   산출물 state/backtests/l1/<date>/ · 판정 docs/backtest-l1.md. 튜닝 루프가 아니다
 msa backtest l1-structures  # M3.6 — A 집계 구조 검정 S0/S1/S2 (docs/12 §4 사전 등록). 결과 docs/backtest-l1.md §12
+msa backtest l4       # L4 종목 선정 백테스트 (docs/14 사전 등록의 집행) — 테마 내 rank-IC·축 단독·하드 필터.
+                      #   산출물 state/backtests/l4/<date>/ · --jobs 병렬 · 테마별 parquet 캐시라 중단해도 이어서 돈다
 ```
 
 텔레그램 배달은 `MSA_TELEGRAM_TOKEN` · `MSA_TELEGRAM_CHAT_ID` 가 둘 다 있을 때만 — 없으면 "not configured".

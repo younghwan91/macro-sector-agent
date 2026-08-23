@@ -26,3 +26,6 @@ state/runs/
 state/calibration/
 state/logs/
 state/backtests/
+
+# Claude Code 워크트리·세션 산출물
+.claude/
