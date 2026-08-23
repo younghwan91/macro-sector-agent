@@ -201,6 +201,12 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "sma200_up_1m",
 )
 
+#: L5 입력(`picks.csv`)으로 내보낼 때 읽는 특성 이름 — `msa.pipeline.assemble` 이 쓴다.
+#: `price` = asof 이하 마지막 **비조정** 종가(`closeunadj`; 계획 기준가), `adv20_usd` = 20일 평균
+#: 달러 거래대금(C4 유동성). 종목 고유 변동성·밸류 회복가·직전 고점가는 이 표에 **없다**.
+ENTRY_PRICE_FEATURE = "price"
+LIQUIDITY_FEATURE = "adv20_usd"
+
 #: `price_features` 가 만들고 특성 표로 그대로 옮기는 열.
 PRICE_FEATURE_COLUMNS: tuple[str, ...] = (
     "price",

@@ -28,10 +28,49 @@ from msa.fmt import ratio
 from msa.io import write_snapshot
 from msa.l4 import axes
 from msa.l4.barbell import DEFAULT_TOP, Barbell, classify
-from msa.l4.features import INPUTS_UNUSED, FeatureSet, build_features
+from msa.l4.features import (
+    ENTRY_PRICE_FEATURE,
+    INPUTS_UNUSED,
+    LIQUIDITY_FEATURE,
+    FeatureSet,
+    build_features,
+)
 from msa.themes import load_themes, membership_from_store
 
 log = logging.getLogger(__name__)
+
+
+#: `ranking.csv` 에서 L5 입력으로 옮겨 가는 열 (`msa.pipeline.assemble`). 바벨 라벨 · 순위 ·
+#: 종합 · 3축 백분위 · 기준가 · 유동성 · 표기용 플래그. 이 밖의 열은 리포트 전용이다.
+RANKING_EXPORT_COLUMNS: tuple[str, ...] = (
+    "group",
+    "rank",
+    "composite",
+    "composite_partial",
+    "s_pct",
+    "t_pct",
+    "m_pct",
+    ENTRY_PRICE_FEATURE,
+    LIQUIDITY_FEATURE,
+    "penalties",
+    "red_flags",
+    "s_inputs_missing",
+    "t_inputs_missing",
+)
+
+
+def read_ranking(path: Path | str) -> pd.DataFrame:
+    """저장된 `ranking.csv` → index ticker 프레임 (`write_snapshot` 의 역). 필수 열이 빠지면 예외 —
+    다른 스냅샷 형식을 조용히 읽지 않는다 (`CLAUDE.md` §2)."""
+    p = Path(path)
+    if not p.exists():
+        raise FileNotFoundError(f"ranking.csv 가 없다: {p}")
+    df = pd.read_csv(p, index_col=0)
+    df.index = df.index.astype(str)
+    missing = [c for c in ("group", "rank", "composite") if c not in df.columns]
+    if missing:
+        raise ValueError(f"{p}: ranking.csv 에 열이 없다 {missing} — L4 산출물이 아니다")
+    return df
 
 
 @dataclass(frozen=True)

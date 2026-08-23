@@ -587,6 +587,40 @@ def portfolio(
         )
 
 
+@app.command("portfolio-inputs")
+@cli_guard
+def portfolio_inputs(
+    asof: str = typer.Option(
+        "", help="기준일 YYYY-MM-DD. 기본 = 오늘. 이 날짜 이하의 최신 picks·thesis"
+    ),
+    themes: str = typer.Option(..., "--themes", help="테마 id 쉼표 목록 (state/themes.yaml)"),
+    human_theses: str = typer.Option(
+        "",
+        "--human-theses",
+        help="사람이 쓴 논지 디렉터리 <dir>/<theme>.yaml — 있으면 L3 산출보다 우선 (source=human)",
+    ),
+    top: int = typer.Option(0, "--top", help="테마당 종목 상한 (0 = L4 바벨 전부)"),
+    no_write: bool = _no_write_option("state/portfolio_inputs/"),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """L4 picks + L3/사람 thesis → L5 입력 묶음 (picks.csv · theses/).
+
+    산출물: state/portfolio_inputs/<date>/
+    """
+    from msa.pipeline.assemble import assemble_inputs
+
+    _setup_logging(verbose)
+    res = assemble_inputs(
+        asof=asof_or_today(asof or None),
+        themes=[t for t in themes.split(",") if t.strip()],
+        human_theses_dir=human_theses or None,
+        top_per_theme=top if top > 0 else None,
+        write=not no_write,
+    )
+    typer.echo(res.report_text)
+    _echo_saved(res.out_dir)
+
+
 # ---------------------------------------------------------------------------
 # msa check
 # ---------------------------------------------------------------------------

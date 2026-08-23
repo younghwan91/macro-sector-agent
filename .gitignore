@@ -17,6 +17,7 @@ state/cache/
 state/scans/
 state/macro/
 state/portfolio/
+state/portfolio_inputs/
 state/theses/
 state/picks/
 state/checks/

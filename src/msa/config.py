@@ -71,6 +71,11 @@ class Paths:
         return self.state / "portfolio"
 
     @property
+    def portfolio_inputs(self) -> Path:
+        """L4·L3 → L5 입력 묶음 (`state/portfolio_inputs/<asof>/`, `msa portfolio-inputs`)."""
+        return self.state / "portfolio_inputs"
+
+    @property
     def checks(self) -> Path:
         return self.state / "checks"
 
