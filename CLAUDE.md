@@ -127,6 +127,9 @@ msa journal diff <theme>        # 최근 두 thesis 스냅샷 필드 diff (논�
 msa ops schedule --print-cron   # 케이던스 → crontab/systemd 텍스트 (설치는 사람이) · ops due <cadence>
 msa ops calibration   # cycle_confidence 캘리브레이션 (N<20 → 결론 없음)
 msa ops rejections-update       # 기각 대장 r_12m/r_24m 갱신 + 세 질문 → state/rejections-summary.md
+msa ops ingest-theses --theses-dir state/theses/<date> [--scan state/scans/<date>] [--dry-run]
+                      #   L3 라운드 → 저널 기각 항목·기각 대장·관찰 목록·진입 초안(journal-draft-*.yaml).
+                      #   진입 항목은 쓰지 않는다 — 사람이 초안을 채워 msa journal new --from
 msa ops reproduce <date>        # state/scans/<date>/ 스냅샷만으로 리포트 재생성·대조
 msa backtest l1       # L1 백테스트 관문 0 (M3.5) — rank-IC·스프레드·breadth_lead·DSR/PBO.
                       #   산출물 state/backtests/l1/<date>/ · 판정 docs/backtest-l1.md. 튜닝 루프가 아니다

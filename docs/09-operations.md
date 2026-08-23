@@ -206,10 +206,29 @@ check: {kind: drawdown_from_high, ticker: CCJ, pct: 0.30, lookback_days: 252}
 "1영업일" 을 못 쓰므로 1~3일에 깨우고 `msa ops due monthly` 가 그 달 첫 평일일 때만 0 을 돌려준다 —
 미국 공휴일은 보지 않는다 (1일이 공휴일이면 하루 늦게 돈다).
 
-**아직 연결되지 않은 것**: `positions.yaml` 은 L5(M6) 가, thesis 스냅샷은 L3(M7) 또는 사람(M6 구간)이,
-`rejections.yaml` 의 행 적재는 월간 스캔(L3/L4 게이트 결과)이 만든다. M8 은 그 파일들을 **읽는 쪽**과
-사람이 쓰는 쪽(`msa journal new`)만 구현했다. 월간 요약 알림(`monthly_summary`)의 "계획 변경분" 도 L5
-산출물이 생긴 뒤에 채운다.
+**아직 연결되지 않은 것**: `positions.yaml` 은 L5(M6) 가, thesis 스냅샷은 L3(M7) 또는 사람(M6 구간)이
+만든다. M8 은 그 파일들을 **읽는 쪽**과 사람이 쓰는 쪽(`msa journal new`)만 구현했다. 월간 요약
+알림(`monthly_summary`)의 "계획 변경분" 도 L5 산출물이 생긴 뒤에 채운다. `rejections.yaml` 행 적재와
+관찰 목록은 아래 "L3 → 운영 적재" 가 연결했다.
+
+### 구현 노트 — L3 → 운영 적재 (`msa ops ingest-theses`, `src/msa/ops/ingest.py`)
+
+`msa research` 가 남긴 라운드(`state/theses/<date>/`)를 저널·기각 대장·관찰 목록으로 옮긴다. **기계가
+쓰는 것과 사람이 써야 하는 것의 경계**가 이 명령의 전부다:
+
+| `gate_result` | 기계가 쓴다 | 사람이 쓴다 |
+|---|---|---|
+| `rejected` | 저널 **기각 항목** `journal/<asof>-<theme>-reject.md` + `.thesis.yaml` 스냅샷 (§2 "기각 항목이 담는 것" — 경로 enum · 5축 판정 · `cycle_confidence` 또는 null · 스코어보드 순위 · 스캔 경로; `override_reason` 은 비운다 — 기계가 기각한 것이라 "사람이 편입하지 않은 이유" 가 성립하지 않는다) → `rejections.yaml` 행 (`journal` 열 = 그 항목) | 없음. 기계 통과를 사람이 뒤집어 기각하는 경우(`path: human`)만 사람이 `msa journal template reject` 로 직접 쓴다 |
+| `contested` | `watchlist.yaml` 행 `reason: contested` — `waiting_condition` = referee 판정 + `key_uncertainties`, `thesis_snapshot`, `scoreboard_rank` | 없음 (재연구가 해소한다) |
+| `passed` · `portfolio_eligible: false` | `watchlist.yaml` 행 — 축 1 불가(`axis1_available: false`)가 원인이면 `axis1_unavailable`, 아니면 `awaiting_condition` + 게이트가 적은 사유 | 없음 |
+| `passed` · `portfolio_eligible: true` | **진입 항목 초안** `state/theses/<date>/journal-draft-<theme>.yaml` — `msa journal new --from` 이 받는 entry 모양. thesis 전문 · 5축 · `scan` · L1 블록 6개(`scoreboard.csv`) · `l2_tailwind`(`state/macro/latest.json`, 없으면 thesis 의 `inputs.macro_tailwind`) · `confidence_provenance: referee` 까지 채운다 | `stocks`(종목·비중·사다리·Tier-2·시간스탑·TP — L5 매매계획서에서) · `deviated_from_machine`/`deviation_reason`. 초안에 없는 값(블록·tailwind 를 못 읽은 경우)은 **0 이 아니라 비워** 두므로 `EntryRecord` 가 채울 때까지 거부한다 |
+
+저널은 여기서도 append-only 다 — 기존 파일은 건드리지 않고 같은 이름의 기각 항목이 있으면 그 경로를 대장에
+쓴다. 기각 대장은 `(theme, rejected_at)` 이 이미 있으면 건너뛰고 보고한다 (재실행 멱등). 관찰 목록은 테마별
+upsert (기존 `added_at` 유지). 스코어보드 순위는 `--scan` 의 `scoreboard.csv` 에서 읽고, 없으면 thesis 가
+연구 시점에 기록한 `inputs.scoreboard_rank` 로 대체하되 **그 사실을 보고한다**; 둘 다 없으면 기각 항목은
+쓰지 않는다(§2 가 순위를 요구한다) 하고 "적재 불가" 로 보고한다. 읽지 못한 파일·enum 밖 상태도 이름과 이유가
+보고서에 남는다 — 조용히 빠지는 테마는 없다. `--dry-run` 은 같은 판정을 하되 쓰지 않는다.
 
 ## 5. 실패 시 동작
 

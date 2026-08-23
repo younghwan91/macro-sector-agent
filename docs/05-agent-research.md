@@ -254,3 +254,12 @@ JSON(`state/macro/latest.json`, `tailwind` 키), 구성원 PIT 재무 요약은 
 **산출물.** `state/theses/<asof>/<theme>.thesis.yaml` · `<theme>.report.md` · `rejections-pending.yaml`
 (기각 행, `09` §4 형식 — 대장 적재는 M8) · `contested.json`(라운드 보류 수 + 이월 수). 스키마 미달은
 저장하지 않고 종료 코드 2, 게이트 기각은 저장한다 (§4).
+
+**운영 적재 (§4 "기각 대장에 적재" · "관찰 목록" 의 구현).** `msa ops ingest-theses --theses-dir
+state/theses/<date> [--scan state/scans/<date>]` 가 라운드를 운영 파일로 옮긴다 (`src/msa/ops/ingest.py`,
+`docs/09` 구현 노트 "L3 → 운영 적재"): `rejected` → 저널 기각 항목 + `.thesis.yaml` 스냅샷 + `rejections.yaml`
+행, `contested` → `watchlist.yaml`(`reason: contested`, 대기 조건 = referee 판정 + `key_uncertainties`),
+`passed` 인데 편입 불가 → `watchlist.yaml`(`axis1_unavailable` | `awaiting_condition`), `passed` 편입 가능 →
+진입 항목 **초안** `journal-draft-<theme>.yaml`. 진입 항목 자체는 기계가 쓰지 않는다 — 종목·비중·사다리와
+"기계 권고와 다르게 결정했다면 그 이유" 는 사람의 결정이다 (`CLAUDE.md` §4·§8, `docs/09` §2).
+`rejections-pending.yaml` 은 그대로 둔다 (연구 시점 기록) — 대장의 정본은 `state/rejections.yaml` 이다.
