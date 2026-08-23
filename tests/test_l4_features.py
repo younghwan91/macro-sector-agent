@@ -249,8 +249,9 @@ def test_price_features_shapes() -> None:
     assert list(pf.columns) == list(F.PRICE_FEATURE_COLUMNS)
     assert pf.loc["SH", "stage2"] is None
     assert pf.loc["UP", "stage2"] in (True, False)
+    # `volume` 이 소급 분할조정 값이므로 짝은 **조정** 종가다 (features.py 주석 참조)
     assert pf.loc["UP", "adv20_usd"] == pytest.approx(
-        float((up["closeunadj"] * up["volume"]).tail(20).mean())
+        float((up["close"] * up["volume"]).tail(20).mean())
     )
     assert pf.loc["UP", "price"] == pytest.approx(float(up["closeunadj"].iloc[-1]))
     # asof 이후 행은 쓰지 않는다
@@ -275,7 +276,7 @@ def _ref_price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
             "price": float(cu.iloc[-1]) if n else np.nan,
             "mcap": float(last_mcap.iloc[-1]) if len(last_mcap) else np.nan,
             "last_price_date": g["date"].iloc[-1].date() if n else None,
-            "adv20_usd": float((cu * v).tail(20).mean()) if n >= 5 else np.nan,
+            "adv20_usd": float((c * v).tail(20).mean()) if n >= 5 else np.nan,
         }
         sma50 = c.tail(50).mean() if n >= 50 else np.nan
         sma150 = c.tail(150).mean() if n >= 150 else np.nan

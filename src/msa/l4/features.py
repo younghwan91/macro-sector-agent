@@ -70,6 +70,7 @@ from __future__ import annotations
 
 import logging
 import math
+import os
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from itertools import pairwise
@@ -203,7 +204,8 @@ FEATURE_COLUMNS: tuple[str, ...] = (
 
 #: L5 입력(`picks.csv`)으로 내보낼 때 읽는 특성 이름 — `msa.pipeline.assemble` 이 쓴다.
 #: `price` = asof 이하 마지막 **비조정** 종가(`closeunadj`; 계획 기준가), `adv20_usd` = 20일 평균
-#: 달러 거래대금(C4 유동성). 종목 고유 변동성·밸류 회복가·직전 고점가는 이 표에 **없다**.
+#: 달러 거래대금(C4 유동성) — **조정** 종가 × 조정 거래량이다. 종목 고유 변동성·밸류 회복가·
+#: 직전 고점가는 이 표에 **없다**.
 ENTRY_PRICE_FEATURE = "price"
 LIQUIDITY_FEATURE = "adv20_usd"
 
@@ -579,7 +581,9 @@ def price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
         cols["price"].append(float(cu[-1]))
         cols["mcap"].append(float(mc[-1]) if mc.size else np.nan)
         cols["last_price_date"].append(pd.Timestamp(dates[b - 1]).date())
-        cols["adv20_usd"].append(_nanmean((cu * v)[-20:]) if n >= 5 else np.nan)
+        # `volume` 은 소급 분할조정 값이므로 조정 종가 `c` 와 곱해야 한다. 비조정 `cu` 와
+        # 곱하면 asof 이후의 분할 계수만큼 틀리고, 그것은 미래를 보는 것이다 (2026-08-23).
+        cols["adv20_usd"].append(_nanmean((c * v)[-20:]) if n >= 5 else np.nan)
         sma50 = _nanmean(c[-50:]) if n >= 50 else np.nan
         sma150 = _nanmean(c[-150:]) if n >= 150 else np.nan
         sma200 = _nanmean(c[-200:]) if n >= 200 else np.nan
@@ -678,13 +682,17 @@ def universe_rs_cached(
 
     같은 asof 로 여러 테마를 돌릴 때 유니버스 슬라이스를 테마마다 다시 읽지 않기 위한 것이다.
     키는 (asof, 스토어 최종일) — 스토어가 갱신되면 최종일이 바뀌어 캐시가 비껴간다.
+    쓰기는 임시 파일 + `os.replace` 다. 백테스트가 테마별 프로세스로 병렬로 도는데 같은 asof 를
+    여러 워커가 동시에 만나므로, 직접 쓰면 반쯤 쓰인 parquet 을 다른 워커가 읽을 수 있다.
     """
     path = paths().cache / f"rs_universe_{asof.date()}_{store_end.date()}.parquet"
     if path.exists():
         return pd.read_parquet(path)["rs"]
     rs = universe_rs(store, trading_dates)
     path.parent.mkdir(parents=True, exist_ok=True)
-    rs.rename("rs").to_frame().to_parquet(path)
+    tmp = path.with_name(f"{path.stem}.{os.getpid()}.tmp")
+    rs.rename("rs").to_frame().to_parquet(tmp)
+    os.replace(tmp, path)
     return rs
 
 
