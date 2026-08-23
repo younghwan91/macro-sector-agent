@@ -130,6 +130,7 @@ msa ops rejections-update       # 기각 대장 r_12m/r_24m 갱신 + 세 질문 
 msa ops reproduce <date>        # state/scans/<date>/ 스냅샷만으로 리포트 재생성·대조
 msa backtest l1       # L1 백테스트 관문 0 (M3.5) — rank-IC·스프레드·breadth_lead·DSR/PBO.
                       #   산출물 state/backtests/l1/<date>/ · 판정 docs/backtest-l1.md. 튜닝 루프가 아니다
+msa backtest l1-structures  # M3.6 — A 집계 구조 검정 S0/S1/S2 (docs/12 §4 사전 등록). 결과 docs/backtest-l1.md §12
 ```
 
 텔레그램 배달은 `MSA_TELEGRAM_TOKEN` · `MSA_TELEGRAM_CHAT_ID` 가 둘 다 있을 때만 — 없으면 "not configured".

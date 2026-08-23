@@ -373,6 +373,23 @@ def backtest_l1(
     _echo_saved(res.out_dir)
 
 
+@backtest_app.command("l1-structures")
+@cli_guard
+def backtest_l1_structures(
+    force: bool = typer.Option(False, "--force", help="패널·재무·지표 캐시를 무시하고 다시 만든다"),
+    no_write: bool = _no_write_option("state/backtests/"),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """M3.6 — A(망각) 집계 구조 검정: S0(현행)·S1(절대 게이트)·S2(풀/타이밍 2단) 를 관문 0 과
+    같은 규칙으로 (docs/12 §4, 사전 등록). 산출물: state/backtests/l1/<store_end>/structures_*.
+    """
+    from msa.l1.structures import render_structure_report, run_structures
+
+    _setup_logging(verbose)
+    res = run_structures(write=not no_write, force=force)
+    typer.echo(render_structure_report(res))
+
+
 @app.command()
 @cli_guard
 def macro(
