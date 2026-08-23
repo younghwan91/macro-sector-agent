@@ -12,6 +12,15 @@
 | **분기** | 모순 감사(`03-macro-dag.md` §6) + 캘리브레이션 갱신(`10-validation.md` §4) + **기각 대장의 12·24M 수익률 갱신**(`10-validation.md` §5) | 사람 1시간 | 감사 리포트 |
 | **수시** | 신규 테마 진입 검토 (사용자 발의) | | |
 
+> **배선 (2026-08-23, W4).** `msa run monthly` 가 월간 행의 순서(스캔 → 거시 → 상위 K 선정 → L3 → 적재 →
+> L4 → L5)를 그대로 실행하고 `state/runs/<date>/monthly-report.md` 에 단계별 `ok|skipped|unavailable|failed`
+> 와 사유를 남긴다 — **끝은 제안·초안**(진입 초안 · `positions-proposal.yaml` · 관찰 목록 행)이며 집행은
+> 사람이 한다. `msa run weekly` 가 주간 행(전수 스캔 + `msa check --weekly`)이다 — "L1 경량 갱신(가격
+> 블록만)" 은 따로 만들지 않았다: 캐시가 있으면 전수 스캔이 ~12 초라 경량 경로의 이유가 없다. 일간은
+> `msa check --daily` 그대로, 분기는 `msa run quarterly` 가 세 명령(`msa macro` 모순 감사 · `ops
+> calibration` · `ops rejections-update`)을 **나열만** 한다. cron 은 `msa ops schedule --print-cron`.
+> 구현 노트는 이 문서 끝 "케이던스 오케스트레이터".
+
 **월간 스캔이 만드는 것 vs 사람이 하는 것**
 
 | 기계 | 사람 |
@@ -215,8 +224,9 @@ check: {kind: drawdown_from_high, ticker: CCJ, pct: 0.30, lookback_days: 252}
 
 **아직 연결되지 않은 것**: thesis 스냅샷은 L3(M7) 또는 사람(M6 구간)이 만든다. `positions.yaml` 은 L5 가
 **제안**(`positions-proposal.yaml`, 위 `proposed`)까지만 만들고 실제 파일은 사람이 쓴다 — 배선 W2.
-`rejections.yaml` 행 적재와 관찰 목록은 아래 "L3 → 운영 적재" 가 연결했다 — 배선 W3. 월간 요약
-알림(`monthly_summary`)의 "계획 변경분" 도 L5 산출물이 생긴 뒤에 채운다.
+`rejections.yaml` 행 적재와 관찰 목록은 아래 "L3 → 운영 적재" 가 연결했다 — 배선 W3. 월간·주간 한 명령은
+아래 "케이던스 오케스트레이터" — 배선 W4. 월간 요약 알림(`monthly_summary`)의 "계획 변경분" 은 아직
+`msa run monthly` 가 보내지 않는다 (리포트 파일만).
 
 ### 구현 노트 — L3 → 운영 적재 (`msa ops ingest-theses`, `src/msa/ops/ingest.py`)
 
@@ -236,6 +246,37 @@ upsert (기존 `added_at` 유지). 스코어보드 순위는 `--scan` 의 `score
 연구 시점에 기록한 `inputs.scoreboard_rank` 로 대체하되 **그 사실을 보고한다**; 둘 다 없으면 기각 항목은
 쓰지 않는다(§2 가 순위를 요구한다) 하고 "적재 불가" 로 보고한다. 읽지 못한 파일·enum 밖 상태도 이름과 이유가
 보고서에 남는다 — 조용히 빠지는 테마는 없다. `--dry-run` 은 같은 판정을 하되 쓰지 않는다.
+
+### 구현 노트 — 케이던스 오케스트레이터 (`msa run monthly|weekly|quarterly`, `src/msa/pipeline/run.py`, 배선 W4)
+
+§1 의 월간·주간 행을 **한 명령**으로 잇는다. 새 계산·임계값은 없다 — 각 계층의 진입점(`run_scan` ·
+`run_macro` · `run_research` · `ingest_round` · `run_picks` · `assemble_inputs` · `run_portfolio` · `run_check`)을
+순서대로 부르고, 단계마다 `{status, reason, outputs, seconds}` 를 `RunReport` 에 남긴다.
+
+| 단계 | 호출 | 실패 시 (§5 와 같다) |
+|---|---|---|
+| `scan` | `run_scan` | **중단** (exit 1). 데이터·커버리지 관문 실패면 뒤 단계 전부 `skipped` |
+| `macro` | `run_macro` | 중단하지 않는다. 예외·가용 드라이버 0 → `unavailable`; 결측 드라이버는 사유에 수로 |
+| `select` | 스코어보드 상위 K **자격** 테마(S2 `eligible`) + `--themes` 지정 | 자격이 K 미만이면 그만큼만 — 풀 미달로 채우지 않는다 (`02` §7.1). SECULAR·소표본은 플래그만, 제외하지 않는다 (게이트는 L3 몫) |
+| `research` | `--provider none`: 사람 논지(`--human-theses <dir>/<theme>.yaml`) → 직전 `state/theses/<date≤asof>/` 순으로 **찾기만**; `mock\|fixture\|anthropic`: 테마별 L3 | 테마별 격리 — 스키마 기각은 그 테마 제외 + 사유, 제공자 오류는 보고, 라운드는 계속. `none` 에서 논지가 없는 테마는 "thesis 없음 → 관찰" (오류가 아니다) |
+| `ingest` | 이번 실행이 쓴 L3 라운드 → `ingest_round` (기각→저널+대장 · contested→관찰 · 통과→진입 초안) | `none` 이면 새 라운드가 없어 `skipped` |
+| `picks` | 게이트 편입 가능(`portfolio_eligible`) thesis 가 있는 테마만 `run_picks` | 테마별 격리 |
+| `assemble` · `portfolio` | `assemble_inputs` → `run_portfolio(emit_positions=True)` → `plan.md` · `positions-proposal.yaml` | 묶을 테마가 0 이면 `skipped` (오류가 아니다) |
+| `report` | `state/runs/<asof>/monthly-report.md` · `run.json` — 단계 표 + **사람이 할 것**(채울 초안 · 승격할 제안 · 관찰 행) | |
+
+**오늘 `--provider none` 이 뜻하는 것.** `ANTHROPIC_API_KEY` 가 없는 현재 기본값이다. L3 를 부르지 않으므로
+새 thesis 는 생기지 않고, 사람이 쓴 논지 디렉터리나 직전 라운드의 thesis 가 있는 테마만 L4·L5 로 간다.
+둘 다 없으면 그 달의 월간 실행은 스코어보드·거시 상태·선정 목록과 "thesis 없음 → 관찰" 목록에서 끝난다 —
+그것이 키 없이 기계가 할 수 있는 전부이고, 그렇게 **보고한다.** 키가 생기면 cron 행에 `--provider anthropic`
+을 사람이 붙인다 (비용이 드는 호출을 기본값으로 두지 않는다).
+
+`--no-write` 는 `state/` 에 아무것도 쓰지 않는다. 계층들이 파일 계약으로 이어지므로 중간 산출물은 임시
+샌드박스 디렉터리에 쓰고 끝나면 지우며, 저널·기각 대장·관찰 목록은 `ingest_round(write=False)` 로 판정만
+한다. 종료 코드는 스캔 중단일 때만 1 — 거시 불가·테마별 실패·편입 가능 테마 0 은 0 + 리포트다.
+
+`msa run weekly` = `run_scan` + `run_check(mode="weekly")` (알림 파일·텔레그램·`last_run.json` 은
+`msa check --weekly` 와 같다) + `weekly-report.md`. 점검의 문제(스냅샷 없음 등)는 리포트의 "사람이 할 것" 에
+들어가고 종료 코드에는 넣지 않는다. `state/runs/` 는 `.gitignore`.
 
 ## 5. 실패 시 동작
 

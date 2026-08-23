@@ -5,7 +5,8 @@
 
 > **상태: M1~M8 전 마일스톤 1차 구현 (2026-08-23).** L0 데이터(M1) · 테마 134 버킷(M2) · L1 스캐너 `msa scan`(M3) ·
 > L1 백테스트 관문 `msa backtest l1`(M3.5) · L2 거시 런타임 `msa macro`(M4) · L4 종목 선정 `msa picks`(M5) ·
-> L5 포트 구성기 `msa portfolio`(M6) · L3 에이전트 `msa research`(M7) · 운영 `msa check`/`journal`/`ops`(M8).
+> L5 포트 구성기 `msa portfolio`(M6) · L3 에이전트 `msa research`(M7) · 운영 `msa check`/`journal`/`ops`(M8) ·
+> 배선 `msa portfolio-inputs`(W1) · `msa run monthly|weekly`(W4 — 월간 한 명령, 끝은 제안·초안).
 > **L1 집계 구조: 2026-08-23 S2 채택.** M3.5 에서 구 복합 점수(6블록 가산)의 12M rank-IC 는 0 과 구분되지
 > 않았고(+0.048 [−0.024, +0.123], FAIL), 사전 등록된 M3.6 에서 "A·B 는 풀 자격, C·E·F 가 순위" 구조(S2)가
 > +0.078 [+0.015, +0.145] 로 합격해 채택했다 (`docs/02` §7.1, `docs/backtest-l1.md` §12). 한계도 같이 적혀

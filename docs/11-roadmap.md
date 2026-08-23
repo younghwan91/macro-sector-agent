@@ -284,8 +284,14 @@ M0 문서 일습을 통독 검토해 **문서가 스스로 세운 규약을 문�
 - [x] **기각 대장 집계** — `msa ops rejections-update` (테마 EW 지수로 `r_12m`/`r_24m` 기계 갱신,
       불변 규칙 위반 시 저장 거부, 세 질문 (a)(b)(c) 를 `state/rejections-summary.md` 에 — (c) 는
       `state/scans/<date>/scoreboard.csv` 순위 스냅샷, (b) 는 지표 캐시의 사후 축 1 판정)
-- [ ] **연결** — `positions.yaml` 을 L5 가 쓰고, thesis 스냅샷을 L3/사람이 만들고, `rejections.yaml`
-      행을 월간 스캔이 적재하는 배선. M8 은 읽는 쪽과 사람이 쓰는 명령만 있다 (`09` §4 구현 노트)
+- [x] **연결 — 배선** (2026-08-23 W1~W4) — L4 picks + thesis → L5 입력 묶음(`msa portfolio-inputs`, W1) ·
+      L5 → `positions-proposal.yaml` 제안(W2; `positions.yaml` 은 설계대로 사람이 쓴다) · L3 라운드 →
+      저널 기각 항목·`rejections.yaml`·관찰 목록·진입 초안(`msa ops ingest-theses`, W3) ·
+      **월간/주간 배선 — cron 이 `msa run monthly`/`msa run weekly` 를 호출**(W4: 스캔→거시→상위 K→L3→
+      적재→L4→L5 를 한 명령으로, 단계별 ok/skipped/unavailable/failed 리포트 `state/runs/<date>/`)
+- [ ] **연결 — 실전** — 키 없이는 L3 가 돌지 않아 `msa run monthly` 의 기본이 `--provider none`(사람 논지/
+      직전 thesis 만 찾는다)이고, 실제 L3 라운드(`--provider anthropic`)로 월간을 끝까지 돌려 본 적이 없다.
+      `monthly_summary` 텔레그램도 리포트 파일까지만 (`09` §1 배선 노트 · 구현 노트 "케이던스 오케스트레이터")
 - [ ] `msa check` 실전 검증 — 실제 포지션으로 한 분기 이상 돌려 manual 비율·오탐을 본다
 
 ---

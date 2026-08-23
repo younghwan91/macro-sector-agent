@@ -21,6 +21,7 @@ state/portfolio_inputs/
 state/theses/
 state/picks/
 state/checks/
+state/runs/
 state/calibration/
 state/logs/
 state/backtests/
