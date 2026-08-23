@@ -3,7 +3,7 @@
 거시 → 산업 사이클 → 테마 → 종목 → 포트폴리오 하향식 리서치 파이프라인.
 **현재 M3~M8 구현** (`src/msa/` — L0 데이터 · 테마 유니버스 · L1 스캐너 `msa scan` ·
 L2 거시 DAG `msa macro` · L4 종목 선정 `msa picks` · L5 포트 구성기 `msa portfolio` ·
-L3 에이전트 `msa research` · 운영 `msa check`/`msa journal`/`msa ops`).
+L3 에이전트 `msa research` · 운영 `msa check`/`msa journal`/`msa ops` · 케이던스 `msa run monthly|weekly`).
 이후 단계는 `docs/11-roadmap.md`. 어느 계층이든 손대기 전에 해당 `docs/` 를 먼저 읽는다.
 
 ## 절대 규칙
@@ -136,6 +136,13 @@ msa ops ingest-theses --theses-dir state/theses/<date> [--scan state/scans/<date
                       #   L3 라운드 → 저널 기각 항목·기각 대장·관찰 목록·진입 초안(journal-draft-*.yaml).
                       #   진입 항목은 쓰지 않는다 — 사람이 초안을 채워 msa journal new --from
 msa ops reproduce <date>        # state/scans/<date>/ 스냅샷만으로 리포트 재생성·대조
+msa run monthly       # 월간 한 번 (배선 W4): scan → macro → 상위 K 선정 → research → ingest → picks →
+                      #   assemble → portfolio(제안). --asof --top-k 8 --themes a,b --provider none|mock|fixture|anthropic
+                      #   --human-theses DIR --capital N --skip-macro/-research/-picks/-portfolio --no-write
+                      #   산출물 state/runs/<date>/ (monthly-report.md·run.json) — 끝은 제안·초안, 집행은 사람.
+                      #   기본 --provider none = L3 미호출(키 없음): 사람 논지/직전 thesis 만 찾는다. exit 1 은 스캔 중단만
+msa run weekly        # 주간: 전수 스캔 + msa check --weekly + weekly-report.md. --asof --no-write
+msa run quarterly     # 분기 명령 목록 (msa macro 모순 감사 · ops calibration · ops rejections-update) — 나열만
 msa backtest l1       # L1 백테스트 관문 0 (M3.5) — rank-IC·스프레드·breadth_lead·DSR/PBO.
                       #   산출물 state/backtests/l1/<date>/ · 판정 docs/backtest-l1.md. 튜닝 루프가 아니다
 msa backtest l1-structures  # M3.6 — A 집계 구조 검정 S0/S1/S2 (docs/12 §4 사전 등록). 결과 docs/backtest-l1.md §12

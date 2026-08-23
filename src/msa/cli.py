@@ -2,7 +2,7 @@
 
 도는 것: `data status`·`data audit`·`data fred-lag`·`data fred-fetch`(M1·M4) · `scan`(M3) ·
 `backtest l1`(M3.5) · `macro`(M4) · `picks`(M5) · `portfolio`(M6) · `research`(M7) ·
-`check`·`journal *`·`ops *`(M8).
+`check`·`journal *`·`ops *`(M8) · `portfolio-inputs`·`run *`(배선 W1·W4).
 남은 스텁은 없다. 새 스텁을 두게 되면 `--help` 에는 나오되 호출 시 `NotImplementedError` 를
 던지게 한다 — 있는 척하는 스텁이 조용히 빈 결과를 내는 것보다 낫다 (`CLAUDE.md` §2).
 """
@@ -47,6 +47,15 @@ backtest_app = typer.Typer(
     no_args_is_help=True, help="관문 0 — 결정론 계층의 백테스트 (docs/10 §2). 튜닝 루프가 아니다"
 )
 app.add_typer(backtest_app, name="backtest")
+run_app = typer.Typer(
+    no_args_is_help=True,
+    help=(
+        "케이던스 실행 (docs/09 §1) — monthly: 스캔→거시→상위 K→L3→적재→L4→L5 · "
+        "weekly: 스캔+점검 · "
+        "quarterly: 분기 명령 목록. 끝은 제안·초안이다 — 집행은 사람 (CLAUDE.md §8)"
+    ),
+)
+app.add_typer(run_app, name="run")
 
 
 def _setup_logging(verbose: bool) -> None:
@@ -619,6 +628,127 @@ def portfolio_inputs(
     )
     typer.echo(res.report_text)
     _echo_saved(res.out_dir)
+
+
+# ---------------------------------------------------------------------------
+# msa run — 케이던스 오케스트레이터 (배선 W4)
+# ---------------------------------------------------------------------------
+
+
+def _echo_run_report(rep: Any) -> None:
+    """단계 표 + 사람 TODO 를 찍는다 (마크다운 전문은 파일에)."""
+    typer.echo(f"{rep.cadence} · {rep.asof}" + ("" if rep.write else " · no-write"))
+    for s in rep.steps:
+        outs = f"  → {', '.join(s.outputs)}" if s.outputs else ""
+        typer.echo(f"  {s.name:<10} {s.status:<12} {s.seconds:6.1f}s  {s.reason}{outs}")
+    if rep.stopped:
+        typer.echo(f"중단: {rep.stopped_reason}", err=True)
+    if rep.human_todo:
+        typer.echo("사람이 할 것:")
+        for x in rep.human_todo:
+            typer.echo(f"  - {x}")
+
+
+@run_app.command("monthly")
+@cli_guard
+def run_monthly_cmd(
+    asof: str = typer.Option(
+        "", help="기준일 YYYY-MM-DD (기본 오늘). 스캔·thesis·picks·포트 전부 이 날짜"
+    ),
+    top_k: int = typer.Option(
+        8, "--top-k", help="스코어보드 상위 K (자격 테마만 — docs/05 §1, docs/02 §7.1)"
+    ),
+    themes: str = typer.Option(
+        "", "--themes", help="사용자 지정 테마 쉼표 목록 — 순위와 무관하게 L3 에 넣는다"
+    ),
+    provider: str = typer.Option(
+        "none",
+        "--provider",
+        help="none | mock | fixture | anthropic. "
+        "none = L3 를 부르지 않고 사람 논지/직전 thesis 만 찾는다",
+    ),
+    human_theses: str = typer.Option(
+        "",
+        "--human-theses",
+        help="사람이 쓴 논지 디렉터리 <dir>/<theme>.yaml — 있으면 L3 보다 우선",
+    ),
+    capital: float = typer.Option(0.0, "--capital", help="총자본(USD). 주면 L5 C4 유동성 상한"),
+    skip_macro: bool = typer.Option(False, "--skip-macro", help="L2 거시 단계 생략"),
+    skip_research: bool = typer.Option(
+        False, "--skip-research", help="L3 단계 생략 (논지는 찾는다)"
+    ),
+    skip_picks: bool = typer.Option(False, "--skip-picks", help="L4 단계 생략"),
+    skip_portfolio: bool = typer.Option(False, "--skip-portfolio", help="묶음·L5 단계 생략"),
+    no_write: bool = typer.Option(
+        False, "--no-write", help="state/ 에 아무것도 쓰지 않는다 (중간 산출물은 임시 샌드박스)"
+    ),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """월간 실행 (docs/09 §1): scan → macro → 상위 K → research → ingest → picks → assemble → L5.
+
+    산출물: state/runs/<date>/monthly-report.md · run.json (+ 각 계층의 state/ 산출물).
+    끝은 진입 초안·미체결 제안이다 — 저널 확정·positions.yaml 승격·주문은 사람이 한다.
+    종료 코드 1 은 스캔 중단일 때만; 부분 가용(거시 불가·테마별 실패)은 0 + 리포트.
+    """
+    from msa.pipeline.run import RunError, run_monthly
+
+    _setup_logging(verbose)
+    try:
+        res = run_monthly(
+            asof=asof or None,
+            top_k=top_k,
+            extra_themes=[t for t in themes.split(",") if t.strip()],
+            provider=provider,
+            human_theses_dir=Path(human_theses) if human_theses else None,
+            write=not no_write,
+            skip_macro=skip_macro,
+            skip_research=skip_research,
+            skip_picks=skip_picks,
+            skip_portfolio=skip_portfolio,
+            capital=capital if capital > 0 else None,
+        )
+    except RunError as e:
+        raise typer.BadParameter(str(e)) from e
+    _echo_run_report(res.report)
+    _echo_saved(res.out_dir)
+    if res.exit_code:
+        raise typer.Exit(code=res.exit_code)
+
+
+@run_app.command("weekly")
+@cli_guard
+def run_weekly_cmd(
+    asof: str = typer.Option("", help="기준일 YYYY-MM-DD (기본 오늘)"),
+    no_write: bool = typer.Option(False, "--no-write", help="state/ 에 아무것도 쓰지 않는다"),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """주간 실행 (docs/09 §1): 전수 스캔(경량 갱신 대용) + 보유 포지션 점검 (= msa check --weekly).
+
+    산출물: state/runs/<date>/weekly-report.md · run.json · state/checks/<date>/.
+    """
+    from msa.pipeline.run import RunError, run_weekly
+
+    _setup_logging(verbose)
+    try:
+        res = run_weekly(asof=asof or None, write=not no_write)
+    except RunError as e:
+        raise typer.BadParameter(str(e)) from e
+    _echo_run_report(res.report)
+    if res.check is not None:
+        typer.echo("")
+        typer.echo(res.check.render())
+    _echo_saved(res.out_dir)
+    if res.exit_code:
+        raise typer.Exit(code=res.exit_code)
+
+
+@run_app.command("quarterly")
+@cli_guard
+def run_quarterly_cmd() -> None:
+    """분기 작업 목록 (docs/09 §1): 모순 감사(msa macro) · 캘리브레이션 · 기각 대장. 실행 안 함."""
+    from msa.pipeline.run import run_quarterly
+
+    typer.echo(run_quarterly())
 
 
 # ---------------------------------------------------------------------------

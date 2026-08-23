@@ -80,6 +80,12 @@ class Paths:
         return self.state / "checks"
 
     @property
+    def runs(self) -> Path:
+        """케이던스 실행 리포트 (`state/runs/<asof>/monthly-report.md`·`weekly-report.md`·
+        `run.json`, `msa run monthly|weekly`)."""
+        return self.state / "runs"
+
+    @property
     def backtests_l1(self) -> Path:
         return self.state / "backtests" / "l1"
 
