@@ -6,19 +6,19 @@
 
 | 주기 | 작업 | 소요 | 산출 |
 |---|---|---|---|
-| **월간** (1영업일) | L0 적재 → L1 전수 스캔 → L2 국면 갱신 → 상위 K L3 → L4 → L5 | 사람 30~60분 검토 | 테마 스코어보드 + 매매계획서 |
+| **월간** (1영업일) | L0 적재 → L1 전수 스캔 → 상위 K L3 → L4 → L5 | 사람 30~60분 검토 | 테마 스코어보드 + 매매계획서 |
 | **주간** (월요일) | 보유 포지션의 **트리거·무효화 점검** + L1 경량 갱신 (가격 블록만) | 사람 5~10분 | 점검 리포트 |
 | **일간** | 무효화 트리거 발동 여부만 자동 확인 | 0분 (알림 시에만) | 알림 |
-| **분기** | 모순 감사(`03-macro-dag.md` §6) + 캘리브레이션 갱신(`10-validation.md` §4) + **기각 대장의 12·24M 수익률 갱신**(`10-validation.md` §5) | 사람 1시간 | 감사 리포트 |
+| **분기** | 캘리브레이션 갱신(`10-validation.md` §4) + **기각 대장의 12·24M 수익률 갱신**(`10-validation.md` §5) — (L2 모순 감사는 2026-08-23 L2 제거로 없어졌다, `docs/13` §9) | 사람 1시간 | 감사 리포트 |
 | **수시** | 신규 테마 진입 검토 (사용자 발의) | | |
 
-> **배선 (2026-08-23, W4).** `msa run monthly` 가 월간 행의 순서(스캔 → 거시 → 상위 K 선정 → L3 → 적재 →
+> **배선 (2026-08-23, W4).** `msa run monthly` 가 월간 행의 순서(스캔 → 상위 K 선정 → L3 → 적재 →
 > L4 → L5)를 그대로 실행하고 `state/runs/<date>/monthly-report.md` 에 단계별 `ok|skipped|unavailable|failed`
 > 와 사유를 남긴다 — **끝은 제안·초안**(진입 초안 · `positions-proposal.yaml` · 관찰 목록 행)이며 집행은
 > 사람이 한다. `msa run weekly` 가 주간 행(전수 스캔 + `msa check --weekly`)이다 — "L1 경량 갱신(가격
 > 블록만)" 은 따로 만들지 않았다: 캐시가 있으면 전수 스캔이 ~12 초라 경량 경로의 이유가 없다. 일간은
-> `msa check --daily` 그대로, 분기는 `msa run quarterly` 가 세 명령(`msa macro` 모순 감사 · `ops
-> calibration` · `ops rejections-update`)을 **나열만** 한다. cron 은 `msa ops schedule --print-cron`.
+> `msa check --daily` 그대로, 분기는 `msa run quarterly` 가 두 명령(`ops calibration` · `ops
+> rejections-update`)을 **나열만** 한다 (같은 날 L2 제거로 `msa macro` 모순 감사는 목록에서 빠졌다). cron 은 `msa ops schedule --print-cron`.
 > 구현 노트는 이 문서 끝 "케이던스 오케스트레이터".
 
 **월간 스캔이 만드는 것 vs 사람이 하는 것**
@@ -54,7 +54,7 @@ journal/
   사람이 `04-value-trap.md` §4 규칙을 적용해 산출하며(`11-roadmap.md` "M6 구간에 `c` 를
   누가 만드는가"), 그 표본도 `10-validation.md` §4 캘리브레이션에 들어간다
 - `bear_case` 원문
-- L1 블록 6개 값 + L2 tailwind + 가치함정 5축 판정
+- L1 블록 6개 값 + 가치함정 5축 판정 (2026-08-23 개정: `l2_tailwind` 는 L2 제거와 함께 삭제 — 옛 초안이 그 필드를 들고 오면 거부한다)
 - 종목 · 비중 · 사다리 3단 가격 · Tier1/2 스탑 · 시간 스탑 날짜 · TP 3단
 - **기계 권고와 다르게 결정했다면 그 이유**
 
@@ -107,13 +107,11 @@ journal/
 ```
 state/
 ├── themes.yaml              # 테마 버킷 정의 (수동 편집 대상)
-├── macro-dag.yaml           # 인과 DAG (수동 편집 대상)
 ├── positions.yaml           # 현재 보유 + 사다리 진행 상태
 ├── watchlist.yaml           # 편입 전 관찰 테마 + 대기 조건
 ├── rejections.yaml          # 기각 대장 — 기각 시점 행 + 사후 12·24M 수익률 열 (기계 갱신)
 └── scans/YYYY-MM-DD/        # 월간 스캔 산출물 스냅샷 (재현용)
     ├── scoreboard.parquet
-    ├── macro_state.json
     └── theses/*.yaml
 ```
 
@@ -250,13 +248,12 @@ upsert (기존 `added_at` 유지). 스코어보드 순위는 `--scan` 의 `score
 ### 구현 노트 — 케이던스 오케스트레이터 (`msa run monthly|weekly|quarterly`, `src/msa/pipeline/run.py`, 배선 W4)
 
 §1 의 월간·주간 행을 **한 명령**으로 잇는다. 새 계산·임계값은 없다 — 각 계층의 진입점(`run_scan` ·
-`run_macro` · `run_research` · `ingest_round` · `run_picks` · `assemble_inputs` · `run_portfolio` · `run_check`)을
+`run_research` · `ingest_round` · `run_picks` · `assemble_inputs` · `run_portfolio` · `run_check`)을
 순서대로 부르고, 단계마다 `{status, reason, outputs, seconds}` 를 `RunReport` 에 남긴다.
 
 | 단계 | 호출 | 실패 시 (§5 와 같다) |
 |---|---|---|
 | `scan` | `run_scan` | **중단** (exit 1). 데이터·커버리지 관문 실패면 뒤 단계 전부 `skipped` |
-| `macro` | `run_macro` | 중단하지 않는다. 예외·가용 드라이버 0 → `unavailable`; 결측 드라이버는 사유에 수로 |
 | `select` | 스코어보드 상위 K **자격** 테마(S2 `eligible`) + `--themes` 지정 | 자격이 K 미만이면 그만큼만 — 풀 미달로 채우지 않는다 (`02` §7.1). SECULAR·소표본은 플래그만, 제외하지 않는다 (게이트는 L3 몫) |
 | `research` | `--provider none`: 사람 논지(`--human-theses <dir>/<theme>.yaml`) → 직전 `state/theses/<date≤asof>/` 순으로 **찾기만**; `mock\|fixture\|anthropic`: 테마별 L3 | 테마별 격리 — 스키마 기각은 그 테마 제외 + 사유, 제공자 오류는 보고, 라운드는 계속. `none` 에서 논지가 없는 테마는 "thesis 없음 → 관찰" (오류가 아니다) |
 | `ingest` | 이번 실행이 쓴 L3 라운드 → `ingest_round` (기각→저널+대장 · contested→관찰 · 통과→진입 초안) | `none` 이면 새 라운드가 없어 `skipped` |
@@ -266,13 +263,13 @@ upsert (기존 `added_at` 유지). 스코어보드 순위는 `--scan` 의 `score
 
 **오늘 `--provider none` 이 뜻하는 것.** `ANTHROPIC_API_KEY` 가 없는 현재 기본값이다. L3 를 부르지 않으므로
 새 thesis 는 생기지 않고, 사람이 쓴 논지 디렉터리나 직전 라운드의 thesis 가 있는 테마만 L4·L5 로 간다.
-둘 다 없으면 그 달의 월간 실행은 스코어보드·거시 상태·선정 목록과 "thesis 없음 → 관찰" 목록에서 끝난다 —
+둘 다 없으면 그 달의 월간 실행은 스코어보드·선정 목록과 "thesis 없음 → 관찰" 목록에서 끝난다 —
 그것이 키 없이 기계가 할 수 있는 전부이고, 그렇게 **보고한다.** 키가 생기면 cron 행에 `--provider anthropic`
 을 사람이 붙인다 (비용이 드는 호출을 기본값으로 두지 않는다).
 
 `--no-write` 는 `state/` 에 아무것도 쓰지 않는다. 계층들이 파일 계약으로 이어지므로 중간 산출물은 임시
 샌드박스 디렉터리에 쓰고 끝나면 지우며, 저널·기각 대장·관찰 목록은 `ingest_round(write=False)` 로 판정만
-한다. 종료 코드는 스캔 중단일 때만 1 — 거시 불가·테마별 실패·편입 가능 테마 0 은 0 + 리포트다.
+한다. 종료 코드는 스캔 중단일 때만 1 — 테마별 실패·편입 가능 테마 0 은 0 + 리포트다.
 
 `msa run weekly` = `run_scan` + `run_check(mode="weekly")` (알림 파일·텔레그램·`last_run.json` 은
 `msa check --weekly` 와 같다) + `weekly-report.md`. 점검의 문제(스냅샷 없음 등)는 리포트의 "사람이 할 것" 에
@@ -284,6 +281,6 @@ upsert (기존 `added_at` 유지). 스코어보드 순위는 `--scan` 의 `score
 |---|---|
 | 데이터 적재 실패 | **스캔 중단.** 부분 데이터로 스코어를 내지 않는다 (`CLAUDE.md` §2) |
 | 커버리지 감사 실패 | 스캔 중단 + 알림 |
-| FRED 시리즈 결측 | 해당 드라이버 `state = 0` (중립) 처리 + 리포트에 표시. 중단하지 않음 |
+| FRED 시리즈 결측 (L1 축 1 실물 참조·CPI — `docs/08` §3) | 해당 테마 `axis1_status = data_missing`, CPI 는 `cpi: missing` + 리포트에 표시. 중단하지 않음. (옛 "드라이버 중립 처리" 는 L2 와 함께 빠졌다) |
 | 에이전트 스키마 검증 실패 | 해당 테마 thesis 없음 → 후보에서 제외 + 사유 기록 |
 | 최적화 infeasible | 제약 완화 순서를 **고정**: C3(집중도) → C1(MDD). MDD 는 마지막까지 지킨다. C2(ENB)는 구속 제약이 아니라 리포트 지표이므로(`07-portfolio.md` §2) 애초에 완화 대상이 아니다 — infeasible 의 원인도 될 수 없다 |

@@ -334,7 +334,7 @@ c ∈ [0.5, 0.6) : 35 / 35 / 30    (확신 낮으면 뒤로 미룬다)
   앵커 : 토크 = 58 : 42             현금 22%
   μ 방식: (a) 균등                  확신도 압축 λ = 0.3
 ─────────────────────────────────────────────────────────────
-uranium  (c=0.72, tailwind +0.41)                      테마 28%
+uranium  (c=0.72)                                     테마 28%
   L = 0.42  (과거 유사 국면 0.42 / 사망 사례 0.78 × 0.5 = 0.39 → 과거 국면이 구속)
   CCJ  앵커  목표 16%   사다리 8.0 / 4.8 / 3.2%
        진입 $XX.XX   2단 $XX.XX(−13%)   3단 $XX.XX(−23%)
@@ -343,7 +343,7 @@ uranium  (c=0.72, tailwind +0.41)                      테마 28%
        TP1 $XX.XX (P50)  TP2 $XX.XX (P75)  러너 트레일 25%
   UEC  토크  목표 12%   ...
 ─────────────────────────────────────────────────────────────
-grid_equipment (c=0.66, tailwind +0.55)                테마 22%
+grid_equipment (c=0.66)                               테마 22%
   ...
 ─────────────────────────────────────────────────────────────
 경고
@@ -477,7 +477,7 @@ msa portfolio-inputs --asof 2026-08-14 --themes rare_earth,uranium [--human-thes
 
 **`theses/<theme>.yaml` — thesis 객체의 부분집합.** `theme_id` · `generated_at` · `claim` · `horizon_months` ·
 `cycle_confidence` · **`cycle_confidence_source`** · `triggers`/`invalidations` (`observable·source·by·action·status`
-만) · `tailwind` (최상위 없으면 L3 의 `inputs.macro_tailwind`) · `gate_result{status, portfolio_eligible, rule, path}`
+만) · `gate_result{status, portfolio_eligible, rule, path}`
 · `value_trap_axes.unit_demand{verdict, axis1_available, unit_series_source}` · `assembled_from`(원본 경로).
 evidence·bear_case 등 전문은 옮기지 않는다 — `state/theses/`·저널에 있다.
 

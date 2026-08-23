@@ -33,7 +33,7 @@
 - id: silver_miners                    # 스네이크케이스, 영구 불변 (저널이 이걸로 참조)
   name_ko: 은광
   parent_sector: Basic Materials       # Sharadar/Morningstar 11섹터
-  cycle_class: commodity_supply        # §4 참조 — L1 가중치와 L2 드라이버를 결정
+  cycle_class: commodity_supply        # §4 참조 — L1 가중치를 결정
   industry_match: ["Silver"]           # TICKERS.industry 부분일치 (OR)
   include_tickers: []                  # 큐레이션 추가 — 이유 필수
   exclude_tickers: []                  # 큐레이션 제외 — 이유 필수
@@ -394,8 +394,8 @@ Consumer 가 아니라 **Industrials**, `hvac_building` 은 Industrials 가 아�
 
 ## 4. `cycle_class` — 사이클 유형 분류
 
-사이클 유형이 다르면 **어떤 지표를 봐야 하는지가 다르다.** 이 분류가 L1 블록 가중치와
-L2 드라이버 집합을 결정한다. (가중치 표는 `02-cycle-state.md` §7)
+사이클 유형이 다르면 **어떤 지표를 봐야 하는지가 다르다.** 이 분류가 L1 블록 가중치를
+결정한다 (가중치 표는 `02-cycle-state.md` §7; L2 드라이버 집합은 2026-08-23 L2 제거로 없다).
 
 | class | 사이클의 엔진 | 결정적 지표 | 전형 |
 |---|---|---|---|
