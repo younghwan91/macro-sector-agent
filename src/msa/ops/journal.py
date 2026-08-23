@@ -79,6 +79,12 @@ def _blank(s: str | None) -> bool:
     return s is None or not str(s).strip()
 
 
+def _is_number(v: Any) -> bool:
+    """실수인가 (bool 은 아니다). 기계 초안(`ops/ingest`)이 모르는 값을 null 로 두므로 여기서
+    거른다."""
+    return isinstance(v, int | float) and not isinstance(v, bool)
+
+
 def _reject(label: str, missing: list[str]) -> None:
     """누락이 하나라도 있으면 전부 나열해 거부한다 — 한 번에 고치게."""
     if missing:
@@ -203,6 +209,12 @@ class EntryRecord(_Record):
             missing.append(f"confidence_provenance ∈ {CONFIDENCE_PROVENANCE} (누가 c 를 산출했나)")
         if sorted(self.l1_blocks) != list(BLOCKS):
             missing.append(f"l1_blocks 는 {BLOCKS} 6개 값 (있는 것: {sorted(self.l1_blocks)})")
+        elif any(not _is_number(v) for v in self.l1_blocks.values()):
+            missing.append("l1_blocks 값은 실수 — 스코어보드(scoreboard.csv) A..F 에서 채운다")
+        if not _is_number(self.l2_tailwind):
+            missing.append(
+                "l2_tailwind — L2 tailwind 실수 (state/macro/latest.json). null 은 값이 아니다"
+            )
         missing += _axis_problems(self.axis_verdicts)
         if not self.stocks:
             missing.append("stocks (종목·비중·사다리·스탑·TP) 최소 1개")

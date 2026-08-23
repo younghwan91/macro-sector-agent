@@ -853,6 +853,56 @@ def ops_rejections_update(
         )
 
 
+@ops_app.command("ingest-theses")
+@cli_guard
+def ops_ingest_theses(
+    theses_dir: str = typer.Option(
+        ..., "--theses-dir", help="state/theses/<date>/ (msa research 산출 라운드)"
+    ),
+    scan: str = typer.Option(
+        "", "--scan", help="state/scans/<date>/ (순위·블록 6개). 없으면 thesis 의 inputs.scan_dir"
+    ),
+    asof: str = typer.Option(
+        "", help="기각일/관찰 등록일 (기본 theses-dir 이름의 날짜, 아니면 오늘)"
+    ),
+    journal: str = typer.Option("", help="journal/ 경로 (기본 저장소 루트의 journal/)"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="판정만 하고 파일을 쓰지 않는다"),
+) -> None:
+    """L3 라운드 → 저널 기각 항목·기각 대장·관찰 목록·진입 초안 (docs/09 §2·§4, docs/05 §4).
+
+    진입 항목은 쓰지 않는다 — 초안(journal-draft-<theme>.yaml)을 남기고 사람이 종목·비중·사다리와
+    "기계 권고와 다르게 결정한 이유" 를 채워 `msa journal new --from` 으로 확정한다.
+    """
+    from msa.dates import parse_date
+    from msa.ops.ingest import ingest_round
+    from msa.ops.journal import journal_dir
+
+    tdir = Path(theses_dir)
+    if not tdir.is_dir():
+        raise typer.BadParameter(f"theses-dir 가 디렉터리가 아니다: {tdir}")
+    if asof:
+        asof_d = asof_or_today(asof)
+    else:
+        try:
+            asof_d = parse_date(tdir.name)
+        except ValueError:
+            asof_d = date.today()
+    p = paths()
+    report = ingest_round(
+        tdir,
+        asof=asof_d,
+        scan_dir=Path(scan) if scan else None,
+        journal_dir=Path(journal) if journal else journal_dir(REPO_ROOT),
+        rejections_path=p.rejections,
+        watchlist_path=p.watchlist,
+        macro_latest=p.macro_latest,
+        write=not dry_run,
+    )
+    typer.echo(report.render())
+    if report.n_rejected_blocked or report.count("unknown_status"):
+        raise typer.Exit(code=1)
+
+
 @ops_app.command("reproduce")
 @cli_guard
 def ops_reproduce(
