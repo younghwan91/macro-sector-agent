@@ -206,6 +206,67 @@ def test_gate_axis1_not_applicable_not_treated_as_pass_for_secular() -> None:
     assert not g.portfolio_eligible
 
 
+def test_gate_axis1_and_axis3_both_not_applicable_is_not_a_pass() -> None:
+    """04 §2·§3.2 — 판별의 중심 질문에 답한 축이 없으면 편입 불가. 확신도와 무관하다."""
+    g = _gate(_v("not_applicable", a3="not_applicable"), a1kind="na")
+    assert g.status == "passed" and not g.portfolio_eligible
+    assert g.path is None  # 사망의 증거가 아니라 판정의 부재 — 기각 조항이 아니다
+    assert "적용 불가를 통과로 취급하지 않는다" in g.rule
+    # 확신도가 편입 하한을 넘겨도(등호 포함) 게이트가 막는다
+    g2 = _gate(_v("not_applicable", a3="not_applicable"), a1kind="na", confidence=0.5)
+    assert not g2.portfolio_eligible
+    g3 = _gate(_v("not_applicable", a3="not_applicable"), a1kind="na", confidence=0.9)
+    assert not g3.portfolio_eligible
+
+
+def test_gate_axis1_not_applicable_but_axis3_judges_keeps_old_behaviour() -> None:
+    """축1 적용 불가 → 축 3 이 게이트를 쥔다. 축 3 이 판정을 내면 기존 동작 그대로."""
+    ok = _gate(_v("not_applicable", a3="cycle"), a1kind="na")
+    assert ok.status == "passed" and ok.portfolio_eligible
+    assert any("축 3" in n for n in ok.notes)  # 그 사실을 리포트에 표시한다 (04 §2)
+    assert any("미구현" in n for n in ok.notes)  # 정량적 이전은 아직 없다
+    warn = _gate(_v("not_applicable", a3="warning"), a1kind="na", confidence=0.35)
+    assert warn.status == "passed" and not warn.portfolio_eligible and "07 C6" in warn.rule
+    dead = _gate(_v("not_applicable", a3="death"), a1kind="na")
+    assert dead.status == "passed" and not dead.portfolio_eligible
+    assert str(CONF_CAP_ON_DEATH) in dead.rule
+
+
+def test_gate_rejection_clauses_unchanged_by_na_wiring() -> None:
+    """기존 기각 조항은 그대로 작동한다 — 적용 불가 조항이 앞에서 가로채지 않는다."""
+    assert _gate(_v("death", a3="warning"), a1kind="death").status == "rejected"
+    assert _gate(_v("death", a3="death"), a1kind="death").status == "rejected"
+    assert _gate(_v("contested"), a1kind="contested").status == "rejected"  # ruling 없음
+    held = _gate(
+        _v("contested"),
+        a1kind="contested",
+        referee_ruling="산업 축소이지 수요 소멸이 아니다",
+        referee_evidence_refs=(1,),
+    )
+    assert held.status == "contested" and not held.portfolio_eligible
+    # 적용 불가 + secular_risk 는 secular 조항이 아니라 §3.2 로 닫혀도 결과는 같다 (편입 불가)
+    assert not _gate(_v("not_applicable"), a1kind="na", secular_risk=True).portfolio_eligible
+    assert _gate(_v()).portfolio_eligible  # 5축 정상 판정은 그대로 통과
+
+
+def test_confidence_arithmetic_unchanged_by_na_wiring() -> None:
+    """04 §4 의 산술은 한 항도 바뀌지 않았다 — 적용 불가는 note 만 남긴다."""
+    v = _v("not_applicable", "cycle", "not_applicable", "warning", "warning")
+    r = cycle_confidence(_ci(v, capex_to_da_qtrs_below1=3.0, axis4_strong_cycle=False))
+    assert r.terms == {} and r.value == 0.5 and r.cap is None
+    assert any("축3 not_applicable" in n for n in r.notes)
+    # 항이 붙는 판정에서는 note 가 생기지 않고 값도 그대로
+    r2 = cycle_confidence(_ci(_v()))
+    assert r2.value == 1.0 and not any("축3" in n for n in r2.notes)
+    r3 = cycle_confidence(_ci(_v("not_applicable", a3="cycle")))
+    assert r3.terms == {
+        "axis2_capex_below1_8q": 0.10,
+        "axis3_no_substitution": 0.15,
+        "axis4_strong_cycle": 0.10,
+    }
+    assert r3.value == pytest.approx(0.85)
+
+
 def test_rejection_row_format() -> None:
     g = _gate(_v("death", a3="warning"), a1kind="death")
     row = rejection_row(

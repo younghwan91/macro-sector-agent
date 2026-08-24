@@ -9,6 +9,12 @@ referee(LLM) 는 축 2~5 의 판정만 내고, 이 모듈이 게이트와 확신
 2. 축1 == death AND 축3 ∈ {warning, death} → `rejected` (path=hard_gate).
 3. 축1 == death OR 축3 == death → 확신도 상한 0.35, 포트 편입 불가
    (status 는 passed — 하드 기각은 아니다).
+3.5 축1 == not_applicable AND 축3 == not_applicable → 포트 편입 불가 (2026-08-24 개정).
+   `docs/04` §2 "축 1 적용 가능 범위" 의 선언 — "축 3 에 가중치를 이전하고 그 사실을 리포트에
+   표시한다. **적용 불가를 통과로 취급하지 않는다.**" 축 1 이 적용 불가면 축 3 이 게이트를
+   쥐는데, 축 3 마저 적용 불가면 판별의 중심 질문(§1 "공급이 파괴될 때 수요가 남아 있는가")에
+   아무도 답하지 않은 것이다. **정량적 가중치 이전은 여전히 미구현이다** — §4 에 이전 계수가
+   없어 새 선언이 필요하다 (`CLAUDE.md` §1).
 4. 축5 24M 만기부채/시총 > 0.5 → 테마 유지, L4 생존 필터 플래그.
 5. `secular_risk` 버킷은 통과를 입증해야 후보 (`docs/01` §3) —
    축1·축3 이 모두 cycle 이 아니면 편입 불가.
@@ -108,6 +114,13 @@ def cycle_confidence(ci: ConfidenceInputs) -> ConfidenceResult:
         terms["axis3_no_substitution"] = CONF_TERMS["axis3_no_substitution"]
     elif v.substitution == "warning":
         terms["axis3_warning"] = CONF_TERMS["axis3_warning"]
+    elif v.substitution == "not_applicable":
+        # 산술은 그대로다 — 04 §4 에 축3 적용 불가 항이 없으므로 가감하지 않는다.
+        # 다만 기록은 남긴다: 축1 도 적용 불가면 게이트(04 §3.5)가 편입을 막는다.
+        notes.append(
+            "축3 not_applicable: 가감 없음 (04 §4 에 항 없음). 축1 도 적용 불가면 판별의 중심 "
+            "질문에 답한 축이 없어 편입 불가 (04 §2 '적용 불가를 통과로 취급하지 않는다')"
+        )
     if ci.axis4_strong_cycle and v.cost_curve == "cycle":
         terms["axis4_strong_cycle"] = CONF_TERMS["axis4_strong_cycle"]
     if ci.axis5_severe or v.terminal_risk == "death":
@@ -182,6 +195,14 @@ def apply_gates(
         notes.append(
             "cycle_class=secular_risk — 게이트 기본 적용, 통과를 입증해야 후보 (docs/01 §3)"
         )
+    if a1 == "not_applicable" and a3 != "not_applicable":
+        # docs/04 §2 "축 1 적용 가능 범위" — 축 1 을 쓸 수 없으면 판별의 중심이 축 3 으로 넘어간다.
+        # "게이트를 쥔 축이 LLM 이 되는 것이므로, 이 사실은 리포트에 숨기지 않는다."
+        # 정량적 가중치 이전(얼마를 어떻게 옮기는가)은 §4 에 계수가 없어 구현하지 않았다.
+        notes.append(
+            f"축1 적용 불가 → 판별의 중심이 축 3(LLM 판정, 여기서는 {a3})으로 넘어간다 "
+            f"(04 §2). 정량적 가중치 이전은 미구현 — 04 §4 에 이전 계수가 없다"
+        )
     # 모든 분기가 공유하는 필드 — 분기는 status·rule·reason(·path·ruling)만 말한다
     result = partial(
         GateResult,
@@ -252,6 +273,29 @@ def apply_gates(
                 f"불가, 관찰 목록만 (04 §3)"
             ),
             reason=f"축1 {a1} · 축3 {a3} · cycle_confidence={confidence}",
+        )
+
+    # 3.5 적용 불가를 통과로 취급하지 않는다 (04 §2 "축 1 적용 가능 범위", 2026-08-24 배선)
+    #   선언 그대로 — "축 3 에 가중치를 이전하고 그 사실을 리포트에 표시한다. 적용 불가를
+    #   통과로 취급하지 않는다." 축 1 이 적용 불가일 때 게이트를 쥐는 것은 축 3 인데, 축 3 도
+    #   적용 불가면 §1 의 중심 질문("공급이 파괴될 때 수요가 남아 있는가")에 답한 축이 없다.
+    #   기각(rejected)이 아니라 편입 불가로 닫는 이유: §3 의 기각 조항은 전부 '사망' 이라는
+    #   관측을 요구하는데 여기에는 관측 자체가 없다. 사망의 증거가 아니라 판정의 부재다 →
+    #   §3 이 이미 쓰는 중간 제재(status=passed · 포트 편입 불가 · 관찰 목록만)와 같은 형태로
+    #   닫는다. 새 상태값을 만들지 않는다. 관찰 목록 사유는 이미 있는 `axis1_unavailable`
+    #   (`docs/09` §5 · `ops/ingest.py:_watch_reason_ineligible`).
+    if a1 == "not_applicable" and a3 == "not_applicable":
+        return result(
+            status="passed",
+            portfolio_eligible=False,
+            rule=(
+                "축1·축3 모두 적용 불가 → 판별의 중심 질문에 답한 축이 없다. 포트 편입 불가, "
+                "관찰 목록만 (04 §2 '적용 불가를 통과로 취급하지 않는다')"
+            ),
+            reason=(
+                f"축1 {a1} · 축3 {a3} · cycle_confidence={confidence} — 확신도가 이 값인 것은 "
+                f"판정이 아니라 판정의 부재에서 왔다 (04 §4 에 적용 불가 항이 없다)"
+            ),
         )
 
     # 5. secular_risk — 통과 입증
