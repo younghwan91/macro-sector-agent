@@ -134,6 +134,10 @@ def detect_red_flags(history: list[AnnualRow], *, financial: bool = False) -> li
             )
         )
 
+    # `COMPUTABLE` 이 선언한 순서로 정렬한다 — 선언해 놓고 안 쓰면 순서가 판정 분기의
+    # 우연에 따라 달라지고, 리포트가 실행마다 바뀐다 (2026-08-25).
+    order = {k: i for i, k in enumerate(COMPUTABLE)}
+    flags.sort(key=lambda f: order.get(f.key, len(order)))
     return flags
 
 

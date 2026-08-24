@@ -144,7 +144,7 @@ def data_status(
         typer.echo(f"{'table':<14}{'rows':>14}{'tickers':>10}  {'start':<12}{'end':<12}  상태")
         typer.echo("-" * 78)
         for s in store.table_stats():
-            state = "적재됨" if s.loaded else "미적재 (0행)"
+            state = s.status  # 0행이 적재 실패인지 원래 그런지 구분한다 (EMPTY_TABLES)
             typer.echo(
                 f"{s.name:<14}{_fmt(s.rows):>14}{_fmt(s.tickers):>10}  "
                 f"{s.start or '—'!s:<12}{s.end or '—'!s:<12}  {state}"

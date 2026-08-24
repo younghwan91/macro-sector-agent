@@ -597,3 +597,41 @@ def test_thesis_records_both_dates_and_the_lag(tmp_path: Path) -> None:
     # 라운드 묶음은 스캔 날짜로 유지된다 — scan·research·picks 가 같은 라운드를 공유한다
     assert res.asof == inp.asof
     assert res.decision_date == "2026-08-25"
+
+
+def test_stale_snapshot_is_reported_not_hidden(tmp_path: Path) -> None:
+    """오래된 가격으로 판단했다는 사실은 리포트에 남아야 한다 (`CLAUDE.md` §2)."""
+    from msa.l3.pipeline import run_research
+
+    inp = dataclasses.replace(inputs(), decision_date="2026-09-30")  # 스냅샷 08-14 → 47일
+    res = run_research(inp, FixtureProvider(FIXTURES, "uranium"), theses_root=tmp_path / "t")
+    assert any("뒤처져" in w for w in res.warnings)
+    assert res.thesis["inputs"]["data_lag_days"] == 47
+
+    near = dataclasses.replace(inputs(), decision_date="2026-08-17")  # 3일 — 경고 없음
+    res2 = run_research(near, FixtureProvider(FIXTURES, "uranium"), theses_root=tmp_path / "t2")
+    assert not any("뒤처져" in w for w in res2.warnings)
+
+
+def test_survival_flag_reaches_the_stock_list(tmp_path: Path) -> None:
+    """축5 생존 플래그가 게이트 dict 에만 남고 아무도 안 읽던 것을 배선했다 (2026-08-25).
+
+    자동 제외가 아니라 **사람이 부채 열을 보게 하는 경고**다 — 테마 단위 판정이라
+    어느 종목인지 모르기 때문이다.
+    """
+    from msa.thesis import ThesisHead
+
+    head = ThesisHead(
+        theme="t",
+        claim="논지",
+        invalidations=("관측 가능한 조건",),
+        l4_survival_filter=True,
+        source="state/theses/x.yaml",
+    )
+    text = "\n".join(head.lines())
+    assert "축5 생존 경고" in text
+    assert "자동 제외는 없다" in text
+    assert "net_debt_ebitda" in text
+
+    off = dataclasses.replace(head, l4_survival_filter=False)
+    assert "축5" not in "\n".join(off.lines())

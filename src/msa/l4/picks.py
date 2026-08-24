@@ -81,32 +81,10 @@ log = logging.getLogger(__name__)
 #: `ANCHOR`/`TORQUE` 도 계속 읽힌다 (`assemble.ROLE_BY_GROUP`).
 SELECTION_GROUP = "ELIGIBLE"
 
-#: `ranking.csv` 에서 L5 입력으로 옮겨 가는 열 (`msa.pipeline.assemble`). 선정 라벨 · 관찰용
-#: 바벨 라벨 · 관찰용 순위·종합·3축 백분위 · 기준가 · 유동성 · 표기용 플래그.
-#: 이 밖의 열은 리포트 전용이다. **`rank`·`composite`·`*_pct`·`barbell_obs` 는 표기용이고
-#: 선정에 쓰이지 않는다** (모듈 docstring).
-#: 2026-08-24 추가 — `nd_basis`(그 종목의 `net_debt_ebitda` 가 EBITDA 공간인지 시총 공간인지) ·
-#: `s_partial`(S 하위 항목 결측으로 `s_raw` 가 재정규화됐다) · `m_inputs_missing`(S·T 와 같은 형식).
-#: 셋 다 **표시**이고 어떤 판정도 바꾸지 않는다.
-RANKING_EXPORT_COLUMNS: tuple[str, ...] = (
-    "group",
-    "barbell_obs",
-    "rank",
-    "composite",
-    "composite_partial",
-    "s_pct",
-    "t_pct",
-    "m_pct",
-    ENTRY_PRICE_FEATURE,
-    LIQUIDITY_FEATURE,
-    "penalties",
-    "red_flags",
-    "nd_basis",
-    "s_partial",
-    "s_inputs_missing",
-    "t_inputs_missing",
-    "m_inputs_missing",
-)
+#: `RANKING_EXPORT_COLUMNS` 는 2026-08-25 에 삭제했다. 2026-08-24 에 명단 규약이
+#: "적격 전부 · 열은 하나도 버리지 않는다" 로 바뀌면서 고정 부분집합을 쓸 자리가 사라졌는데
+#: 상수만 남아 있었다. 열 순서는 `order_ranking_columns()` + `JUDGMENT_COLUMNS` 가 정한다.
+
 
 #: **명단의 1급 열** — 사람이 차트를 열기 전에 읽는 판단 재료다 (2026-08-24 사용자 지시:
 #: "가장 중요한 건 섹터를 잘 골라주는 것 · 최종 종목과 진입 시점은 사람이 차트를 보고 정한다").

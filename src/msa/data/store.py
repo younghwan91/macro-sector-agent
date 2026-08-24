@@ -111,6 +111,16 @@ class TableStat:
     start: date | None
     end: date | None
     loaded: bool
+    #: 실측 결과 벤더가 0행을 주는 테이블(`EMPTY_TABLES`). 0행이 **적재 실패가 아니라**
+    #: 원래 그렇다는 뜻이다. 이 구분이 없으면 `msa data status` 를 볼 때마다 고장으로 읽힌다.
+    known_empty: bool = False
+
+    @property
+    def status(self) -> str:
+        """`msa data status` 가 찍는 한 마디 — 적재됨 · 미적재(원래 빈 테이블) · 비었음."""
+        if self.loaded:
+            return "적재됨"
+        return "미적재(벤더가 0행)" if self.known_empty else "비었음"
 
 
 def _expand(path: Path) -> Path:
@@ -456,6 +466,7 @@ class Store:
                     start=start,
                     end=end,
                     loaded=rows > 0,
+                    known_empty=name in EMPTY_TABLES,
                 )
             )
         return out

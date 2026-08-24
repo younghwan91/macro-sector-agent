@@ -657,6 +657,15 @@ def run_research(
             f"판정일 {gen} 이 데이터 스냅샷일 {inputs.asof} 보다 앞선다 — "
             "존재하지 않는 데이터로 판정할 수 없다"
         )
+    lag = _days_between(inputs.asof, gen)
+    stale_note: list[str] = []
+    if lag is not None and lag > DATA_LAG_WARN_DAYS:
+        # §2 — 오래된 가격으로 판단하고 있다는 사실이 보이지 않으면 나중에 원인을 못 찾는다.
+        stale_note.append(
+            f"가격·재무 스냅샷이 판정일보다 {lag}일 뒤처져 있다 "
+            f"({inputs.asof} → {gen}, 경고 기준 {DATA_LAG_WARN_DAYS}일). "
+            "증거는 판정일 기준으로 검증되지만 스코어카드는 스냅샷 시점 값이다"
+        )
     roles, evidence = run_roles(inputs, provider, ledger)
     thesis, gate, conf = build_thesis(inputs, roles, evidence, generated_at=gen)
     val = validate_thesis(
@@ -694,7 +703,7 @@ def run_research(
         ledger=ledger,
         report_md=report,
         roles=roles,
-        warnings=list(inputs.warnings) + list(val.warnings),
+        warnings=stale_note + list(inputs.warnings) + list(val.warnings),
     )
     if write:
         res.out_dir, res.thesis_path = write_outputs(theses_root, inputs, res)

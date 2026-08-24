@@ -194,10 +194,17 @@ def test_gate_secular_risk_requires_proof() -> None:
     assert g2.portfolio_eligible
 
 
-def test_gate_debt_flag_keeps_theme() -> None:
+def test_gate_debt_flag_keeps_theme_and_says_it_is_not_an_auto_exclusion() -> None:
+    """축5 플래그는 테마를 유지하고, **자동 제외가 아님을 명시**한다 (2026-08-25).
+
+    예전 문구는 "L4 종목 선정에서 해당 종목 제외" 였는데 L4 는 이 플래그를 읽지 않았다 —
+    선언-미구현이다. 게다가 테마 단위 판정이라 "해당 종목" 이라는 것 자체가 없다.
+    이제 문구가 사실을 말하고, 경고는 `ThesisHead` 를 타고 명단 머리로 간다.
+    """
     g = _gate(_v(), debt_24m_over_half=True)
     assert g.status == "passed" and g.l4_survival_filter
-    assert any("생존 필터" in n for n in g.notes)
+    note = next(n for n in g.notes if "축5" in n)
+    assert "자동 제외" in note and "0.5" in note
     assert g.as_dict()["l4_survival_filter"] is True
 
 

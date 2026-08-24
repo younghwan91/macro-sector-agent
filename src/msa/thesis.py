@@ -169,6 +169,11 @@ class ThesisHead:
     horizon_months: tuple[int, ...] = ()
     cycle_confidence: float | None = None
     gate: str | None = None
+    #: 게이트가 켠 L4 생존 플래그 (`gate_result.l4_survival_filter`). **L4 는 이것으로 종목을
+    #: 자동 제외하지 않는다** — 테마 단위 판정이라 어느 종목인지 모른다. 사람이 명단의
+    #: 부채 열을 직접 보라는 표시다. 예전에는 이 값이 게이트 dict 에만 남고 아무도 읽지
+    #: 않았다 (2026-08-25, 선언-미구현).
+    l4_survival_filter: bool = False
     source: str = ""  # 논지 파일 경로 (표시용)
 
     @property
@@ -187,11 +192,19 @@ class ThesisHead:
             meta.append(f"확신도 {self.cycle_confidence:g}")
         if self.gate:
             meta.append(f"게이트 {self.gate}")
+        if self.l4_survival_filter:
+            meta.append("축5 생존 경고")
         meta.append(self.source)
         head.append("  (" + " · ".join(meta) + ")")
         if not self.invalidations:
             head.append("무효화 조건: 없음 — 스키마상 있을 수 없다 (CLAUDE.md §5). 논지를 확인하라")
             return head
+        if self.l4_survival_filter:
+            head.append(
+                "축5 경고: 24M 만기부채/시총이 크다고 판정됐다 — **자동 제외는 없다.** "
+                "테마 단위 판정이라 어느 종목인지 모른다. 아래 표의 `net_debt_ebitda`·"
+                "만기벽·`cash_runway_q` 를 직접 보라"
+            )
         shown = self.invalidations[:max_invalidations]
         head.append("무효화 조건:")
         head += [f"  - {x}" for x in shown]
@@ -230,6 +243,7 @@ def thesis_head(theme_id: str, asof: str, root: Path | str | None = None) -> The
         horizon_months=tuple(int(h) for h in hz if isinstance(h, int | float)),
         cycle_confidence=float(conf) if isinstance(conf, int | float) else None,
         gate=gate_status(raw),
+        l4_survival_filter=bool((raw.get("gate_result") or {}).get("l4_survival_filter", False)),
         source=rel(f),
     )
 

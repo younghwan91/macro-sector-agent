@@ -732,10 +732,10 @@ def theme_month_metrics(
         # Q3 — 사유별 제외군 − 통과군 (§2.5). 초과수익 차 · 사망률 차 · 기본/D1
         n_pass_all = elig.sum(axis=1)
         gauge_specs: list[tuple[str, str, np.ndarray]] = [
-            ("excess", "base", np.where(listed, Yb, np.nan) - ew[:, None]),
-            ("excess", "d1", np.where(listed, Yd, np.nan) - ew[:, None]),
+            (FILTER_GAUGES[0], RETURN_BASES[0], np.where(listed, Yb, np.nan) - ew[:, None]),
+            (FILTER_GAUGES[0], RETURN_BASES[1], np.where(listed, Yd, np.nan) - ew[:, None]),
             # 사망률은 수익률 규약과 무관하다 — 기본 기준으로 한 번만 잰다
-            ("death", "base", np.where(listed, D, np.nan)),
+            (FILTER_GAUGES[1], RETURN_BASES[0], np.where(listed, D, np.nan)),
         ]
         for gauge, basis, A in gauge_specs:
             m_pass, n_pass = _group_mean(A, elig)

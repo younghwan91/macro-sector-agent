@@ -24,6 +24,7 @@ from functools import partial
 from typing import Any
 
 from msa.l3.contracts import BearInputs, CaseStudy, ResearchInputs
+from msa.l3.gates import DEBT_24M_TO_MCAP_MAX
 from msa.l3.providers import CompletionRequest
 from msa.thesis import AXES, AXIS_VERDICTS, INVALIDATION_ACTIONS, RELIABILITY
 
@@ -427,7 +428,8 @@ REFEREE_SYSTEM = (
     "- cost_curve: 가격 < P90 현금원가 + 셧다운 발표 관측 → cycle 이고 strong_cycle=true / 가격 < "
     "P75 → cycle / 원가곡선 상단 여유 → warning(무관). "
     "death 는 내지 않는다 (이 축은 '반등한다' 만 말한다).\n"
-    "- terminal_risk: 24M 만기부채/시총 > 0.5, 자산 재활용성, 단일 규제 소멸, 지리 집중. 심각하면 "
+    f"- terminal_risk: 24M 만기부채/시총 > {DEBT_24M_TO_MCAP_MAX}, 자산 재활용성, 단일 규제 "
+    "소멸, 지리 집중. 심각하면 "
     "severe=true (death), 주의면 warning.\n"
     "- 증거를 댈 수 없는 축은 not_applicable 로 닫고 note 에 그 사실을 적는다. low 등급 "
     "증거만으로는 판정할 수 없다 (medium 이상 1개 필요).\n\n"

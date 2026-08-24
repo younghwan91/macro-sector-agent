@@ -48,14 +48,14 @@ import pandas as pd
 
 from msa.fmt import pct
 from msa.io import dump_yaml, to_plain, write_snapshot
-from msa.l5.ladders import TIER2_FROM_AVG, tier2_rules
+from msa.l5.ladders import tier2_rules
 from msa.ops.alerts import Alert, AlertKind, format_alert
 from msa.ops.journal import load_entries, load_snapshot
 from msa.ops.state_files import Position, PositionsFile, load_positions
 
 TIME_STOP_WARN_DAYS = 30
-#: Tier-2 임계는 `l5.ladders` 가 단일 출처다 — 여기서 다시 선언하지 않는다.
-TIER2_PCT = TIER2_FROM_AVG
+# Tier-2 임계는 `l5.ladders.TIER2_FROM_AVG` 가 단일 출처다. 여기서 별칭을 두지 않는다 —
+# 별칭은 아무도 쓰지 않은 채 "여기도 정의가 있다" 는 인상만 준다 (2026-08-25 삭제).
 
 # ---------------------------------------------------------------------------
 # 가격 소스 계약 — Store 든 합성이든 같은 모양
