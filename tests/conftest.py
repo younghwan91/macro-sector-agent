@@ -7,6 +7,18 @@ import pytest
 from msa.config import paths
 
 
+@pytest.fixture(autouse=True)
+def _plain_cli_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CLI help 문자열 assert 가 ANSI 로 쪼개지지 않게 한다.
+
+    rich 는 GITHUB_ACTIONS 가 있으면 비-TTY 여도 컬러를 강제로 켠다 — 그러면
+    help 의 `--no-write` 가 `ESC[1;36m-ESC[0m...-write` 로 나와서 substring
+    assert 가 CI 에서만 깨진다. TERM=dumb 는 rich 가 컬러를 포기하는 유일한 신호다.
+    """
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.setenv("TERM", "dumb")
+
+
 @pytest.fixture(scope="session")
 def store():
     """실제 DuckDB 스토어. 없으면 스킵한다 — `@pytest.mark.data` 테스트에서만 쓴다."""
