@@ -37,7 +37,8 @@
 - `JUDGMENT_COLUMNS` 가 `ranking.csv` 의 앞으로 오고 리포트 표의 열이 된다 —
   `from_52w_high`(손익비) · `mcap` · `adv20_usd` · `net_debt_ebitda`+`nd_basis` · `cash_runway_q` ·
   `rs_rating` · `stage2`/`above_50d`/`vcp_base` · `penalties`/`red_flags`. **새 열은 없다.**
-- `vcp_base` 는 실릴 때마다 `VCP_DEFECT_NOTE` 가 붙는다 (폭락 중에도 True 가 나온다).
+- `vcp_base` 는 실릴 때마다 `VCP_DEFECT_NOTE` 가 붙는다 (폭락 오탐은 2026-08-25 에
+  고쳤고, 최신성·dry-up 한계는 남아 있다).
 - 논지(`thesis_head`)가 명단 머리에 붙는다 — 없으면 "논지 없음 — L3 미실행" 이라 적는다.
 - **유동성·저가 감점은 꺼져 있고**(`axes.PENALTY_ENABLED`, 2026-08-24 사용자 지시) 그 사실이
   리포트·`meta.json` 에 매번 적힌다. `adv20_usd` 열은 그대로 실린다 — 감점만 껐다.
@@ -135,8 +136,10 @@ JUDGMENT_COLUMNS: tuple[str, ...] = (
 #: `vcp_base` 를 싣는 곳마다 붙는 결함 표시 (`docs/06` §4 · `features.vcp_base` docstring).
 #: 표시 없이 실으면 사람을 오도한다 — 이 값은 **폭락 중에도 True 가 나온다.**
 VCP_DEFECT_NOTE = (
-    "VCP* — `vcp_base` 는 결함이 있다: 수축 베이스 뒤 −40% 붕괴에도 True 가 나온다 "
-    "(현재가 위치를 보는 조건이 없다 · docs/06 §4·§8.2). 참고로만 읽고, 고점 대비(52wH)를 함께 보라"
+    "VCP* — `vcp_base` 는 2026-08-25 에 폭락 오탐을 고쳤다(마지막 수축 저점을 잃으면 False). "
+    "남은 한계 둘: 수축의 **최신성을 요구하지 않고**(베이스 뒤 오래 횡보해도 True), "
+    "dry-up 이 임계 없는 순부등호다(1% 차이도 통과 · docs/06 §4·§8.2). "
+    "참고로만 읽고, 고점 대비(52wH)를 함께 보라"
 )
 
 

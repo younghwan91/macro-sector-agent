@@ -633,27 +633,27 @@ def price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
 def vcp_base(
     close: pd.Series, volume: pd.Series, *, left: int = 5, right: int = 5, max_cons: int = 4
 ) -> bool:
-    """VCP 베이스: 수축 ≥ 2 · 수축폭 단조 감소 · 거래량 dry-up (10일 < 50일).
+    """VCP 베이스: 수축 ≥ 2 · 수축폭 단조 감소 · 거래량 dry-up · **현재가가 베이스 안**.
 
-    ## 알려진 결함 — 2026-08-24 실측. **고치지 않았다** (`docs/06` §4·§8.2)
+    ## 2026-08-25 — 치명적 오탐을 고쳤다 (`docs/06` §4·§8.2)
 
-    수축 베이스(20% → 12% → 6%) 뒤에 40봉 −40% 붕괴를 이어 붙이면 **5개 시드 전부 True** 가
-    나온다. 원인 둘:
+    이전 판은 수축 베이스(20% → 12% → 6%) 뒤에 40봉 −40% 붕괴를 이어 붙여도 **5개 시드 전부
+    True** 를 냈다. 원인은 `build_contractions(ref_level=c.max(), tol=0.10)` 이 고점 −10% 아래
+    피벗 쌍을 버리는 것이었다 — 폭락 구간이 수축으로 세어지지 않고 붕괴 전의 예쁜 수축만 남는다.
 
-    1. `build_contractions(ref_level=c.max(), tol=0.10)` 이 고점 −10% 아래의 피벗 쌍을 버린다.
-       폭락 구간의 H 는 전부 그 아래라 **수축으로 세어지지 않고**, 남는 것은 붕괴 전의 예쁜
-       수축들뿐이다.
-    2. **현재가가 어디에 있는지 보는 조건이 없다.** `from_52w_high` 는 이미 계산돼 있지만 이
-       함수도 `axes.timing` 도 읽지 않는다.
+    **고친 방법은 새 임계가 아니다.** 마지막 수축의 저점(`trough`)은 이 함수가 이미 계산한다.
+    종가가 그 아래로 내려갔으면 **가격이 베이스에서 이탈한 것**이고, 이탈한 베이스는 정의상
+    베이스가 아니다. 발명한 값이 없으므로 `CLAUDE.md` §1 에 걸리지 않는다 — 임계를 고른 것이
+    아니라 선언된 개념("수축 베이스")을 그대로 구현한 것이다.
 
-    부수 결함: 수축의 최신성을 요구하지 않는다 (베이스 후 120봉이 지나도 True) · dry-up 이
-    임계 없는 순부등호라 1% 차이도 통과.
+    ## 남은 한계 (표시는 유지한다)
 
-    **왜 고치지 않는가**: 현재가 위치 컷·최신성 창·dry-up 비율 — 셋 다 **새 임계**이고,
-    `CLAUDE.md` §1 은 문서에 없는 값을 발명하는 것을 금지한다. 현재 동작은
-    `tests/test_l4_features.py` 의 특성화 테스트가 고정하고 있다 — 나중에 고칠 때 무엇이
-    바뀌는지 그 테스트가 보여 준다. 그 사이 실피해는 0 이다: M 축은 관찰 지표이고 선정에
-    쓰이지 않는다 (`docs/06` §6.1 · `journal/2026-08-24-l4-selection-retired.md`).
+    - **최신성 요구가 없다**: 베이스 뒤 120봉을 횡보해도, 저점을 지키는 한 True 다. 최신성
+      창은 새 임계라 넣지 않았다. 다만 이탈 조건 덕분에 위험한 쪽(폭락)은 더는 통과하지 못한다.
+    - **dry-up 이 임계 없는 순부등호**다 — 10일 평균이 50일 평균보다 1%만 낮아도 통과한다.
+
+    그래서 `picks.VCP_DEFECT_NOTE` 는 계속 붙는다. M 축은 여전히 관찰 지표이고 선정에
+    쓰이지 않는다 (`docs/06` §6.1).
     """
     c = close.dropna()
     piv = compress_pivots(find_pivots(c, left=left, right=right))
@@ -665,7 +665,10 @@ def vcp_base(
     shrinking = all(depths[i] < depths[i - 1] for i in range(1, len(depths)))
     v50 = float(volume.tail(50).mean())
     dry = bool(v50 > 0 and float(volume.tail(10).mean()) < v50)
-    return bool(shrinking and dry)
+    # 마지막 수축의 저점을 잃었으면 베이스에서 이탈한 것이다 — 이탈한 베이스는 베이스가 아니다.
+    # 새 임계가 아니라 위에서 이미 구한 `trough` 와의 비교다.
+    in_base = float(c.iloc[-1]) >= float(cons[-1]["trough"])
+    return bool(shrinking and dry and in_base)
 
 
 def rs_rating_from_universe(universe_rs_raw: pd.Series) -> pd.Series:

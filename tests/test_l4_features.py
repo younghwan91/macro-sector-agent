@@ -374,15 +374,14 @@ def test_price_beta_hist_window_and_sign() -> None:
     assert info2["status"] == "n/a"
 
 
-# ---------------------------------------------------------------- vcp_base 특성화
+# ---------------------------------------------------------------- vcp_base
 #
-# 아래는 **고쳐야 할 동작을 고정하는 특성화 테스트**다 (`docs/06` §4·§8.2 · 2026-08-24).
-# `vcp_base` 는 폭락 중에도 True 를 낸다. 고치려면 새 임계(현재가 위치 컷·수축 최신성 창·
-# dry-up 비율)가 필요하고 그것은 `CLAUDE.md` §1 위반이라 **고치지 않았다.** 대신 현재 동작을
-# 여기에 박아, 나중에 누가 고칠 때 정확히 무엇이 바뀌는지 이 테스트가 실패로 보여 준다.
+# 2026-08-24 에 특성화 테스트로 고정해 둔 결함을 2026-08-25 에 고쳤다 (`docs/06` §4·§8.2).
+# 예고한 대로 테스트를 지우지 않고 **기대값을 뒤집었다** — 무엇이 바뀌었는지 남기기 위해서다.
+# 고침은 새 임계를 도입하지 않았다: 마지막 수축의 저점(`trough`)은 함수가 이미 구하는 값이고,
+# 종가가 그 아래면 베이스에서 이탈한 것이다. 이탈한 베이스는 정의상 베이스가 아니다.
 #
-# **이 테스트가 실패하면 그것은 회귀가 아니라 결함이 고쳐졌다는 신호일 수 있다.** 그때는
-# 테스트를 지우지 말고 기대값을 뒤집고, `docs/06` §8.2 의 결함 항목을 함께 지운다.
+# 아래 둘(최신성·dry-up)은 **여전히 고치지 않았다** — 그것들은 진짜로 새 임계를 요구한다.
 
 
 def _vcp_contracting_base(
@@ -415,27 +414,40 @@ def _vcp_contracting_base(
 
 
 @pytest.mark.parametrize("seed", [0, 1, 2, 3, 4])
-def test_vcp_base_characterization_true_during_crash(seed: int) -> None:
-    """**현재 동작**: 수축 베이스 뒤 40봉 −40% 붕괴가 와도 True. 5개 시드 전부.
+def test_vcp_base_is_false_during_a_crash(seed: int) -> None:
+    """수축 베이스 뒤 40봉 −40% 붕괴 → False. 5개 시드 전부 (이전에는 전부 True 였다).
 
-    원인 둘 (`features.vcp_base` docstring):
-    1. `build_contractions(ref_level=max, tol=0.10)` 이 고점 −10% 아래 피벗을 버려 폭락 구간이
-       수축으로 세어지지 않는다 — 남는 것은 붕괴 전의 예쁜 수축들뿐이다.
-    2. 현재가 위치를 보는 조건이 없다 (`from_52w_high` 는 계산돼 있으나 아무도 읽지 않는다).
+    `build_contractions(ref_level=max, tol=0.10)` 이 고점 −10% 아래 피벗을 버리는 것은 그대로다 —
+    폭락 구간은 여전히 수축으로 세어지지 않는다. 대신 **마지막 수축의 저점을 잃었는지**를 본다.
     """
     close, vol = _vcp_contracting_base(seed)
     assert float(close.iloc[-1] / close.max() - 1) < -0.35  # 고점 대비 −35% 아래
+    assert F.vcp_base(close, vol) is False
+
+
+def test_vcp_base_survives_a_shallow_pullback_inside_the_base() -> None:
+    """이탈 조건은 **베이스 안의 흔들림**까지 죽이지는 않는다 — 저점을 지키면 True 다.
+
+    그렇지 않으면 조건이 "저점 정확히 재방문 금지" 가 되어 VCP 개념 자체와 어긋난다.
+    """
+    close, vol = _vcp_contracting_base(0, crash_bars=0, crash_depth=0.0)
     assert F.vcp_base(close, vol) is True
+    shallow = pd.concat([close, pd.Series([float(close.iloc[-1]) * 0.995])], ignore_index=True)
+    v2 = pd.concat([vol, pd.Series([float(vol.iloc[-1])])], ignore_index=True)
+    assert F.vcp_base(shallow, v2) is True
 
 
 def test_vcp_base_characterization_no_recency_requirement() -> None:
-    """**현재 동작**: 수축이 아무리 오래됐어도 True — 최신성 요구가 없다."""
+    """**남은 한계**: 수축이 아무리 오래됐어도 저점을 지키면 True — 최신성 요구가 없다.
+
+    최신성 창은 진짜 새 임계라 넣지 않았다 (`CLAUDE.md` §1). `VCP_DEFECT_NOTE` 가 계속 붙는다.
+    """
     close, vol = _vcp_contracting_base(0, crash_bars=0, crash_depth=0.0, idle_bars=120)
     assert F.vcp_base(close, vol) is True
 
 
 def test_vcp_base_characterization_dry_up_is_bare_inequality() -> None:
-    """**현재 동작**: dry-up 이 임계 없는 순부등호 — 1% 차이도 통과한다."""
+    """**남은 한계**: dry-up 이 임계 없는 순부등호 — 1% 차이도 통과한다."""
     close, _v = _vcp_contracting_base(0, crash_bars=0, crash_depth=0.0)
     n = len(close)
     vol = pd.Series(np.full(n, 1_000_000.0))
