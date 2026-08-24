@@ -16,6 +16,7 @@ from msa.l3.contracts import (
     L1_SCORE_FIELDS,
     InputsError,
     assemble_inputs,
+    find_prior_thesis,
     latest_scan_dir,
     load_scorecard,
 )
@@ -500,3 +501,21 @@ def test_cli_research_unknown_theme_exit_1(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setenv("MSA_STATE", str(tmp_path))
     r = CliRunner().invoke(app, ["research", "coal", "--dry-run", "--no-store"])
     assert r.exit_code == 1
+
+
+def test_same_round_rerun_sees_the_prior_output(tmp_path: Path) -> None:
+    """같은 라운드 재실행도 직전 산출물을 인지한다 — 예전 `< asof` 는 못 봤고 그래서
+    `supersedes: null` 로 저장돼 표류 추적이 사라졌다 (docs/05 §4)."""
+    root = tmp_path / "theses"
+    (root / "2026-08-14").mkdir(parents=True)
+    (root / "2026-08-14" / "uranium.thesis.yaml").write_text("theme_id: uranium\n")
+    assert find_prior_thesis(root, "uranium", "2026-08-14") == (
+        root / "2026-08-14" / "uranium.thesis.yaml"
+    )
+    # 더 옛 라운드가 함께 있으면 최신을 고른다
+    (root / "2026-07-01").mkdir()
+    (root / "2026-07-01" / "uranium.thesis.yaml").write_text("theme_id: uranium\n")
+    assert find_prior_thesis(root, "uranium", "2026-08-14").parent.name == "2026-08-14"
+    # 미래 라운드는 여전히 보지 않는다
+    assert find_prior_thesis(root, "uranium", "2026-07-15").parent.name == "2026-07-01"
+    assert find_prior_thesis(root, "cobalt", "2026-08-14") is None

@@ -42,8 +42,9 @@ L4 의 선정은 **하드 제외 통과 종목 전부 · 테마 내 동일가중
 
 `thesis_input_from_l3` 가 `docs/specs/thesis.schema.yaml` 객체에서 `parse_thesis` 가 읽는 부분집합만
 꺼낸다: `theme_id` · `horizon_months` · `cycle_confidence` · **`cycle_confidence_source`**
-(L3 산출은 `referee`, 사람 논지는 `human` — yaml 이 `confidence_provenance` 를 선언하면 **그 선언이
-이긴다**) · `invalidations` · `triggers` ·
+(호출자는 **위치로** 안다 — L3 산출은 `referee`, 사람 논지는 `human`. yaml 이 주체를 적어 두면
+그것이 이기고, 그중에서도 기계가 쓴 `cycle_confidence_by` 가 손기재 `confidence_provenance`·
+`cycle_confidence_source` 보다 앞선다 — `_declared_source`) · `invalidations` · `triggers` ·
 `gate_result{status, portfolio_eligible, rule, path}` · `value_trap_axes.unit_demand{verdict,
 axis1_available, unit_series_source}`. 게이트 편입 불가(`contested`·`rejected`·`portfolio_eligible:
 false`)인 테마는 **묶음에서 빠지고 사유가 남는다.**
@@ -54,6 +55,7 @@ false`)인 테마는 **묶음에서 빠지고 사유가 남는다.**
 from __future__ import annotations
 
 import logging
+import re
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -329,9 +331,34 @@ def _obs_items(raw: Any) -> list[Any]:
     return out
 
 
+#: `cycle_confidence_by` 를 enum 으로 읽는 규칙 — 값은 자유 서술이고(L3 는
+#: `"referee-pipeline (04 §4 기계 적용; 09 §2 — 산출 주체 표기)"` 를 쓴다) 첫 낱말이 주체다.
+_BY_TOKEN = re.compile(r"[A-Za-z_]+")
+
+
 def _declared_source(thesis: Mapping[str, Any]) -> str | None:
-    """yaml 이 스스로 선언한 확신도 산출 주체 (`confidence_provenance` 또는 이미 L5 형식인
-    `cycle_confidence_source`)."""
+    """yaml 이 적어 둔 확신도 산출 주체.
+
+    **`cycle_confidence_by` 가 먼저다.** 이 키는 `l3/pipeline.build_thesis` 가 `c` 를 실제로
+    계산한 코드 자리에서 쓰는 **기계 기록**이고, `confidence_provenance`·`cycle_confidence_source`
+    는 사람이 손으로 적는 자기선언이다. 예전 목록에는 기계 키가 아예 없어서, 기계가 산출한 논지의
+    출처는 무시되고 손기재 자기선언만 채택됐다 — `docs/10` §4 캘리브레이션이 사람 판단을 referee
+    실적으로 집계하는 경로다. 순서만 바로잡았고 "파일이 위치보다 잘 안다" 는 기존 의도는 그대로다
+    (`docs/09` §2 · `docs/11` M6).
+
+    `cycle_confidence_by` 의 값에서 enum 을 읽지 못하면 조용히 넘기지 않고 예외로 알린다
+    (`CLAUDE.md` §2).
+    """
+    by = thesis.get("cycle_confidence_by")
+    if by is not None:
+        m = _BY_TOKEN.search(str(by))
+        token = m.group(0).lower() if m else ""
+        if token not in CONFIDENCE_PROVENANCE:
+            raise AssembleError(
+                f"cycle_confidence_by {str(by)[:60]!r} 에서 산출 주체를 읽지 못했다 — "
+                f"첫 낱말이 {CONFIDENCE_PROVENANCE} 중 하나여야 한다"
+            )
+        return token
     for k in ("confidence_provenance", "cycle_confidence_source"):
         v = thesis.get(k)
         if v is not None:

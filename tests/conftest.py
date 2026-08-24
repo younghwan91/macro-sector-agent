@@ -72,7 +72,10 @@ def make_thesis(**over: Any) -> dict[str, Any]:
                 "terminal_risk": "warning",
             },
         },
-        "cycle_confidence": 0.72,
+        # 0.80 = docs/04 §4 를 이 축 판정에 실제로 적용한 값 (base 0.50 + 0.15 축1 cycle
+        # + 0.15 축3 cycle). 예전 값 0.72 는 docs/05 §3 예시에서 옮겨 온 예시 숫자였고 §4 의
+        # 항(전부 0.05 단위)으로는 나올 수 없다 — 재도출 대조(l3/schema)가 이제 그것을 거부한다.
+        "cycle_confidence": 0.80,
         "evidence": [
             {
                 "id": 1,

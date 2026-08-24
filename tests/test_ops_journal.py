@@ -196,7 +196,7 @@ def test_entry_writes_markdown_and_thesis_snapshot_and_refuses_overwrite(tmp_pat
     assert w.markdown.name == "2026-09-01-uranium-entry.md"
     assert w.thesis_snapshot is not None and w.thesis_snapshot.name.endswith(".thesis.yaml")
     snap = yaml.safe_load(w.thesis_snapshot.read_text())
-    assert snap["cycle_confidence"] == 0.72
+    assert snap["cycle_confidence"] == 0.80
     text = w.markdown.read_text()
     assert "기계 권고와 다르게 결정했다면 그 이유" in text and "bear_case 원문" in text
     fm = read_front_matter(w.markdown)
@@ -226,7 +226,7 @@ def test_check_with_rerun_thesis_records_field_diff(tmp_path: Path) -> None:
     assert "논지 핵심 필드 변경" in w.diff_text
     assert len(list_snapshots(tmp_path, "uranium")) == 2
     drift = thesis_drift(tmp_path, "uranium")
-    assert "0.72" in drift and "0.61" in drift
+    assert "0.8" in drift and "0.61" in drift
     # 같은 내용이면 차이 없음
     assert diff_thesis(make_thesis(), make_thesis()) == []
 
@@ -303,6 +303,18 @@ def test_precommit_hook_blocks_edit(repo: Path) -> None:
     with pytest.raises(FileExistsError):
         install_hook(repo)
     f = repo / "journal" / "2026-09-01-uranium-entry.thesis.yaml"
-    f.write_text(f.read_text().replace("0.72", "0.9"))
+    f.write_text(f.read_text().replace("0.8", "0.9"))
     _git(repo, "add", "journal")
     assert verify_append_only(repo, staged_only=True)
+
+
+def test_ops_required_fields_come_from_the_spec_file() -> None:
+    """운영 검증기의 필수 목록은 스펙 파일 하나에서 온다 — 손으로 베낀 상수가 아니다."""
+    from msa.l3.schema import load_spec
+    from msa.ops.thesis import _required_top
+
+    assert _required_top() == tuple(load_spec()["required"])
+    t = make_thesis()
+    del t[load_spec()["required"][0]]
+    with pytest.raises(ThesisInvalid, match="필수 필드 없음"):
+        validate_thesis(t)

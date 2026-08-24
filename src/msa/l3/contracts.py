@@ -283,12 +283,23 @@ def load_scorecard(scan_dir: Path, theme_id: str) -> ThemeScorecard:
     )
 
 
-def find_prior_thesis(theses_root: Path, theme_id: str, before: str) -> Path | None:
-    """`state/theses/<date>/<theme>.thesis.yaml` 중 `before` 이전의 최신."""
+def find_prior_thesis(theses_root: Path, theme_id: str, asof: str) -> Path | None:
+    """`state/theses/<date ≤ asof>/<theme>.thesis.yaml` 중 최신 — **같은 라운드 것을 포함한다.**
+
+    예전에는 `< asof` 라서 같은 날짜의 직전 산출물을 못 봤다. 그래서 같은 라운드 재실행이
+    `supersedes: null` 로 저장되고 같은 경로를 덮어써, `docs/05` §4 가 요구하는 "동일 테마 재실행
+    시 이전 thesis 를 입력으로 제공 · 무엇이 바뀌었는지 diff" 가 조용히 사라졌다. `<=` 는
+    `pipeline/run.py:_find_prior_thesis` 가 이미 쓰고 있는 것과 같다.
+
+    **덮어쓰기 자체는 막지 않는다.** append-only 는 `journal/` 의 규칙이고(`CLAUDE.md` §6),
+    `state/theses/` 를 불변으로 선언한 문서가 없다 — 막으면 선언되지 않은 규칙을 만드는 것이
+    된다 (`CLAUDE.md` §1). 표류의 영구 기록은 저널 스냅샷(`docs/09` §2)이고, 여기서 복원하는
+    것은 재실행이 직전 산출물을 **입력으로 보고 diff 를 리포트에 남기는 것**이다.
+    """
     if not theses_root.exists():
         return None
     cands = sorted(
-        p for p in theses_root.glob(f"*/{thesis_filename(theme_id)}") if p.parent.name < before
+        p for p in theses_root.glob(f"*/{thesis_filename(theme_id)}") if p.parent.name <= asof
     )
     return cands[-1] if cands else None
 

@@ -297,3 +297,44 @@ def test_rejection_row_format() -> None:
 def test_axis_verdict_enum_enforced() -> None:
     with pytest.raises(ValueError):
         AxisVerdicts("cycle", "cycle", "strong", "cycle", "cycle")
+
+
+def test_every_not_applicable_axis_is_reported() -> None:
+    """판정하지 못한 축을 전부 남긴다 (CLAUDE.md §2). 게이트 동작·확신도 항은 그대로."""
+    v = AxisVerdicts(
+        unit_demand="not_applicable",
+        capital_cycle="not_applicable",
+        substitution="cycle",
+        cost_curve="not_applicable",
+        terminal_risk="not_applicable",
+    )
+    conf = cycle_confidence(
+        ConfidenceInputs(
+            verdicts=v,
+            capex_to_da_qtrs_below1=None,
+            axis4_strong_cycle=False,
+            axis5_severe=False,
+            small_sample=False,
+            short_hist=False,
+        )
+    )
+    joined = " ".join(conf.notes)
+    for label in ("축1", "축2", "축4", "축5"):
+        assert label in joined, (label, conf.notes)
+    # 산술은 손대지 않았다 — 축3 cycle 한 항만 붙는다
+    assert conf.terms == {"axis3_no_substitution": 0.15} and conf.value == 0.65
+
+    g = apply_gates(
+        v,
+        axis1("na"),
+        confidence=conf.value,
+        referee_ruling=None,
+        referee_evidence_refs=(),
+        referee_refs_valid=True,
+        secular_risk=False,
+        debt_24m_over_half=False,
+    )
+    note = " ".join(g.notes)
+    assert "판정되지 않은 축 4/5" in note
+    assert "unit_demand" in note and "terminal_risk" in note
+    assert g.status == "passed" and g.portfolio_eligible is True  # 동작은 그대로

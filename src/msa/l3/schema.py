@@ -14,13 +14,37 @@
 | `invalidations` 비면 거부 | `R_INVALIDATIONS_EMPTY` | error |
 | `mechanism` 상관 서술 금지 | `R_MECHANISM_CORRELATION` (`CORRELATION_PHRASES`) | error |
 | `bear_case` 요약 금지 | 파이프라인이 bear 원문과 대조 → `R_BEAR_CASE_NOT_VERBATIM` | error |
-| 종목명이 `claim` 에 등장 | `W_CLAIM_NAMES_STOCK` | warning |
+| 종목명이 서술 필드에 등장 | `W_CLAIM_NAMES_STOCK` (`NAME_CHECKED_FIELDS`) | warning |
 | `reliability: low` 만으로 축 판정 불가 | `R_AXIS_LOW_RELIABILITY_ONLY` | error |
 | contested 는 ruling + refs 필요 | `R_CONTESTED_WITHOUT_RULING` | error (게이트가 먼저 닫는다) |
 | 트리거 관측 가능 | `R_TRIGGER_NOT_OBSERVABLE` (`UNOBSERVABLE_PHRASES`) | error |
 | 증거 12개월 초과 | `W_EVIDENCE_STALE` | warning |
+| 증거 날짜가 `asof` 이후 | `R_EVIDENCE_FUTURE` | error |
+| 저장값이 코드 재도출과 불일치 | `R_CONFIDENCE_RECOMPUTE`·`R_GATE_RECOMPUTE` | error |
 
 enum 은 `msa.thesis` 가 단일 출처다 — 여기 이름(`ACTIONS`·`JUDGED`)은 그 재수출이다.
+
+## 재도출 대조 (`_check_recompute`)
+
+**스키마가 관문이다** (`CLAUDE.md` §5 의 정신). 저장된 `cycle_confidence` 와 `gate_result` 를
+믿지 않고, 같은 파일에 적힌 `value_trap_axes`(+ 축1 블록)로 `gates.cycle_confidence()` 와
+`gates.apply_gates()` 를 **다시 돌려** 대조한다. 불일치는 경고가 아니라 거부다 — 손으로 쓴 숫자든
+변조든, 저장값이 규칙(`docs/04` §3·§4)의 산출이 아니라는 뜻이기 때문이다.
+
+재도출에 **필요한데 thesis 에 없는 입력**이 있다 (전부 L1 산출물이고 스키마에 필드가 없다):
+
+| 없는 입력 | 쓰이는 곳 | 여기서 |
+|---|---|---|
+| `capex_to_da_qtrs_below1` | 확신도 `+0.10` (축2) | `cycle_confidence_terms` 로 확정, 없으면 양쪽 |
+| `small_sample` · `short_hist` | 확신도 `−0.10` | 좌동 |
+| `cycle_class` | 게이트 `secular_risk` 분기 | `inputs.cycle_class` 로 확정, 없으면 양쪽 |
+
+**없다는 사실은 경고(`W_*_INPUT_ABSENT`)이고 오류가 아니다.** 근거: 이 필드들은
+`docs/specs/thesis.schema.yaml` 이 요구하지 않고, 사람이 쓴 논지(`docs/09` §2 · `docs/11` M6 —
+"M6 구간에는 사람이 §4 규칙을 적용해 산출한다")에는 애초에 L1 스코어보드가 없다. 없다고 거부하면
+선언되지 않은 필수 필드를 발명하는 것이 된다 (`CLAUDE.md` §1). 대신 **조용히 넘기지 않는다**
+(`CLAUDE.md` §2) — 경고로 표시하고, 모르는 입력이 만들 수 있는 값을 **전부 열거해** 저장값이
+그중 하나인지 본다. 열거는 규칙을 그대로 돌린 결과이지 새 허용 범위가 아니다.
 """
 
 from __future__ import annotations
@@ -33,6 +57,15 @@ from typing import Any
 from msa.coerce import opt_date
 from msa.dates import months_between
 from msa.errors import Rejected
+from msa.l3.contracts import Axis1Inputs
+from msa.l3.gates import (
+    CAPEX_BELOW1_QTRS,
+    AxisVerdicts,
+    ConfidenceInputs,
+    apply_gates,
+    cycle_confidence,
+)
+from msa.status import Axis1Status
 from msa.thesis import (
     AXES,
     AXIS_VERDICTS,
@@ -52,9 +85,11 @@ __all__ = [
     "AXES",
     "AXIS_VERDICTS",
     "CLAIM_MAX_LEN",
+    "CONFIDENCE_RECOMPUTE_TOL",
     "CORRELATION_PHRASES",
     "EVIDENCE_STALE_MONTHS",
     "JUDGED",
+    "NAME_CHECKED_FIELDS",
     "RELIABILITY",
     "SPEC_PATH",
     "UNOBSERVABLE_PHRASES",
@@ -97,6 +132,25 @@ UNOBSERVABLE_PHRASES: tuple[str, ...] = (
 
 CLAIM_MAX_LEN = 400
 EVIDENCE_STALE_MONTHS = 12
+
+#: 종목 경계(`CLAUDE.md` §4)를 검사하는 서술 필드. `docs/05` §4 는 `claim` 만 예로 들지만 경계는
+#: "에이전트는 테마만 고른다" 이지 "claim 에만 안 쓴다" 가 아니다 — 같은 이름을 `mechanism` 이나
+#: `triggers` 에 쓰면 경계가 그대로 뚫린다. **등급은 §4 가 정한 경고 그대로다.**
+#: 필드를 늘렸을 뿐 새 판정을 만들지 않았다.
+NAME_CHECKED_FIELDS: tuple[str, ...] = (
+    "claim",
+    "mechanism",
+    "triggers",
+    "invalidations",
+    "key_uncertainties",
+)
+
+#: 재도출 대조(`_check_recompute`)의 부동소수 허용오차. **판별 임계가 아니라 검증 도구의 수치
+#: 여유다** — `docs/04` §4 의 항은 전부 0.05 단위이고 `cycle_confidence()` 는 `round(_, 4)` 로
+#: 돌려주므로, 같은 규칙을 두 번 돌린 값의 차이는 float64 합산 오차(~1e-16)뿐이다. 1e-6 은 그
+#: 오차보다 10자리 크고 가장 작은 항(0.05)보다 4자리 작아, 실제 항 하나의 차이를 절대 흡수하지
+#: 않는다. 이 값을 키우거나 줄여도 어떤 판정도 바뀌지 않는다.
+CONFIDENCE_RECOMPUTE_TOL = 1e-6
 #: 증거 날짜로 허용하는 형식 — 일·월·연 단위.
 EVIDENCE_DATE_FORMATS: tuple[str, ...] = ("%Y-%m-%d", "%Y-%m", "%Y")
 
@@ -143,17 +197,35 @@ def _contains_any(text: str, phrases: tuple[str, ...]) -> str | None:
     return None
 
 
-def _stock_mention(claim: str, tickers: tuple[str, ...], names: tuple[str, ...]) -> list[str]:
+def _stock_mention(text: str, tickers: tuple[str, ...], names: tuple[str, ...]) -> list[str]:
+    """구성원 티커(대문자 단어 경계) 또는 영문명이 `text` 에 등장하는가.
+
+    한글 별칭("홈디포")은 잡지 못한다 — 별칭 사전을 만드는 것은 선언되지 않은 값을 발명하는
+    것이라 하지 않는다 (`CLAUDE.md` §1). 대신 티커 검사를 서술 필드 전체로 넓혀 `HD`·`LOW` 같은
+    표기는 어느 필드에 있든 잡히게 했다.
+    """
     hits: list[str] = []
     for t in tickers:
-        if len(t) >= 2 and re.search(rf"(?<![A-Za-z]){re.escape(t)}(?![A-Za-z])", claim):
+        if len(t) >= 2 and re.search(rf"(?<![A-Za-z]){re.escape(t)}(?![A-Za-z])", text):
             hits.append(t)
-    low = claim.lower()
+    low = text.lower()
     for n in names:
         n0 = n.strip()
         if len(n0) >= 4 and n0.lower() in low:
             hits.append(n0)
     return hits
+
+
+def _field_text(value: Any) -> str:
+    """서술 필드를 검사용 평문으로. 문자열은 그대로, 목록/매핑은 값을 이어 붙인다
+    (`triggers[].observable` 처럼 중첩된 곳의 종목명도 보이게)."""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict):
+        return " ".join(_field_text(v) for v in value.values())
+    if isinstance(value, list | tuple):
+        return " ".join(_field_text(v) for v in value)
+    return ""
 
 
 # ---------------------------------------------------------------- 부분 검사
@@ -183,12 +255,14 @@ def _check_claim(
         r.error("R_CLAIM_EMPTY", "claim 이 비었다")
     if len(claim) > CLAIM_MAX_LEN:
         r.error("R_CLAIM_TOO_LONG", f"claim {len(claim)}자 > {CLAIM_MAX_LEN}")
-    hit = _stock_mention(claim, member_tickers, member_names)
-    if hit:
-        r.warn(
-            "W_CLAIM_NAMES_STOCK",
-            f"claim 에 종목명/티커 등장: {hit} (CLAUDE.md §4 — 에이전트는 테마만)",
-        )
+    for f in NAME_CHECKED_FIELDS:
+        hit = _stock_mention(_field_text(thesis.get(f)), member_tickers, member_names)
+        if hit:
+            r.warn(
+                "W_CLAIM_NAMES_STOCK",
+                f"{f} 에 종목명/티커 등장: {sorted(set(hit))} "
+                f"(CLAUDE.md §4 — 에이전트는 테마만)",
+            )
 
     mech = str(thesis["mechanism"])
     if not mech.strip():
@@ -236,6 +310,14 @@ def _check_evidence(r: ValidationResult, ev: Any, today: date) -> tuple[set[int]
         d = _evidence_date(e.get("date"))
         if e.get("date") and d is None:
             r.error("R_EVIDENCE_DATE", f"evidence[{i}] date 를 읽을 수 없다: {e.get('date')!r}")
+        elif d is not None and d > today:
+            # 새 임계가 아니라 이미 있는 기준(`asof`)의 적용이다. 상한이 없으면 미래 정보가
+            # 논지에 들어오고, 그대로 `docs/10` §4 캘리브레이션의 입력이 된다.
+            r.error(
+                "R_EVIDENCE_FUTURE",
+                f"evidence[{e.get('id', i)}] 날짜 {d} 가 asof {today} 이후다 — "
+                f"판정 시점에 존재하지 않은 정보다",
+            )
         elif d is not None and months_between(d, today) > EVIDENCE_STALE_MONTHS:
             r.warn(
                 "W_EVIDENCE_STALE",
@@ -358,6 +440,19 @@ def _check_unit_demand(r: ValidationResult, thesis: dict[str, Any], ud: dict[str
             "R_AXIS1_CONTESTED_VERDICT",
             "axis1_contested=true 면 verdict 는 contested 여야 한다 (04 §3.1)",
         )
+    # 스펙이 선언한 파생: axis1_contested = (verdict_pre_ss != verdict_post_ss) or sign_split
+    # (`docs/specs/thesis.schema.yaml` axis1_contested note · `docs/04` §3.1). 입력 셋이 파일에
+    # 다 있을 때만 대조한다 — 없는 것을 요구하지는 않는다.
+    pre, post = ud.get("verdict_pre_ss"), ud.get("verdict_post_ss")
+    if isinstance(pre, str) and isinstance(post, str) and "axis1_contested" in ud:
+        derived = pre != post or bool(ud.get("sign_split"))
+        if bool(ud.get("axis1_contested")) != derived:
+            r.error(
+                "R_AXIS1_CONTESTED_DERIVED",
+                f"axis1_contested={ud.get('axis1_contested')!r} 인데 "
+                f"pre={pre} · post={post} · sign_split={ud.get('sign_split')!r} 로 다시 계산하면 "
+                f"{derived} 다 (스키마 axis1_contested note)",
+            )
 
 
 def _check_gate(r: ValidationResult, g: Any, ev_ids: set[int]) -> None:
@@ -389,6 +484,203 @@ def _check_gate(r: ValidationResult, g: Any, ev_ids: set[int]) -> None:
     av = g.get("axis_verdicts")
     if not isinstance(av, dict) or any(a not in av for a in AXES):
         r.error("R_GATE_SNAPSHOT", "gate_result.axis_verdicts 5축 스냅샷 없음 (10 §5)")
+
+
+# ------------------------------------------------- 재도출 대조 (저장값 vs 코드)
+
+
+def _axis_verdicts(axes: Any) -> AxisVerdicts | None:
+    """저장된 5축 verdict → `AxisVerdicts`. 하나라도 enum 밖이면 None (그건 이미 다른 규칙이
+    거부했다 — 여기서 두 번 말하지 않는다)."""
+    if not isinstance(axes, dict):
+        return None
+    vals: dict[str, str] = {}
+    for a in AXES:
+        ax = axes.get(a)
+        v = ax.get("verdict") if isinstance(ax, dict) else None
+        if v not in AXIS_VERDICTS:
+            return None
+        vals[a] = str(v)
+    return AxisVerdicts(**vals)
+
+
+def _axis1_inputs(ud: dict[str, Any]) -> Axis1Inputs:
+    """저장된 축1 블록 → `Axis1Inputs`. 게이트 재도출이 실제로 읽는 것은 `contested` 뿐이고
+    나머지는 reason 문자열에만 쓰인다. `axis1_status` 는 `Axis1Inputs.unit_series_source` 가
+    선언한 대응(`ok_external`↔`physical_series` · `ok_fallback`↔`revenue_proxy`)의 역이다."""
+    src = ud.get("unit_series_source")
+    if ud.get("axis1_available") is False:
+        status = str(ud.get("axis1_status") or Axis1Status.DATA_MISSING)
+    elif src == "physical_series":
+        status = str(Axis1Status.OK_EXTERNAL)
+    elif src == "revenue_proxy":
+        status = str(Axis1Status.OK_FALLBACK)
+    else:
+        status = str(Axis1Status.DATA_MISSING)
+    return Axis1Inputs(
+        axis1_status=status,
+        unit_source=opt_str_or_none(ud.get("unit_source")),
+        verdict_pre_ss=opt_str_or_none(ud.get("verdict_pre_ss")),
+        verdict_post_ss=opt_str_or_none(ud.get("verdict_post_ss")),
+        unit_cagr_10y=_opt_num(ud.get("unit_cagr_10y")),
+        unit_cagr_5y=_opt_num(ud.get("unit_cagr_5y")),
+        unit_cagr_10y_median=_opt_num(ud.get("unit_cagr_10y_median")),
+        sign_split=None if ud.get("sign_split") is None else bool(ud.get("sign_split")),
+        ss_n=None,
+        ss_coverage=None,
+        ma_flag=None if ud.get("ma_flag") is None else bool(ud.get("ma_flag")),
+        exit_count=None,
+    )
+
+
+def opt_str_or_none(v: Any) -> str | None:
+    return str(v) if isinstance(v, str) and v.strip() else None
+
+
+def _opt_num(v: Any) -> float | None:
+    return float(v) if isinstance(v, int | float) and not isinstance(v, bool) else None
+
+
+def _confidence_candidates(
+    thesis: dict[str, Any], v: AxisVerdicts
+) -> tuple[list[float], list[str]]:
+    """저장된 축 판정으로 `cycle_confidence()` 를 다시 돌린 값들 + 확정하지 못한 입력 이름.
+
+    thesis 에 없는 L1 입력(축2 분기수 · 소표본/짧은이력)은 `cycle_confidence_terms`(기계 산출물이
+    적는 적용 항 목록)로 확정하고, 그것도 없으면 **두 경우를 다 돌려** 후보로 남긴다.
+    """
+    axes = thesis["value_trap_axes"]
+    cc = axes.get("cost_curve") if isinstance(axes, dict) else None
+    tr = axes.get("terminal_risk") if isinstance(axes, dict) else None
+    terms = thesis.get("cycle_confidence_terms")
+    absent: list[str] = []
+    if isinstance(terms, dict):
+        qtrs = [float(CAPEX_BELOW1_QTRS) if "axis2_capex_below1_8q" in terms else 0.0]
+        smalls = [bool("small_sample_or_short_hist" in terms)]
+    else:
+        absent.append("capex_to_da_qtrs_below1 · small_sample · short_hist (L1 스코어보드)")
+        qtrs = [0.0, float(CAPEX_BELOW1_QTRS)]
+        smalls = [False, True]
+    out: set[float] = set()
+    for q in qtrs:
+        for s in smalls:
+            out.add(
+                cycle_confidence(
+                    ConfidenceInputs(
+                        verdicts=v,
+                        capex_to_da_qtrs_below1=q,
+                        # 축4 '강한 사이클'·축5 '심각' 은 referee 산출이고 thesis 에 그대로
+                        # 실린다 (`l3/pipeline._axis_block` 이 남는 키를 옮긴다). 없으면
+                        # false — 파이프라인이 쓰는 기본값과 같다.
+                        axis4_strong_cycle=bool(cc.get("strong_cycle", False))
+                        if isinstance(cc, dict)
+                        else False,
+                        axis5_severe=bool(tr.get("severe", False))
+                        if isinstance(tr, dict)
+                        else False,
+                        small_sample=s,
+                        short_hist=False,
+                    )
+                ).value
+            )
+    return sorted(out), absent
+
+
+def _gate_candidates(
+    thesis: dict[str, Any],
+    v: AxisVerdicts,
+    g: dict[str, Any],
+    ev_ids: set[int],
+    confidence: float,
+) -> tuple[list[tuple[str, bool, str | None]], list[str]]:
+    """저장된 입력으로 `apply_gates()` 를 다시 돌린 (status, portfolio_eligible, path) 후보들."""
+    axes = thesis["value_trap_axes"]
+    ud = axes.get("unit_demand") if isinstance(axes, dict) else None
+    tr = axes.get("terminal_risk") if isinstance(axes, dict) else None
+    refs = tuple(int(x) for x in (g.get("referee_evidence_refs") or []) if isinstance(x, int))
+    ruling = g.get("referee_ruling")
+    blk = thesis.get("inputs")
+    absent: list[str] = []
+    if isinstance(blk, dict) and blk.get("cycle_class") is not None:
+        seculars = [str(blk["cycle_class"]) == "secular_risk"]
+    else:
+        absent.append("inputs.cycle_class (secular_risk 여부 — L1 스코어보드)")
+        seculars = [False, True]
+    out: list[tuple[str, bool, str | None]] = []
+    for sec in seculars:
+        gr = apply_gates(
+            v,
+            _axis1_inputs(ud if isinstance(ud, dict) else {}),
+            confidence=confidence,
+            referee_ruling=str(ruling) if ruling and str(ruling).strip() else None,
+            referee_evidence_refs=refs,
+            referee_refs_valid=all(x in ev_ids for x in refs),
+            secular_risk=sec,
+            debt_24m_over_half=bool(tr.get("debt_maturity_24m_over_half", False))
+            if isinstance(tr, dict)
+            else False,
+        )
+        out.append((gr.status, gr.portfolio_eligible, gr.path))
+    return out, absent
+
+
+def _check_recompute(r: ValidationResult, thesis: dict[str, Any], ev_ids: set[int]) -> None:
+    """저장된 `cycle_confidence` · `gate_result` 를 코드로 다시 도출해 대조 (모듈 docstring)."""
+    v = _axis_verdicts(thesis.get("value_trap_axes"))
+    if v is None:
+        return  # 축 판정 자체가 깨졌다 — `_check_axes` 가 이미 거부했다
+    g = thesis.get("gate_result")
+    g = g if isinstance(g, dict) else {}
+
+    # (1) gate_result.axis_verdicts 스냅샷은 value_trap_axes 의 복사본이어야 한다 (스펙 note)
+    av = g.get("axis_verdicts")
+    if isinstance(av, dict):
+        body = v.as_dict()
+        bad = {a: (av.get(a), body[a]) for a in AXES if av.get(a) != body[a]}
+        if bad:
+            r.error(
+                "R_GATE_VERDICTS_MISMATCH",
+                f"gate_result.axis_verdicts 가 value_trap_axes 와 다르다 "
+                f"(축: 스냅샷 → 본문) {bad} — 스냅샷은 복사본이다 (스키마 axis_verdicts note)",
+            )
+
+    # (2) cycle_confidence 재도출
+    stored_c = thesis.get("cycle_confidence")
+    if isinstance(stored_c, int | float) and not isinstance(stored_c, bool):
+        cands, absent = _confidence_candidates(thesis, v)
+        for a in absent:
+            r.warn("W_CONFIDENCE_INPUT_ABSENT", f"확신도 재도출 입력이 thesis 에 없다: {a}")
+        if not any(abs(float(stored_c) - c) <= CONFIDENCE_RECOMPUTE_TOL for c in cands):
+            r.error(
+                "R_CONFIDENCE_RECOMPUTE",
+                f"저장된 cycle_confidence {stored_c} 는 이 파일의 축 판정으로 docs/04 §4 를 다시 "
+                f"돌린 값 {cands} 중 어느 것도 아니다 — 규칙의 산출이 아니다 (CLAUDE.md §1)",
+            )
+
+    # (3) gate_result 재도출 — 저장된 확신도를 그대로 넣는다 (게이트는 c 의 함수다)
+    if not g:
+        return
+    c_for_gate = float(stored_c) if isinstance(stored_c, int | float) else 0.0
+    cands_g, absent_g = _gate_candidates(thesis, v, g, ev_ids, c_for_gate)
+    for a in absent_g:
+        r.warn("W_GATE_INPUT_ABSENT", f"게이트 재도출 입력이 thesis 에 없다: {a}")
+    st, el, path = g.get("status"), g.get("portfolio_eligible"), g.get("path")
+    if isinstance(el, bool):
+        if (st, el, path) not in cands_g:
+            r.error(
+                "R_GATE_RECOMPUTE",
+                f"저장된 gate_result (status={st!r}, portfolio_eligible={el!r}, path={path!r}) 는 "
+                f"이 파일의 축 판정으로 docs/04 §3 을 다시 돌린 결과 {cands_g} 중 어느 것도 "
+                f"아니다",
+            )
+    else:
+        r.error("R_GATE_ELIGIBLE_MISSING", "gate_result.portfolio_eligible 이 bool 이 아니다")
+        if (st, path) not in [(a, c) for a, _b, c in cands_g]:
+            r.error(
+                "R_GATE_RECOMPUTE",
+                f"저장된 gate_result (status={st!r}, path={path!r}) 가 재도출 결과 "
+                f"{[(a, c) for a, _b, c in cands_g]} 와 다르다",
+            )
 
 
 # ---------------------------------------------------------------- 진입점
@@ -448,6 +740,8 @@ def validate_thesis(
     c = thesis["cycle_confidence"]
     if not isinstance(c, int | float) or not (0.0 <= float(c) <= 1.0):
         r.error("R_CONFIDENCE_RANGE", f"cycle_confidence {c!r} ∉ [0, 1]")
+
+    _check_recompute(r, thesis, ev_ids)
 
     if not thesis.get("key_uncertainties"):
         r.warn(

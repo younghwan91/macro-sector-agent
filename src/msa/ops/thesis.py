@@ -24,6 +24,7 @@ from msa.thesis import (
     INVALIDATION_STATUS,
     REJECTION_PATHS,
     TRIGGER_STATUS,
+    load_spec,
 )
 
 __all__ = [
@@ -42,19 +43,13 @@ __all__ = [
     "validate_thesis",
 ]
 
-_REQUIRED_TOP = (
-    "theme_id",
-    "generated_at",
-    "horizon_months",
-    "claim",
-    "mechanism",
-    "triggers",
-    "invalidations",
-    "bear_case",
-    "value_trap_axes",
-    "cycle_confidence",
-    "evidence",
-)
+def _required_top() -> tuple[str, ...]:
+    """필수 최상위 필드 — **스펙 파일이 단일 출처다** (`docs/specs/thesis.schema.yaml` required).
+
+    예전에는 이 목록을 손으로 베낀 상수였다. `msa.l3.schema` 는 같은 목록을 스펙에서 읽으므로
+    스펙이 바뀌면 두 검증기가 조용히 갈라진다. `load_spec()` 은 캐시된다.
+    """
+    return tuple(str(k) for k in load_spec().get("required", []))
 
 
 class ThesisInvalid(RefusedInput, ValueError):
@@ -75,7 +70,7 @@ def validate_thesis(t: dict[str, Any]) -> None:
     `msa.l3.schema.validate_thesis` 를 감싸지 않는 이유는 모듈 docstring 참조 (예외·문구가 다르다).
     """
     errors: list[str] = []
-    for k in _REQUIRED_TOP:
+    for k in _required_top():
         if k not in t or t[k] is None or t[k] == "" or t[k] == {} or t[k] == []:
             errors.append(f"필수 필드 없음: {k}")
     for item in _nonempty_list(t, "triggers", errors):

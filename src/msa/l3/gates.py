@@ -125,6 +125,18 @@ def cycle_confidence(ci: ConfidenceInputs) -> ConfidenceResult:
         terms["axis4_strong_cycle"] = CONF_TERMS["axis4_strong_cycle"]
     if ci.axis5_severe or v.terminal_risk == "death":
         terms["axis5_severe"] = CONF_TERMS["axis5_severe"]
+    # 축 2·4·5 가 적용 불가일 때도 그 사실을 남긴다 (`CLAUDE.md` §2 — 판정하지 못한 축이 조용히
+    # 사라지면 리포트가 실제보다 많은 축이 답한 것처럼 보인다). **산술은 그대로다** — `docs/04`
+    # §4 에 적용 불가 항이 없으므로 가감하지 않고, 게이트 분기도 이 note 를 읽지 않는다.
+    for axis, label in (
+        ("capital_cycle", "축2"),
+        ("cost_curve", "축4"),
+        ("terminal_risk", "축5"),
+    ):
+        if getattr(v, axis) == "not_applicable":
+            notes.append(
+                f"{label} not_applicable: 가감 없음 (04 §4 에 항 없음) — 이 축은 판정되지 않았다"
+            )
     if ci.small_sample or ci.short_hist:
         terms["small_sample_or_short_hist"] = CONF_TERMS["small_sample_or_short_hist"]
     raw = CONF_BASE + sum(terms.values())
@@ -187,6 +199,15 @@ def apply_gates(
     "포함)."""
     a1, a3 = verdicts.unit_demand, verdicts.substitution
     notes: list[str] = []
+    # 판정하지 못한 축을 **전부** 센다. 예전에는 축1·축3 에만 note 가 붙어, 5축 중 3축이 적용
+    # 불가여도 리포트에는 2축만 보였다 (`CLAUDE.md` §2). 표시만 추가한다 — 아래 분기는 이 목록을
+    # 읽지 않는다.
+    na = [a for a in AXES if getattr(verdicts, a) == "not_applicable"]
+    if na:
+        notes.append(
+            f"판정되지 않은 축 {len(na)}/{len(AXES)}: {', '.join(na)} — 적용 불가는 통과가 "
+            f"아니다 (04 §2). 04 §4 에 적용 불가 항이 없어 확신도에는 가감이 없다"
+        )
     if debt_24m_over_half:
         notes.append(
             "축5: 24M 만기부채/시총 > 0.5 — 테마 유지, L4 종목 선정에서 해당 종목 제외 (생존 필터)"

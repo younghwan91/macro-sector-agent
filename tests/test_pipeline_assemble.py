@@ -191,7 +191,7 @@ def test_thesis_input_from_l3_round_trips_through_parse_thesis() -> None:
     assert all("check" not in x for x in m["triggers"])
     ti = parse_thesis(m, where="t")
     assert ti.theme == "uranium" and ti.confidence_source == "referee"
-    assert ti.cycle_confidence == 0.72 and ti.horizon_months == (6, 18)
+    assert ti.cycle_confidence == 0.80 and ti.horizon_months == (6, 18)
     assert len(ti.invalidations) == 2 and len(ti.triggers) == 3
     assert ti.portfolio_eligible and ti.axis1_available is True
 
@@ -525,3 +525,27 @@ def test_assemble_from_real_picks_run(tmp_path: Path) -> None:
     assert ar.picks.counts.get("선정 라벨 없음 (group 비어 있음)", 0) == 0
     inputs = load_inputs(out, cases_path=None)
     assert all(p.entry_price and p.adv20_usd for p in inputs.picks)
+
+
+def test_machine_confidence_by_beats_hand_declaration() -> None:
+    """`cycle_confidence_by` 는 `c` 를 실제로 계산한 코드가 쓴 기록이라 손기재 자기선언을 이긴다.
+
+    예전에는 `_declared_source` 목록에 이 키가 아예 없어 기계 산출물의 출처가 무시되고
+    손기재 `cycle_confidence_source` 만 채택됐다 (docs/10 §4 캘리브레이션 오염 경로).
+    """
+    t = make_thesis(cycle_confidence_source="human")
+    t["cycle_confidence_by"] = "referee-pipeline (04 §4 기계 적용; 09 §2 — 산출 주체 표기)"
+    out = thesis_input_from_l3(t, confidence_source="human")
+    assert out["cycle_confidence_source"] == "referee"
+    # 손기재만 있으면 예전 그대로 그 선언이 이긴다
+    hand = make_thesis(cycle_confidence_source="human")
+    assert thesis_input_from_l3(hand, confidence_source="referee")["cycle_confidence_source"] == (
+        "human"
+    )
+
+
+def test_unreadable_confidence_by_is_refused_not_ignored() -> None:
+    t = make_thesis()
+    t["cycle_confidence_by"] = "누군가"
+    with pytest.raises(AssembleError, match="cycle_confidence_by"):
+        thesis_input_from_l3(t, confidence_source="referee")
