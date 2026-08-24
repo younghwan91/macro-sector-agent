@@ -17,18 +17,36 @@
 
 | 파일 | 내용 |
 |---|---|
-| `ranking.csv` | 적격 종목 **전부**(= 선정 결과) + 관찰 지표(순위·3축·종합·바벨 라벨)·특성 원값 |
+| `ranking.csv` | 적격 종목 **전부**(= 선정 결과). 열 순서는 판단 재료(`JUDGMENT_COLUMNS`) 먼저 |
 | `excluded.csv` | 제외된 **모든** 종목과 사유 (폐지·재무 없음·하드 필터) |
-| `report.txt` | 사람이 읽는 리포트 — `docs/06` §7 형식. S 하위 항목을 접지 않는다 |
-| `meta.json` | asof·스토어 최종일·유니버스 계수·없는 입력·선언 상수·테마 통계 |
+| `report.txt` | 사람이 읽는 리포트 — 논지 머리 · **명단 표** · 제외 · 상세 블록 |
+| `meta.json` | asof·스토어 최종일·유니버스 계수·없는 입력·선언 상수·테마 통계·**논지** |
 
-제외는 **수와 사유**로 보고한다 (`CLAUDE.md` §2). 에이전트 thesis 는 아직 입력으로 받지 않는다
-(M7) — 받게 되면 `주의:` 줄의 재료가 된다.
+제외는 **수와 사유**로 보고한다 (`CLAUDE.md` §2).
+
+## 2026-08-24 — 이 산출물이 누구에게 무엇을 하는 물건인가
+
+사용자가 못박았다: **"가장 중요한 건 섹터를 잘 골라주는 것"** — 테마 안에서 **최종 종목과 진입
+시점은 사람이 차트를 보고 정한다.** 그래서 이 모듈이 하는 일은 *고르는 것*이 아니라 **볼 만한
+명단을 판단 재료와 함께 내놓는 것**까지다. 그 방향은 `docs/15` 의 선정 규칙 폐기와 정합한다 —
+어떤 선정 규칙도 "적격 전부 동일가중" 을 못 이겼으므로 시스템이 고르지 않는다.
+
+그때 **"관찰 지표로 강등" 한 것들이 여기서 명단의 판단 재료로 되살아난다.** 강등은 "선정에 안
+쓴다" 였지 "안 보여준다" 가 아니었다. 되살아난 것은 **표시**뿐이고 판정은 하나도 바뀌지 않았다:
+
+- `JUDGMENT_COLUMNS` 가 `ranking.csv` 의 앞으로 오고 리포트 표의 열이 된다 —
+  `from_52w_high`(손익비) · `mcap` · `adv20_usd` · `net_debt_ebitda`+`nd_basis` · `cash_runway_q` ·
+  `rs_rating` · `stage2`/`above_50d`/`vcp_base` · `penalties`/`red_flags`. **새 열은 없다.**
+- `vcp_base` 는 실릴 때마다 `VCP_DEFECT_NOTE` 가 붙는다 (폭락 중에도 True 가 나온다).
+- 논지(`thesis_head`)가 명단 머리에 붙는다 — 없으면 "논지 없음 — L3 미실행" 이라 적는다.
+- **유동성·저가 감점은 꺼져 있고**(`axes.PENALTY_ENABLED`, 2026-08-24 사용자 지시) 그 사실이
+  리포트·`meta.json` 에 매번 적힌다. `adv20_usd` 열은 그대로 실린다 — 감점만 껐다.
 """
 
 from __future__ import annotations
 
 import logging
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -49,6 +67,7 @@ from msa.l4.features import (
     build_features,
 )
 from msa.themes import load_themes, membership_from_store
+from msa.thesis import NO_THESIS_NOTE, ThesisHead, thesis_head
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +106,48 @@ RANKING_EXPORT_COLUMNS: tuple[str, ...] = (
     "t_inputs_missing",
     "m_inputs_missing",
 )
+
+#: **명단의 1급 열** — 사람이 차트를 열기 전에 읽는 판단 재료다 (2026-08-24 사용자 지시:
+#: "가장 중요한 건 섹터를 잘 골라주는 것 · 최종 종목과 진입 시점은 사람이 차트를 보고 정한다").
+#: `ranking.csv` 에서 `group`·`barbell_obs`·`rank` 바로 뒤로 올라가고, 리포트 표의 열 순서이기도
+#: 하다. **열을 새로 만들지 않았다** — 전부 이미 계산되던 값이고, 바뀐 것은 순서(=표시)뿐이다.
+#: `from_52w_high` 는 `features.py` 머리말이 "아무 로직도 읽지 않는다" 고 적어 둔 관찰 열이었다.
+#: 그 지위는 그대로다 — **어떤 판정도 이 열을 읽지 않는다.** 사람이 읽을 뿐이다.
+#: `adv20_usd`·`price` 도 남는다: 감점은 꺼졌지만(`axes.PENALTY_ENABLED`) 정보는 뺀 것이 아니다.
+JUDGMENT_COLUMNS: tuple[str, ...] = (
+    "name",
+    "mcap",
+    ENTRY_PRICE_FEATURE,
+    LIQUIDITY_FEATURE,
+    "net_debt_ebitda",
+    "nd_basis",
+    "cash_runway_q",
+    "from_52w_high",
+    "from_52w_low",
+    "rs_rating",
+    "stage2",
+    "above_50d",
+    "vcp_base",
+    "penalties",
+    "red_flags",
+)
+
+#: `vcp_base` 를 싣는 곳마다 붙는 결함 표시 (`docs/06` §4 · `features.vcp_base` docstring).
+#: 표시 없이 실으면 사람을 오도한다 — 이 값은 **폭락 중에도 True 가 나온다.**
+VCP_DEFECT_NOTE = (
+    "VCP* — `vcp_base` 는 결함이 있다: 수축 베이스 뒤 −40% 붕괴에도 True 가 나온다 "
+    "(현재가 위치를 보는 조건이 없다 · docs/06 §4·§8.2). 참고로만 읽고, 고점 대비(52wH)를 함께 보라"
+)
+
+
+def order_ranking_columns(ranking: pd.DataFrame) -> pd.DataFrame:
+    """명단 열 순서 — 선정 라벨 · 관찰 순위 · **판단 재료** · 나머지. 열은 하나도 버리지 않는다."""
+    if ranking.empty:
+        return ranking
+    lead = [c for c in ("group", "barbell_obs", "rank") if c in ranking.columns]
+    judge = [c for c in JUDGMENT_COLUMNS if c in ranking.columns]
+    rest = [c for c in ranking.columns if c not in (*lead, *judge)]
+    return ranking[[*lead, *judge, *rest]]
 
 
 def read_ranking(path: Path | str) -> pd.DataFrame:
@@ -154,7 +215,7 @@ def rank_theme(
     ranking = sc.join(eligible, how="left")
     ranking.insert(0, "group", SELECTION_GROUP)
     ranking.insert(1, "barbell_obs", [bb.label(str(t)) for t in ranking.index])
-    return ranking, excluded, bb
+    return order_ranking_columns(ranking), excluded, bb
 
 
 def run_picks(
@@ -257,7 +318,23 @@ def run_picks(
         "declared": axes.declared_constants(),
         "pit": "datekey ≤ asof, first-reported per calendardate (features.py)",
     }
-    report = render_report(fs, ranking, excluded, bb, picks_meta, theme_name=theme.name_ko)
+    # 논지 — 명단 위에 붙는 한 줄 + 무효화 조건. 없으면 없다고 적는다.
+    # 기준일은 **요청한 asof**(사람이 결정하는 날)이지 `fs.asof`(스토어 최종일로 잘린 데이터
+    # 기준일)가 아니다. 둘이 갈리는 것은 스토어가 뒤처졌을 때이고, 그때 이미 존재하는 논지를
+    # 숨기면 명단이 근거 없이 나온다. asof 이후의 논지는 여전히 찾지 않는다 (PIT 규약).
+    head = thesis_head(theme_id, asof or str(fs.asof.date()))
+    picks_meta["thesis"] = {
+        "found": head.found,
+        "source": head.source or None,
+        "claim": head.claim or None,
+        "invalidations": list(head.invalidations),
+        "cycle_confidence": head.cycle_confidence,
+        "gate": head.gate,
+        "note": None if head.found else NO_THESIS_NOTE,
+    }
+    report = render_report(
+        fs, ranking, excluded, bb, picks_meta, theme_name=theme.name_ko, thesis=head
+    )
 
     out_dir: Path | None = None
     if write:
@@ -344,15 +421,163 @@ def _signed_pct(x: Any, unit: str = "%") -> str:
     return "n/a" if x is None or pd.isna(x) else f"{float(x) * 100:+.0f}{unit}"
 
 
+def _dw(s: str) -> int:
+    """터미널 표시 폭 — 한글·전각 기호는 2칸이다. `len` 으로 맞추면 표가 어긋나고, 어긋난 표는
+    숫자를 잘못 읽게 한다 (열이 밀리면 시총 칸의 값을 런웨이로 읽는다)."""
+    return sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1 for ch in s)
+
+
+def _pad(s: str, width: int) -> str:
+    return s + " " * max(0, width - _dw(s))
+
+
+def _is_true(v: Any) -> bool:
+    """엄격한 참 — `None`·`pd.NA`·NaN 은 전부 거짓. 결측을 "아니오" 가 아니라 **표시 안 함**으로
+    두기 위한 것이다 (표에 `Stage2` 가 없으면 아니거나 모르거나 둘 중 하나이고, 어느 쪽인지는
+    아래 상세 블록의 `n/a` 가 답한다)."""
+    if v is None or v is pd.NA:
+        return False
+    if isinstance(v, float) and pd.isna(v):
+        return False
+    return bool(v)
+
+
+def _usd_compact(x: Any) -> str:
+    """$1.2B · $340M · $0.9M. 결측은 `n/a` — 시총·거래대금이 같은 꼴로 보인다."""
+    v = _numv(x)
+    if pd.isna(v):
+        return "n/a"
+    for div, suf in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if abs(v) >= div:
+            return f"${v / div:,.1f}{suf}"
+    return f"${v:,.0f}"
+
+
+def _numv(x: Any) -> float:
+    """단일 값 → float (NaN 은 NaN). `pd.to_numeric` 은 스칼라 오버로드가 좁아 Series 로 감싼다."""
+    return float(pd.to_numeric(pd.Series([x]), errors="coerce").iloc[0])
+
+
+def _price(x: Any) -> str:
+    """기준가 — 센트까지 (`$15.05`). 시총과 달리 반올림하지 않는다: 저가주에서 1센트가 자릿수다."""
+    v = _numv(x)
+    return "n/a" if pd.isna(v) else f"${v:,.2f}"
+
+
+def _q(x: Any) -> str:
+    """런웨이 분기 — `8.0Q` · FCF ≥ 0 이면 `∞`."""
+    v = _numv(x)
+    if pd.isna(v):
+        return "n/a"
+    return "∞" if v == float("inf") else f"{v:.1f}Q"
+
+
+def _nd_cell(r: pd.Series) -> str:
+    """ND 배수 — **basis 를 셀 안에 적는다.** EBITDA≤0 이면 시총 공간이고 6× 임계가 사실상
+    발동하지 않는다 (`docs/06` §8.2). basis 없이 숫자만 보이면 다른 종목과 같은 축으로 읽힌다."""
+    v = ratio(_numv(r.get("net_debt_ebitda")))
+    basis = str(r.get("nd_basis", "") or "")
+    if v == "n/a":
+        return "n/a"
+    return f"{v}x" if basis == "ebitda" else (f"{v}x(시총)" if basis == "mcap" else f"{v}x(?)")
+
+
+def _table_flags(r: pd.Series) -> str:
+    """비고 칸 — 감점·레드플래그·부분 축·모멘텀 불리언. 사실만 잇는다."""
+    bits: list[str] = []
+    if _txt(r, "penalties"):
+        bits.append(f"감점[{_txt(r, 'penalties')}]")
+    if _txt(r, "red_flags"):
+        bits.append(f"레드플래그[{_txt(r, 'red_flags')}]")
+    mom = [
+        n
+        for n, k in (("Stage2", "stage2"), ("50d↑", "above_50d"), ("VCP*", "vcp_base"))
+        if _is_true(r.get(k))
+    ]
+    if mom:
+        bits.append("/".join(mom))
+    if bool(r.get("s_partial", False)):
+        bits.append("S부분")
+    if bool(r.get("composite_partial", False)):
+        bits.append("종합부분")
+    return " ".join(bits)
+
+
+#: 명단 표의 열 — (머리, 폭, 값 함수). `docs/06` 이 준 지표만 쓴다 (새 계산 없음).
+_TABLE_COLS: tuple[tuple[str, int, Any], ...] = (
+    ("종목", 7, lambda tk, r: tk),
+    ("시총", 8, lambda tk, r: _usd_compact(r.get("mcap"))),
+    ("가격", 8, lambda tk, r: _price(r.get("price"))),
+    ("ADV20", 8, lambda tk, r: _usd_compact(r.get("adv20_usd"))),
+    ("ND/EBITDA", 13, lambda tk, r: _nd_cell(r)),
+    ("런웨이", 7, lambda tk, r: _q(r.get("cash_runway_q"))),
+    ("52wH", 7, lambda tk, r: _signed_pct(r.get("from_52w_high"))),
+    ("52wL", 7, lambda tk, r: _signed_pct(r.get("from_52w_low"))),
+    ("RS", 4, lambda tk, r: ratio(r.get("rs_rating"), digits=0)),
+    ("비고", 0, lambda tk, r: _table_flags(r)),
+)
+
+
+#: 명단 표의 머리 (`msa picks` 리포트와 `msa run daily` 다이제스트가 **같은 열**을 쓴다).
+TABLE_HEADERS: tuple[str, ...] = tuple(h for h, _w, _f in _TABLE_COLS)
+
+
+def judgment_cells(ticker: str, row: Any) -> list[str]:
+    """한 종목의 표 칸 — `TABLE_HEADERS` 순서. `row` 는 `.get` 이 되는 것이면 된다
+    (`pd.Series` · `dict`). 다이제스트가 `digest.json` 의 dict 로 같은 칸을 그린다 —
+    포맷이 두 벌이면 같은 종목이 리포트와 다이제스트에서 다른 숫자로 보인다."""
+    return [f(ticker, row) for _h, _w, f in _TABLE_COLS]
+
+
+def judgment_table(ranking: pd.DataFrame) -> list[str]:
+    """명단 표 — 사람이 차트를 열기 전에 읽는 판단 재료 (`JUDGMENT_COLUMNS`).
+
+    **선정은 이 표의 모든 행이다** (동일가중). 열의 어느 것도 순서를 정하지 않는다 — 정렬은
+    관찰 순위(`rank`)이고, 그 순위는 선정에 쓰이지 않는다 (`axes.score` docstring).
+    """
+    if ranking.empty:
+        return ["  적격 종목 없음"]
+    heads = list(TABLE_HEADERS)
+    rows = [judgment_cells(str(tk), r) for tk, r in ranking.iterrows()]
+    # 폭은 선언값과 실제 내용 중 큰 쪽 — 표가 깨지면 숫자를 잘못 읽는다 (열이 밀린다)
+    widths = [
+        max(w, _dw(h), *(_dw(x[i]) for x in rows))
+        for i, (h, w) in enumerate((h, w) for h, w, _f in _TABLE_COLS)
+    ]
+    out = ["  " + "  ".join(_pad(h, w) for h, w in zip(heads, widths, strict=True)).rstrip()]
+    out.append("  " + "-" * _dw(out[0]))  # 머리줄 길이 — 마지막 열(비고)은 가변이라 세지 않는다
+    for row in rows:
+        out.append("  " + "  ".join(_pad(c, w) for c, w in zip(row, widths, strict=True)).rstrip())
+    return out
+
+
+def excluded_lines(excluded: pd.DataFrame) -> list[str]:
+    """제외 종목과 사유 — 명단 **아래**에 붙는다. "왜 이 종목이 없나" 를 사람이 확인할 수 있어야
+    한다 (`CLAUDE.md` §2 — 수와 사유). 한 행도 접지 않는다."""
+    if not len(excluded):
+        return ["  제외 0"]
+    by_stage = excluded["stage"].astype(str).value_counts().to_dict() if "stage" in excluded else {}
+    out = [
+        "  제외 "
+        + str(len(excluded))
+        + (
+            "  (" + " · ".join(f"{k} {v}" for k, v in sorted(by_stage.items())) + ")"
+            if by_stage
+            else ""
+        )
+    ]
+    for tk, r in excluded.iterrows():
+        out.append(f"  {tk!s:<8} [{r['stage']}] {r['reason']}")
+    return out
+
+
 def _stock_block(tk: str, r: pd.Series, theme: str, group: str) -> list[str]:
     """종목 한 블록. `group` 은 선정 라벨(전원 동일), 머리의 등수·종합·바벨은 관찰 지표다."""
     f = ratio
     bb_obs = _txt(r, "barbell_obs")
     head = (
         f"{tk} · {theme} · {group or '—'}   [관찰 #{int(r['rank'])} · "
-        f"종합 {f(r['composite'], digits=2)}"
-        + (f" · 바벨 {bb_obs}" if bb_obs else "")
-        + "]"
+        f"종합 {f(r['composite'], digits=2)}" + (f" · 바벨 {bb_obs}" if bb_obs else "") + "]"
     )
     if r.get("name") is not None and str(r.get("name")) != "nan":
         head += f"   ({r['name']})"
@@ -372,8 +597,8 @@ def _stock_block(tk: str, r: pd.Series, theme: str, group: str) -> list[str]:
         head,
         f"  S {f(r['s_pct'], digits=2)}  runway {f(r['cash_runway_q'])}q{rb_txt} · {nd_txt} · "
         f"만기벽(12m) {f(r['maturity_wall_12m'], digits=2)} · 희석 3y {dil_txt} · "
-        f"이자보상 {f(r['interest_coverage'])} · ADV ${adv_m}M · "
-        f"가격 ${f(r['price'], digits=2)}",
+        f"이자보상 {f(r['interest_coverage'])} · 시총 {_usd_compact(r.get('mcap'))} · "
+        f"ADV ${adv_m}M · 가격 ${f(r['price'], digits=2)}",
     ]
     pen = _txt(r, "penalties")
     rf = _txt(r, "red_flags")
@@ -395,10 +620,12 @@ def _stock_block(tk: str, r: pd.Series, theme: str, group: str) -> list[str]:
         f"한계생산자 {_yn(r.get('marginal_producer'))}  [입력 {int(r.get('t_n_inputs', 0))}/6]"
     )
     lines.append(
-        f"  M {f(r['m_pct'], digits=2)}  Stage2 {_yn(r.get('stage2'))} · "
-        f"RS {f(r['rs_rating'], digits=0)} · VCP 베이스 {_yn(r.get('vcp_base'))} · "
-        f"52wL {_signed_pct(r.get('from_52w_low'))} · 50일선 위 {_yn(r.get('above_50d'))} · "
-        f"RVOL {f(r['rvol_expansion'], digits=2)}"
+        # `from_52w_high` 를 M 줄의 맨 앞으로 — 손익비를 사람이 가장 먼저 보는 값이다
+        # (2026-08-24). M 축은 이 열을 읽지 않는다: 지위는 관찰 그대로다.
+        f"  M {f(r['m_pct'], digits=2)}  52wH {_signed_pct(r.get('from_52w_high'))} · "
+        f"52wL {_signed_pct(r.get('from_52w_low'))} · Stage2 {_yn(r.get('stage2'))} · "
+        f"RS {f(r['rs_rating'], digits=0)} · VCP* 베이스 {_yn(r.get('vcp_base'))} · "
+        f"50일선 위 {_yn(r.get('above_50d'))} · RVOL {f(r['rvol_expansion'], digits=2)}"
     )
     lines.append(
         "  하드필터: 통과"
@@ -426,14 +653,17 @@ def render_report(
     meta: dict[str, Any],
     *,
     theme_name: str = "",
+    thesis: ThesisHead | None = None,
 ) -> str:
     u = meta["universe"]
     anchor_share_txt = ratio(bb.anchor_share * 100 if bb.n else float("nan"), "%", 0)
     obs = meta.get("barbell_observation", {})
+    head = thesis if thesis is not None else ThesisHead(fs.theme)
     L: list[str] = [
-        f"L4 종목 선정 — {fs.theme} ({theme_name})  asof {meta['asof']} "
-        f"(스토어 {meta['store_end']})",
+        f"■ {fs.theme} ({theme_name})  asof {meta['asof']} (스토어 {meta['store_end']})",
         "=" * 78,
+        *(f"  {x}" for x in head.lines()),
+        "",
         f"구성원 {u['members']} → 상장 {u['listed']} (폐지/가격없음 {u['excluded_listing']}) → "
         f"하드 제외 {u['excluded_hard_filter']} → 적격 {u['eligible']}"
         + (
@@ -455,11 +685,7 @@ def render_report(
         f"  옛 규칙이라면 무엇을 골랐을까 — {obs.get('weight_band_doc', '')}",
         "",
     ]
-    if len(excluded):
-        L.append("제외 (전부 표기 — CLAUDE.md §2)")
-        for tk, r in excluded.iterrows():
-            L.append(f"  {tk:<8} [{r['stage']}] {r['reason']}")
-        L.append("")
+    note = axes.disabled_penalty_note()
     L.append("없는 입력 (계산하지 않았다 — 빈 값이 아니라 '없다')")
     for k, v in fs.inputs_unavailable.items():
         L.append(f"  {k}: {v}")
@@ -490,14 +716,24 @@ def render_report(
         f"(n={ts.get('theme_margin_n_xs', 0)}) · "
         f"RS 유니버스 {ts.get('rs_universe_n', 0)} · 가격탄력 {ts.get('price_beta_hist', {})}"
     )
-    L.append("")
-    L.append(
-        "적격 종목 — 아래 전부가 선정이고 서로 동일가중이다 (순서는 표기 편의)."
-    )
-    L.append(
-        "  관찰 지표 (선정에 쓰이지 않는다): #순위 · 종합 = 0.40·S̃ + 0.40·T̃ + 0.20·M̃ · "
-        "바벨 라벨 · 틸데 = 테마 내 백분위"
-    )
+    L += [
+        "",
+        f"명단 — 적격 {u['eligible']} 종목 **전부**. 아래 표가 판단 재료이고, 최종 종목과 진입",
+        "시점은 사람이 차트를 보고 정한다. 표의 어느 열도 선정에 쓰이지 않는다.",
+        *([note] if note else []),
+        "-" * 78,
+        *judgment_table(ranking),
+        "",
+        "  " + VCP_DEFECT_NOTE,
+    ]
+    L += [
+        "",
+        "제외 — 왜 이 종목이 위에 없나 (전부 표기 · CLAUDE.md §2)",
+        *excluded_lines(excluded),
+        "",
+    ]
+    L.append("상세 (관찰 지표 · 선정에 쓰이지 않는다): #순위 · 종합 = 0.40·S̃ + 0.40·T̃ + 0.20·M̃ ·")
+    L.append("  바벨 라벨 · 틸데 = 테마 내 백분위")
     L.append("-" * 78)
     if ranking.empty:
         L.append("  적격 종목 없음")

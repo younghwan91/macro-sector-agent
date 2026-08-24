@@ -24,6 +24,13 @@
 - 감점: 순부채/EBITDA > 4× · 이자보상배율 < 1 · 희석 3y > 15%/y · 20일 거래대금 < $2M · 종가 < $2
 - 종합: `0.40·S̃ + 0.40·T̃ + 0.20·M̃`
 
+**2026-08-24 — 뒤의 둘(`adv_lt_2m`·`price_lt_2`)은 꺼져 있다.** 사용자 지시다("유동성 걱정하지
+말고 일단 풀어놔"). 스위치는 `PENALTY_ENABLED` 이고 **임계값은 하나도 지우지 않았다** — 규칙이
+다시 주어지면 `True` 로 되돌리는 것이 되살리는 전부다. 꺼진 항목은 평가되지 않아 분자·분모
+양쪽에서 빠지고(없는 것을 통과로 세지 않는다), 그 사실은 `declared_constants()` → `meta.json` 과
+리포트·다이제스트 머리에 매번 적힌다. `adv20_usd`·`price` **열은 그대로 실린다** — 판단
+재료이지 감점 재료만이 아니다.
+
 문서가 비워 둔 것 — 여기서 선언한다 (근거는 `docs/06` §8 구현 노트와 같다):
 
 - S 원점수 = `0.40·runway_score + 0.30·leverage_score + 0.30·penalty_score`. 런웨이는 문서가
@@ -127,6 +134,49 @@ PENALTY_ITEMS: tuple[str, ...] = (
     "price_lt_2",
     *(f"rf_{k}" for k in RED_FLAG_KEYS),
 )
+
+#: 감점 항목의 **적용 여부** — 2026-08-24 사용자 지시로 유동성(`adv_lt_2m`)·저가(`price_lt_2`)
+#: 둘을 껐다 ("유동성 걱정하지말고 일단 풀어놔. 필터링 규칙은 내가 나중에 도움요청할게").
+#:
+#: - **끈 항목은 평가하지 않는다** — `penalty_score` 의 분자에서도 **분모에서도** 빠진다.
+#:   `s_inputs_missing` 과 같은 규칙이다: 없는 것을 통과로 세지 않는다. 끄기 전후로 남은
+#:   항목의 상대 비중은 그대로다.
+#: - **임계값은 지우지 않았다** (`ADV_MIN_USD` = $2M · `PRICE_MIN` = $2). 되살리는 법은
+#:   여기 값을 `True` 로 되돌리는 것 하나뿐이고, 그러면 옛 판정이 그대로 돌아온다.
+#: - `adv20_usd` · `price` **열은 계속 산출물에 실린다** — 판단 재료다. 감점만 껐다.
+#: - 하드 제외(E1~E7)는 이 스위치와 무관하다 — 유동성은 애초에 하드 항목이 아니었다.
+#: - 이 사실은 조용히 두지 않는다: `declared_constants()` → `meta.json`, 리포트·다이제스트
+#:   머리, 텔레그램 본문에 매번 적힌다 (`CLAUDE.md` §2).
+PENALTY_ENABLED: dict[str, bool] = {
+    "nd_ebitda_gt4": True,
+    "interest_coverage_lt1": True,
+    "dilution_gt15": True,
+    "adv_lt_2m": False,  # 2026-08-24 사용자 지시 — 유동성 감점 미적용
+    "price_lt_2": False,  # 2026-08-24 사용자 지시 — 저가 감점 미적용
+    **{f"rf_{k}": True for k in RED_FLAG_KEYS},
+}
+assert set(PENALTY_ENABLED) == set(PENALTY_ITEMS)
+
+#: 지금 꺼져 있는 감점 (표시용 — 리포트·다이제스트가 이 목록을 읽어 "무엇을 껐는지" 를 적는다).
+DISABLED_PENALTIES: tuple[str, ...] = tuple(k for k in PENALTY_ITEMS if not PENALTY_ENABLED[k])
+
+#: 꺼진 감점을 사람 문장으로 — 산출물 머리에 그대로 박힌다. 전부 켜져 있으면 빈 문자열.
+_DISABLED_LABELS: dict[str, str] = {
+    "adv_lt_2m": f"유동성(20일 거래대금 < ${ADV_MIN_USD / 1e6:.0f}M)",
+    "price_lt_2": f"저가(종가 < ${PRICE_MIN:.0f})",
+}
+
+
+def disabled_penalty_note() -> str:
+    """ "무엇을 껐고 왜인가" 한 줄. 켜진 것만 있으면 빈 문자열 (조용히 끄지 않는다)."""
+    if not DISABLED_PENALTIES:
+        return ""
+    who = " · ".join(_DISABLED_LABELS.get(k, k) for k in DISABLED_PENALTIES)
+    return (
+        f"감점 미적용: {who} — 2026-08-24 사용자 지시로 껐다. "
+        "임계는 지우지 않았고(axes.PENALTY_ENABLED) 열은 아래 명단에 그대로 실린다"
+    )
+
 
 assert abs(sum(S_WEIGHTS.values()) - 1.0) < 1e-9
 assert abs(sum(AXIS_WEIGHTS.values()) - 1.0) < 1e-9
@@ -337,6 +387,9 @@ def survival(frame: pd.DataFrame) -> pd.DataFrame:
     }
     for key in RED_FLAG_KEYS:
         checks[f"rf_{key}"] = (has_fund, flags.str.contains(key, regex=False))
+    # 꺼진 감점은 **평가하지 않는다** — 분자에서도 분모에서도 빠진다 (`PENALTY_ENABLED`).
+    # `adv`·`price` 는 위에서 계속 읽히고 특성 표에도 남는다 — 판정만 안 하는 것이다.
+    checks = {k: v for k, v in checks.items() if PENALTY_ENABLED.get(k, True)}
     n_eval = pd.Series(0, index=idx, dtype=int)
     n_trig = pd.Series(0, index=idx, dtype=int)
     triggered: list[pd.Series] = []
@@ -473,6 +526,9 @@ def declared_constants() -> dict[str, Any]:
             "adv_min_usd": ADV_MIN_USD,
             "price_min": PRICE_MIN,
             "red_flags": [k for k in PENALTY_ITEMS if k.startswith("rf_")],
+            "enabled": dict(PENALTY_ENABLED),
+            "disabled": list(DISABLED_PENALTIES),
+            "disabled_note": disabled_penalty_note() or "없음 — 선언된 감점 전부를 적용했다",
         },
         "s_weights": S_WEIGHTS,
         "runway_cap_q": RUNWAY_CAP_Q,

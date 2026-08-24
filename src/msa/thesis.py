@@ -25,12 +25,14 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from msa.config import REPO_ROOT
+from msa.config import REPO_ROOT, paths, rel
+from msa.dates import parse_date
 
 # ---------------------------------------------------------------- enum (스키마 파일과 같은 순서)
 
@@ -121,6 +123,115 @@ def dump_thesis_yaml(path: Path | str, thesis: Mapping[str, Any]) -> Path:
         encoding="utf-8",
     )
     return p
+
+
+# ---------------------------------------------------------------- 논지 머리 (명단 위에 붙는 것)
+
+
+def find_thesis(theme_id: str, asof: str, root: Path | str | None = None) -> Path | None:
+    """`state/theses/<date ≤ asof>/<theme>.thesis.yaml` 중 **최신**. 없으면 None.
+
+    `pipeline.assemble._find_latest` 와 **같은 규칙**(날짜 디렉터리 이름 ≤ asof, 최신 우선)이다.
+    거기서 옮겨 오지 않고 여기 둔 이유는 임포트 방향 — `assemble` 은 `l1`·`l4`·`l5` 를 임포트하고
+    이 모듈은 계층 패키지를 임포트하지 않는다 (모듈 머리말). 규칙은 하나이고 구현이 둘이다.
+
+    PIT 규약 그대로다: **asof 이후에 쓰인 논지는 찾지 않는다.** 그래서 오늘의 명단이 내일의
+    논지를 달고 나오지 않는다.
+    """
+    base = Path(root) if root is not None else paths().theses
+    if not base.is_dir():
+        return None
+    name = thesis_filename(theme_id)
+    for d in sorted((p for p in base.iterdir() if p.is_dir()), key=lambda p: p.name, reverse=True):
+        try:
+            parse_date(d.name)
+        except ValueError:
+            continue
+        if d.name > asof:
+            continue
+        f = d / name
+        if f.exists():
+            return f
+    return None
+
+
+#: 논지 없음일 때 명단 머리에 적는 문장 — 빈 줄을 두지 않는다 (`CLAUDE.md` §2).
+NO_THESIS_NOTE = "논지 없음 — L3 미실행 (msa research <theme> 또는 사람 논지 yaml)"
+
+
+@dataclass(frozen=True)
+class ThesisHead:
+    """명단 머리에 붙는 논지 요약 — 한 줄 논지 + 무효화 조건. 판정은 하나도 하지 않는다."""
+
+    theme: str
+    claim: str = ""
+    invalidations: tuple[str, ...] = ()
+    horizon_months: tuple[int, ...] = ()
+    cycle_confidence: float | None = None
+    gate: str | None = None
+    source: str = ""  # 논지 파일 경로 (표시용)
+
+    @property
+    def found(self) -> bool:
+        return bool(self.source)
+
+    def lines(self, *, claim_chars: int = 220, max_invalidations: int = 4) -> list[str]:
+        """리포트·다이제스트가 공유하는 머리 줄. **자른 것은 잘랐다고 적는다.**"""
+        if not self.found:
+            return [f"논지: {NO_THESIS_NOTE}"]
+        head = [f"논지: {_clip(self.claim, claim_chars) or '(claim 비어 있음)'}"]
+        meta = []
+        if self.horizon_months:
+            meta.append("지평 " + "~".join(str(h) for h in self.horizon_months) + "개월")
+        if self.cycle_confidence is not None:
+            meta.append(f"확신도 {self.cycle_confidence:g}")
+        if self.gate:
+            meta.append(f"게이트 {self.gate}")
+        meta.append(self.source)
+        head.append("  (" + " · ".join(meta) + ")")
+        if not self.invalidations:
+            head.append("무효화 조건: 없음 — 스키마상 있을 수 없다 (CLAUDE.md §5). 논지를 확인하라")
+            return head
+        shown = self.invalidations[:max_invalidations]
+        head.append("무효화 조건:")
+        head += [f"  - {x}" for x in shown]
+        if len(self.invalidations) > len(shown):
+            head.append(f"  - … 외 {len(self.invalidations) - len(shown)}개 (전문은 {self.source})")
+        return head
+
+
+def _clip(s: str, n: int) -> str:
+    t = " ".join(str(s or "").split())
+    return t if len(t) <= n else t[: n - 1].rstrip() + "…"
+
+
+def thesis_head(theme_id: str, asof: str, root: Path | str | None = None) -> ThesisHead:
+    """테마의 논지 머리. 파일이 없으면 `found=False` 인 빈 머리 — 예외를 던지지 않는다.
+
+    명단은 논지가 없어도 나온다 (논지는 L3 의 산출이고 L4 는 그것 없이도 돈다). 없다는 **사실**을
+    적는 것이 여기서 하는 일의 전부이며, 어떤 판정도 바꾸지 않는다.
+    """
+    f = find_thesis(theme_id, asof, root)
+    if f is None:
+        return ThesisHead(theme_id)
+    try:
+        raw = read_thesis_yaml(f)
+    except (OSError, ValueError):
+        # 읽지 못한 것과 없는 것은 다르다 — 사유를 claim 자리에 남긴다 (조용히 없는 척하지 않는다)
+        return ThesisHead(theme_id, claim=f"논지 파일을 읽지 못했다: {f}", source=str(f))
+    hz = raw.get("horizon_months") or []
+    if isinstance(hz, int | float):
+        hz = [hz]
+    conf = raw.get("cycle_confidence")
+    return ThesisHead(
+        theme=theme_id,
+        claim=str(raw.get("claim") or ""),
+        invalidations=tuple(_obs(x) for x in (raw.get("invalidations") or [])),
+        horizon_months=tuple(int(h) for h in hz if isinstance(h, int | float)),
+        cycle_confidence=float(conf) if isinstance(conf, int | float) else None,
+        gate=gate_status(raw),
+        source=rel(f),
+    )
 
 
 # ---------------------------------------------------------------- 표류 diff (docs/05 §6 · 09 §2)

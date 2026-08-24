@@ -260,9 +260,11 @@ def test_survival_leverage_and_penalties() -> None:
     s = axes.survival(f)
     assert s.loc["CLEAN", "leverage_score"] == pytest.approx(1 - 1 / 6)
     assert s.loc["NETCASH", "leverage_score"] == 1.0
-    assert s.loc["CLEAN", "n_penalties"] == 0 and s.loc["CLEAN", "n_penalty_evaluable"] == 9
-    assert s.loc["PEN", "n_penalties"] == 7
-    assert s.loc["PEN", "penalty_score"] == pytest.approx(1 - 7 / 9)
+    # 유동성·저가 감점은 꺼져 있다 (2026-08-24 사용자 지시 · `axes.PENALTY_ENABLED`) —
+    # 평가 가능한 항목이 9개에서 7개로 줄고, PEN 의 발동도 7개에서 5개로 준다
+    assert s.loc["CLEAN", "n_penalties"] == 0 and s.loc["CLEAN", "n_penalty_evaluable"] == 7
+    assert s.loc["PEN", "n_penalties"] == 5
+    assert s.loc["PEN", "penalty_score"] == pytest.approx(1 - 5 / 7)
     assert "rf_zombie_streak" in s.loc["PEN", "penalties"]
     assert s.loc["CLEAN", "s_raw"] == pytest.approx(0.4 * 1 + 0.3 * (1 - 1 / 6) + 0.3 * 1)
     assert s.loc["CLEAN", "s_raw"] > s.loc["PEN", "s_raw"]
@@ -272,7 +274,7 @@ def test_survival_missing_inputs_reduce_denominator_not_pass() -> None:
     """입력이 없는 감점 항목은 분모에서 빠진다 — 통과로 세지 않는다."""
     f = _frame({"X": _base(interest_coverage=np.nan, dilution_3y=np.nan)})
     s = axes.survival(f)
-    assert s.loc["X", "n_penalty_evaluable"] == 7
+    assert s.loc["X", "n_penalty_evaluable"] == 5  # 7개 중 ic·dilution 결측 2개 제외
     assert s.loc["X", "penalty_score"] == 1.0
     assert s.loc["X", "s_inputs_missing"] == ""
 
@@ -585,3 +587,40 @@ def test_observation_columns_survive_for_backward_compatibility() -> None:
     ranking, _ex, _bb = rank_theme(_fs(frame, _uni(tickers)))
     for col in (*_RANKING_REQUIRED, "m_pct", "s_pct", "t_pct", "barbell_obs"):
         assert col in ranking.columns
+
+
+def test_disabled_penalties_are_not_evaluated_and_are_announced() -> None:
+    """꺼진 감점은 분자에서도 **분모에서도** 빠지고, 껐다는 사실이 산출물에 적힌다.
+
+    껐다는 것이 "통과했다" 로 보이면 안 된다 (`CLAUDE.md` §2 조용한 절단 금지). 임계값은 지우지
+    않았으므로 `PENALTY_ENABLED` 를 True 로 되돌리면 옛 판정이 그대로 돌아온다 — 이 테스트가
+    되살리는 경로를 고정한다.
+    """
+    assert axes.PENALTY_ENABLED["adv_lt_2m"] is False
+    assert axes.PENALTY_ENABLED["price_lt_2"] is False
+    assert set(axes.DISABLED_PENALTIES) == {"adv_lt_2m", "price_lt_2"}
+    # 임계 자체는 남아 있다 (되살릴 값)
+    assert axes.ADV_MIN_USD == 2_000_000.0 and axes.PRICE_MIN == 2.0
+
+    f = _frame({"THIN": _base(adv20_usd=1.0, price=0.5), "FAT": _base(adv20_usd=1e9, price=90.0)})
+    s = axes.survival(f)
+    # 유동성·저가만 다른 두 종목의 감점이 같다 — 판정에서 빠졌다는 뜻
+    assert s.loc["THIN", "n_penalties"] == s.loc["FAT", "n_penalties"] == 0
+    assert s.loc["THIN", "penalty_score"] == s.loc["FAT", "penalty_score"] == 1.0
+    assert "adv_lt_2m" not in s.loc["THIN", "penalties"]
+    assert "price_lt_2" not in s.loc["THIN", "penalties"]
+
+    note = axes.disabled_penalty_note()
+    assert "감점 미적용" in note and "유동성" in note and "저가" in note
+    dec = axes.declared_constants()["penalty"]
+    assert dec["disabled"] == ["adv_lt_2m", "price_lt_2"]
+    assert dec["enabled"]["nd_ebitda_gt4"] is True
+    # 되살리면 옛 판정이 돌아온다
+    axes.PENALTY_ENABLED["adv_lt_2m"] = True
+    try:
+        back = axes.survival(f)
+        assert back.loc["THIN", "n_penalties"] == 1
+        assert "adv_lt_2m" in back.loc["THIN", "penalties"]
+        assert back.loc["FAT", "n_penalties"] == 0
+    finally:
+        axes.PENALTY_ENABLED["adv_lt_2m"] = False

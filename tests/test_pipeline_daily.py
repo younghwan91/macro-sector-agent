@@ -173,15 +173,28 @@ def test_daily_first_run_writes_digest_and_marks_everything_new(env: dict[str, A
     assert all(t["new_since_prev"] for t in dj["themes"])
     assert dj["diff"]["first_run"] and dj["diff"]["prev_asof"] is None
     assert "기준일 없음, 전부 신규" in md
-    # per_theme=2 는 표시 개수 — eligible 전체(3)는 diff 용으로 남는다
+    # `picks` 는 2026-08-24 부터 **적격 전부**다 (명단). per_theme 는 텔레그램·diff 의 상한이다
     ta = dj["themes"][0]
-    assert [x["ticker"] for x in ta["picks"]] == ["AAA", "BBB"]
+    assert [x["ticker"] for x in ta["picks"]] == ["AAA", "BBB", "CCC"]
     assert ta["eligible_tickers"] == ["AAA", "BBB", "CCC"]
     assert ta["hard_excluded_tickers"] == ["XXX"]
+    # 제외는 사유와 함께 — "왜 이 종목이 명단에 없나"
+    assert ta["excluded"] == [{"ticker": "XXX", "stage": "hard_filter", "reason": "runway<4q"}]
     assert ta["blocks"]["A_pct"] == 0.5
-    # 종목 한 줄: group·종합·S/T/M·가격·ADV·감점
-    assert "AAA" in md and "종합 0.90" in md and "$12.34" in md and "ADV $3.2M" in md
+    # 논지가 없으면 없다고 적는다 (L3 미실행)
+    assert ta["thesis"]["found"] is False
+    assert D.NO_THESIS_NOTE in md
+    # 명단 표: 판단 재료가 열로 나온다 (52주 고점 대비 · 시총 · ND/EBITDA · 런웨이 · RS)
+    for h in ("52wH", "시총", "ND/EBITDA", "런웨이", "RS", "ADV20"):
+        assert f"| {h} |" in md, h
+    assert "AAA" in md and "$12.34" in md and "$3.2M" in md
     assert "감점[p1]" in md
+    # 제외 사유가 명단 아래에 나온다
+    assert "`XXX` [hard_filter] runway<4q" in md
+    # 껐다는 사실이 리포트에 적힌다 (조용히 끄지 않는다)
+    assert "감점 미적용" in md and "axes.PENALTY_ENABLED" in md
+    # vcp_base 결함 표시
+    assert "VCP*" in md
     # 고르면 다음
     assert "msa research" in md and "msa journal new --from" in md and "msa run monthly" in md
 
@@ -439,4 +452,8 @@ def test_daily_smoke_on_real_cache() -> None:
         assert step is not None and (step.status == "ok" or step.reason), name
     assert len(res.digest["themes"]) <= 2
     for t in res.digest["themes"]:
-        assert len(t["picks"]) <= 3
+        # 2026-08-24: `picks` 는 **적격 전부**다. `--per-theme` 은 표시 컷이지
+        # 명단을 자르는 값이 아니다 (docs/06 §5.1 — 선정 규칙을 버렸다).
+        # diff 계약은 `diff_digests(top_n=picks_per_theme)` 가 앞 N 개만 보게 해 유지된다.
+        assert t["picks"], "적격이 0 이면 테마가 다이제스트에 실리지 않아야 한다"
+        assert all(p["group"] == "ELIGIBLE" for p in t["picks"])

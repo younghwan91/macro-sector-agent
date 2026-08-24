@@ -164,13 +164,33 @@ def format_alert(a: Alert) -> str:
         blocks = f.get("themes") or []
         n_p = int(f.get("picks_per_theme") or 0)
         L.append("")
-        L.append(f"후보 테마 {len(blocks)}개 (테마당 종목 {n_p}개까지):")
+        note = str(f.get("penalty_note") or "")
+        if note:  # 무엇을 껐는지 알림만 보는 사람도 알아야 한다 (CLAUDE.md §2)
+            L.append(note)
+            L.append("")
+        trimmed = str(f.get("thesis_trimmed") or "")
+        L.append(
+            f"후보 테마 {len(blocks)}개 (테마당 종목 {n_p}개까지)"
+            + (f" — {trimmed}" if trimmed else "")
+            + ":"
+        )
         for i, b in enumerate(blocks):
             L.append(f"  {i + 1}. {b['head']}")
+            if b.get("thesis"):  # 논지 한 줄 — 없으면 "논지 없음" 이 그대로 들어온다
+                L.append(f"     논지: {b['thesis']}")
+            n_inv = int(b.get("n_invalidations") or 0)
+            if b.get("invalidation"):
+                L.append(
+                    f"     무효화: {b['invalidation']}"
+                    + (f" (외 {n_inv - 1}개)" if n_inv > 1 else "")
+                )
             L += [f"     · {x}" for x in b.get("picks") or []] or ["     · (적격 종목 없음)"]
             n_e = int(b.get("n_eligible") or 0)
             if n_e > len(b.get("picks") or []):
-                L.append(f"     ({n_e}개 적격 중 {len(b['picks'])}개 표시)")
+                L.append(f"     ({n_e}개 적격 중 {len(b['picks'])}개 표시 — 나머지는 전문에)")
+            n_x = int(b.get("n_excluded") or 0)
+            if n_x:
+                L.append(f"     (제외 {n_x}개 — 사유는 전문에)")
         t_om = int(f.get("themes_omitted") or 0)
         if t_om:
             L.append(f"  … 외 테마 {t_om}개 (전문: {f.get('path', 'state/daily/')})")
