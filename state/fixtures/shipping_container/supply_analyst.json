@@ -1,0 +1,220 @@
+{
+  "model": "claude-sonnet-5",
+  "provider": "claude_code",
+  "usage": {
+    "input_tokens": 460818,
+    "output_tokens": 12813,
+    "search_queries": 0
+  },
+  "notional_usd": 0.6241095999999999,
+  "output": {
+    "findings": [
+      {
+        "topic": "capacity_and_closures",
+        "summary": "글로벌 컨테이너선 선복량은 2026년 1월 약 33.7백만 TEU(7,498척)에서 2026년 7월 말 34.1백만 TEU로 확대됐다. 유휴(idle) 선복은 2025년 말 21.2만 TEU(83척, 전체의 0.6%), 2026년 7월 27일 기준으로도 89척·0.6% 수준으로 극히 낮게 유지되고 있다. 다만 2025년 9월~11월 사이 한때 유휴 비중이 약 1%에서 1.75%까지 상승했다가 11월 초 1.6%로 다시 낮아진 시기가 있었다 — 즉 유휴율은 계절적으로 변동한다. '폐쇄·감산'에 해당하는 해체(스크래핑)는 오히려 급감했다: 2023년 16.2만 TEU 해체 → 2024년 8.1만 TEU(56척) → 2025년 8,172 TEU(12척, 20년래 최저)로, 선사들이 고운임·고용선료를 이유로 노후선 폐선을 미루고 있다. 즉 '폐쇄' 이벤트는 찾지 못했고, 오히려 해체 지연이 관측된다.",
+        "evidence_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "pipeline_3y",
+        "summary": "신조 발주잔량(orderbook)이 사상 최고 수준으로 급증했다: 2025년 12월 기준 11.61백만 TEU(현재 선복량의 34.8%), 2026년 7월 기준으로는 12.98백만 TEU(1,592척)로 추가 확대됐다. 2025년 한 해에만 633척·508만 TEU가 발주되어 2024년(477만 TEU), 2021년(474만 TEU) 기록을 경신했다. 인도 시점은 뒤로 쏠려 있다 — 2026년 인도량은 약 150~170만 TEU로 상대적으로 완만하나, 2027년 280만 TEU, 2028년에는 거의 500만 TEU(2027년 말 선복량의 약 13%, 2007년 이후 최고 비율)로 급증할 전망이다. 중국 조선소가 발주잔량의 약 72~79%(3.66백만 TEU, 497척)를 차지하고, 한국 조선소가 2025년 27%(135만 TEU)로 비중을 늘렸다. FID(발주 확정) 여부는 이 물량 모두 이미 계약 체결된 확정 발주이나, 실제 인도는 2029년까지 순차적으로 걸쳐 있다.",
+        "evidence_ids": [
+          4,
+          6,
+          7,
+          8
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "inventories",
+        "summary": "컨테이너선 산업에는 원자재형 '거래소 재고'가 존재하지 않는다. 가장 근접한 대용 지표인 유휴(idle)/계선(layup) 선복은 2026년 내내 0.6% 안팎의 역사적 저수준을 유지했고, 2025년 9~11월에만 일시적으로 1~1.75%까지 상승했다(장기 역사적 백분위와 비교할 명확한 시계열 출처는 찾지 못함). 박스(컨테이너 장비) 재고 측면에서는, 글로벌 컨테이너 리스 시장의 가동률이 92% 이상으로 높고 리스 컨테이너가 전체 활성 선복의 약 58%(약 5,400만 TEU)를 차지한다는 2026년 시장 보고서가 있으나, 이는 매출 기반 시장 조사 리포트(2차 출처)로 원문 대조는 되지 않았다. 역사적 백분위 데이터는 찾지 못했다.",
+        "evidence_ids": [
+          1,
+          2,
+          9,
+          10,
+          11
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "lead_time",
+        "summary": "1군 조선소 대부분이 2020년대 말까지 도크가 마감(sold out)된 상태이며, 발주잔량의 약 1/3이 3년 이상 뒤 인도분이다. 신조 리드타임은 통상 2~3년에서 4~5년으로 늘어났고, 오늘 발주해도 실제 인도는 2020년대 말~2030년대 초가 될 수 있다. 중국 조선소는 이미 2028년 가동률의 약 50%, 2029년 가동률의 약 20%를 선행 확보(예약)한 상태다. 추가 제약으로, 약 6,000TEU급 일부 프로젝트는 대형 2행정 엔진 생산 슬롯을 제때 확보하지 못해 지연되고 있다 — 즉 엔진 제조 능력도 별도의 병목이다.",
+        "evidence_ids": [
+          12,
+          8
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "cost_curve",
+        "summary": "명확한 P50/P90 현금원가 곡선(예: 톤당 생산원가 분포)은 찾지 못했다 — 컨테이너 해운은 채굴·제련업과 달리 표준화된 원가곡선 데이터가 공개되지 않는다. 대신 다음 대용 지표를 확인했다: (1) 2026년 태평양 항로 손익분기 운임이 FEU당 약 1,200~1,600달러로 추정된다는 2차 출처(medium 신뢰도, 원문 대조 불가); (2) 5,000TEU급 선박 기준 연간 운영비 구성비(연료·윤활유 35~40%, 선원비 20~25%, 정비 10~15%, 보험 5~8% 등, 2차 출처); (3) 4,300TEU 논에코 파나막스 1년 용선료가 2025년 말~2026년 초 하루 5.6만 달러까지 상승, 노후선은 장기계약 시 하루 약 3.5만 달러로 할인. 한계 생산자(노후 소형선)의 '셧다운' 발표는 찾지 못했다 — 오히려 해체(사실상 한계 선박 퇴출)가 20년래 최저로, 현재 운임/용선료 수준에서 한계 선박도 시장에 남아있음을 시사한다.",
+        "evidence_ids": [
+          13,
+          14,
+          5
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "unit_demand_series",
+        "summary": "UNCTAD/Drewry 집계 기준 세계 항만 컨테이너 처리량(throughput, TEU)의 연도별 절대치 중 직접 인용 가능한 지점은 2010년 5.45억 TEU, 2020년 7.92억 TEU, 2021년 8.49억 TEU, 2024년 9.203억 TEU(전년비 +6.9%)이며, 2022·2023년은 각각 전년비 +0.6% 성장(사상 최저 수준 성장률 중 하나)했다고 명시돼 있다(절대치는 직접 인용문에 없어 계산 생략). 2025년은 1~8월 누계 1억 2,675만 TEU로 전년동기 대비 +4.4%. 그러나 2011~2019년 구간의 개별 연도 수치는 Statista 등 유료 소스 뒤에 있어 확보하지 못했다 — 즉 완전한 '최소 10개 연간 지점'의 연속 시계열은 확보하지 못했고, 확보된 지점만 정직하게 제시한다.",
+        "evidence_ids": [
+          15,
+          16
+        ],
+        "not_found": false
+      }
+    ],
+    "unit_demand_series": {
+      "found": true,
+      "unit": "TEU (twenty-foot equivalent unit), 세계 항만 컨테이너 처리량(port throughput, handling량 — 적재+양하 합산, 매출 아님)",
+      "scope": "글로벌 전체 항만, 전 화물 용도(수출입+환적 포함)",
+      "source": "UNCTAD Review of Maritime Transport 2024/2025; Drewry Shipping Consultants 집계 (Port Economics, Management & Policy 사이트 재인용)",
+      "years": [
+        [
+          2010,
+          545
+        ],
+        [
+          2020,
+          792
+        ],
+        [
+          2021,
+          849
+        ],
+        [
+          2024,
+          920.3
+        ]
+      ],
+      "evidence_ids": [
+        15,
+        16
+      ]
+    },
+    "evidence": [
+      {
+        "id": 1,
+        "claim": "2026년 1월 22일 기준 Alphaliner 집계: 글로벌 컨테이너선 선복량 약 37백만 TEU에 근접, 유휴선 83척·21.2327만 TEU(전체의 0.6%), 2026년 약 150만 TEU의 신규 선복 인도 예정",
+        "source_url": "https://globalmaritimehub.com/2026-starts-with-container-fleet-utilisation-strong-as-vessel-idling-stays-below-1.html",
+        "date": "2026-01-22",
+        "reliability": "medium"
+      },
+      {
+        "id": 2,
+        "claim": "2026년 7월 27일 기준 유휴 컨테이너선 89척으로 전체 34.1백만 TEU 선대의 0.6%",
+        "source_url": "https://meobserver.news/global-maritime/2026/08/21/container-shipping-reliability-slips-as-spare-vessel-capacity-stays-tight/",
+        "date": "2026-08-21",
+        "reliability": "medium"
+      },
+      {
+        "id": 3,
+        "claim": "2026년 4월 기준 글로벌 컨테이너선대가 6,700척을 돌파, 2025년 해운 수익성은 둔화",
+        "source_url": "https://www.worldcargonews.com/news/2026/04/global-container-fleet-surpasses-6700-ships-as-2025-shipping-profits-cool/",
+        "date": "2026-04-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 4,
+        "claim": "2025년 12월 기준 발주잔량 11.61백만 TEU(현재 선복량의 34.8%), 2025년 한 해 633척·508만 TEU 발주로 2024년(477만)·2021년(474만) 기록 경신. 중국 조선소 497척(79%)·366만 TEU(72%), 한국 조선소 2025년 비중 27%·135만 TEU",
+        "source_url": "https://gcaptain.com/container-shipping-faces-oversupply-threat-as-record-newbuild-orders-reshape-industry/",
+        "date": "2025-12-16",
+        "reliability": "medium"
+      },
+      {
+        "id": 5,
+        "claim": "2024년 컨테이너선 해체량 8.095만 TEU(56척)로 2023년 16.2만 TEU 대비 절반 수준으로 감소. 2024년 용선료가 2023년 대비 거의 2배로 상승해 선주들이 노후선 폐선을 미룸",
+        "source_url": "https://safety4sea.com/scrapping-of-boxships-in-2024-drops-by-half-compared-to-2023/",
+        "date": "2025-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 6,
+        "claim": "2025년 컨테이너선 해체량이 12척·8,172 TEU로 20년래 최저치를 기록",
+        "source_url": "https://globalmaritimehub.com/container-ship-demolition-hits-a-twenty-year-low-in-2025.html",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 7,
+        "claim": "2026년 7월 10일 기준 발주잔량 1,592척·12.98백만 TEU. 2025년 인도 5~503,000 TEU(1~5월), 2028년 인도량이 거의 500만 TEU에 달해 2027년 말 선복량의 약 13%(2007년 이후 최고 비율)로 예상. 2025~2026년 737척·505만 TEU가 신규 발주됨",
+        "source_url": "https://www.xindemarinenews.com/news/2075458427389485058",
+        "date": "2026-07-10",
+        "reliability": "medium"
+      },
+      {
+        "id": 8,
+        "claim": "1군 조선소 대부분 2020년대 말까지 도크 마감(sold out), 발주잔량의 약 1/3이 3년 이상 뒤 인도. 신조 리드타임 4~5년으로 확대. 중국 조선소는 2028년 가동률의 약 50%, 2029년 가동률의 약 20%를 이미 예약. 6,000TEU급 일부 프로젝트는 대형 2행정 엔진 생산 슬롯 부족으로 지연",
+        "source_url": "https://splash247.com/shipyard-delivery-lead-times-extend-towards-the-end-of-the-decade/",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 9,
+        "claim": "2026년 태평양 항로 대부분 선사의 손익분기 운임이 FEU당 약 1,200~1,600달러로 추정됨",
+        "source_url": "https://www.gocubic.io/guides/market-intelligence/2026-freight-market-outlook",
+        "date": "2026-01-01",
+        "reliability": "low"
+      },
+      {
+        "id": 10,
+        "claim": "5,000TEU급 컨테이너선 기준 연간 운영비 구성: 연료·윤활유 35~40%, 선원비 20~25%, 정비·수리 10~15%, 보험 5~8%, 저장품 3~5%, 관리비 2~4%",
+        "source_url": "https://www.shipfinex.com/blog/economic-factors-shipping-industry-costs",
+        "date": "2026-01-01",
+        "reliability": "low"
+      },
+      {
+        "id": 11,
+        "claim": "2025년 9월 약 1% 미만이던 유휴/계선 컨테이너선 비중이 10월 초 약 1.75%까지 상승했다가 11월 6일경 약 1.6%로 소폭 완화됨",
+        "source_url": "https://theloadstar.com/idle-tonnage-passes-a-million-teu-as-bigger-box-ships-go-into-lay-up/",
+        "date": "2025-11-06",
+        "reliability": "medium"
+      },
+      {
+        "id": 12,
+        "claim": "4,300TEU 논에코 클래식 파나막스 1년 정기용선료가 하루 5.6만 달러로 상승, 장기계약 노후선은 하루 약 3.5만 달러 수준으로 할인",
+        "source_url": "https://www.mundomaritimo.net/noticias/containership-charter-market-closes-2025-with-solid-rates-across-most-vessel-sizes",
+        "date": "2025-12-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 13,
+        "claim": "글로벌 컨테이너 리스 시장 2026년 규모 약 75억 달러, 주요 항로 가동률 92% 이상, 상위 5개 리스사가 리스 선복의 약 72% 점유, 전 세계 약 5,400만 TEU가 리스되어 전체 활성 선복의 약 58%를 차지",
+        "source_url": "https://shippingintelligencehub.com/article/container-leasing-market-grows-to-7-5-billion-as-long-term-contracts-dominate",
+        "date": "2026-01-01",
+        "reliability": "low"
+      },
+      {
+        "id": 14,
+        "claim": "Textainer가 2025년 12월 Seaco 인수를 완료해 약 440만 TEU 선단과 Seaco의 240만 TEU를 결합, Triton은 700만 TEU 이상의 활성 선단을 운영 중",
+        "source_url": "https://blog.gettransport.com/trends-in-logistic/largest-container-leasing-companies-2026/",
+        "date": "2026-01-01",
+        "reliability": "low"
+      },
+      {
+        "id": 15,
+        "claim": "세계 항만 컨테이너 처리량은 1980년 3,600만 TEU에서 2000년 2.37억 TEU, 2010년 5.45억 TEU, 2020년 7.92억 TEU, 2021년 8.49억 TEU로 성장",
+        "source_url": "https://porteconomicsmanagement.org/pemp/contents/part1/maritime-shipping-and-international-trade/world-container-throughput/",
+        "date": "2025-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 16,
+        "claim": "2024년 세계 항만에서 9.203억 TEU가 처리되어 전년비 +6.9% 성장(2022·2023년은 각각 +0.6%로 40년래 최저 수준 성장). 2025년 1~8월 누계는 1억 2,675만 TEU로 전년동기 대비 +4.4%",
+        "source_url": "https://unctad.org/system/files/official-document/rmt2025ch1_en.pdf",
+        "date": "2025-10-01",
+        "reliability": "medium"
+      }
+    ]
+  }
+}

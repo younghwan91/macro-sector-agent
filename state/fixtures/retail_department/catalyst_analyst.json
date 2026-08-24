@@ -2,102 +2,94 @@
   "model": "claude-sonnet-5",
   "provider": "claude_code",
   "usage": {
-    "input_tokens": 241766,
-    "output_tokens": 8326,
+    "input_tokens": 329151,
+    "output_tokens": 6844,
     "search_queries": 0
   },
-  "notional_usd": 0.44805780000000006,
+  "notional_usd": 0.5287459999999999,
   "output": {
     "calendar": [
       {
-        "date": "2026-01-09",
-        "event": "Macy's 'Bold New Chapter' 전략에 따라 2026년 중 14개 매장 폐점 발표 (2024년 이후 총 150개 폐점 계획의 일부)",
-        "kind": "customer_capex",
+        "date": "2026-02-20",
+        "event": "미국 연방대법원, Learning Resources v. Trump 판결(6-3)로 IEEPA(국제긴급경제권한법) 근거 관세(상호관세·펜타닐 관세) 무효 판단. 트럼프 행정부, 같은 날 IEEPA 관세 종료 행정명령 발동, CBP는 2026-02-24부로 징수 중단",
+        "kind": "trade_measures",
         "evidence_ids": [
           1
         ]
       },
       {
-        "date": "2026-03-10",
-        "event": "Kohl's, FY2025 4분기 실적 발표와 함께 FY2026 자본적지출(capex) 가이던스 약 3.5억~4.0억 달러 제시",
-        "kind": "customer_capex",
+        "date": "2026-07-24",
+        "event": "임시 Section 122 글로벌 관세(10%) 만료, 60개 경제권 대상 강제노동 관련 Section 301 관세(10% 또는 12.5%, 중국·베트남·브라질·러시아는 12.5%)로 대체 시행",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          2,
+          3
+        ]
+      },
+      {
+        "date": "2026-09-01",
+        "event": "USTR 제안 섬유·의류 쿼터 메커니즘(미국산 면화·섬유 투입 실적에 연동한 감면 관세 물량) 시행 개시 예정(가장 이른 시점 기준, 확정 여부 불확실)",
+        "kind": "trade_measures",
         "evidence_ids": [
           3
         ]
       },
       {
-        "date": "2026-05-28",
-        "event": "Macy's, 매장 폐점 효과로 동일점포매출(SSS) +1.9% 및 연간 매출·EPS 가이던스 상향",
-        "kind": "customer_capex",
-        "evidence_ids": [
-          2
-        ]
-      },
-      {
-        "date": "2026-06-24",
-        "event": "미 관세국경보호청(CBP), 우편 경로 외 모든 운송수단에 대한 '데미니미스'(800달러 이하 면세) 예외의 무기한 정지를 연방관보에 공식화",
-        "kind": "trade_measures",
+        "date": "2026-05",
+        "event": "미 하원, Combating Organized Retail Crime Act(CORCA, H.R.2853) 348-60으로 가결, 상원 계류 중 — 조직절도 연방 단속 강화 및 ICE 내 전담 센터 신설 조항 포함",
+        "kind": "policy_calendar",
         "evidence_ids": [
           4
         ]
       },
       {
-        "date": "2026-07-08",
-        "event": "CFPB, 신용카드 연체수수료 관련 정보요청(RFI)을 OIRA 규제심사 목록(EO 12866)에 등재 — 사전규칙제정(prerule) 단계, 구체적 규칙안 일정 미확정",
+        "date": "2027-01-01",
+        "event": "캘리포니아 등 19개 주 최저임금 인상 발효(캘리포니아 시간당 $17.40 등) — 매장 인건비에 영향",
         "kind": "policy_calendar",
         "evidence_ids": [
-          8,
-          9
+          5
         ]
       },
       {
-        "date": "2026-07-23",
-        "event": "USTR, 강제노동 관련 Section 301 최종조치 연방관보고시(FRN) 발표 — 섬유·의류 대상 관세율할당(TRQ) 메커니즘(방글라데시·캄보디아·인도네시아·말레이시아 대상) 포함, 세부 국가·감면율·물량은 '가능한 한 조속히' 추후 확정",
+        "date": "2025-08-29",
+        "event": "$800 이하 소액면세(de minimis) 관세 면제 전면 폐지 시행",
         "kind": "trade_measures",
         "evidence_ids": [
-          7
-        ]
-      },
-      {
-        "date": "2026-07-24",
-        "event": "중국산 물품에 대해 기존 Section 122 관세 10%가 만료되고 Section 301 강제노동 관세로 대체되어 정률 12.5% 관세 발효; 섬유·의류 다수 품목은 List 3/4A 관세와 중첩되어 실효세율 30~50%대로 추정",
-        "kind": "trade_measures",
-        "evidence_ids": [
-          5,
           6
         ]
       },
       {
-        "date": "2027-01-31",
-        "event": "Kohl's FY2026 회계연도 종료 시점 — 2026-03-10 발표된 capex 3.5~4.0억 달러 가이던스 실행 여부 확인 시점",
-        "kind": "customer_capex",
+        "date": "2027-07-01",
+        "event": "$800 이하 수입품 관세·세금 면제(de minimis) 완전 폐지 공식 발효 예정(입법 근거)",
+        "kind": "trade_measures",
         "evidence_ids": [
-          3
+          6
         ]
       }
     ],
     "findings": [
       {
         "topic": "policy_calendar",
-        "summary": "백화점 업종에 직접 적용되는 확정된 규제 이벤트 캘린더는 제한적이다. 유일하게 확인된 임박 항목은 CFPB의 신용카드 연체수수료 재규제 움직임으로, 2024년 3월 확정됐던 8달러 상한 규칙은 소송 끝에 2025년 4월 CFPB가 방어를 포기하며 사실상 폐기되었고(vacate), 2026-07-08 기준으로는 새로운 정보요청(RFI)이 OIRA 사전규칙제정 단계에 등재된 상태로 구체적 규칙안 발표일은 확정되지 않았다. 백화점은 자체 브랜드 신용카드(사설 라벨카드) 수익원을 보유하고 있어 잠재적으로 관련이 있으나, 시점이 불확실하다.",
+        "summary": "향후 12개월(2026-08~2027-08) 내 확인된 정책 이벤트는 (1) CORCA 조직절도방지법의 상원 처리 여부(하원은 2026-05 가결, 상원 일정 미확정), (2) 2027-01-01 다수 주 최저임금 인상이다. 관세 관련 사법·행정 이벤트는 trade_measures로 분류해 별도 기재했다. 백화점 업종에 특정된 규제(예: 소매점 면허·용도지역 변경) 캘린더는 찾지 못함.",
         "evidence_ids": [
-          8,
-          9
+          4,
+          5
         ],
         "not_found": false
       },
       {
         "topic": "budgets_subsidies_orders",
-        "summary": "백화점(Department Stores) 산업에 특정된 연방·주정부 예산 배정, 보조금, 정부 발주 프로그램은 검색 범위 내에서 찾지 못했다. 이 업종은 소비재 유통업으로 정부 조달·보조금 대상이 아니며, 관련 확정 예산 항목이 확인되지 않는다.",
+        "summary": "백화점(DDS, M, KSS 등)에 대한 확정된 정부 예산·보조금·정부 발주는 검색 범위 내에서 찾지 못했다. 백화점은 소비재 유통업으로 정부 조달·보조금 대상이 아니며, 관련 공시나 발표를 확인하지 못했다.",
         "evidence_ids": [],
         "not_found": true
       },
       {
         "topic": "trade_measures",
-        "summary": "무역 조치는 세 갈래로 진행 중이다. (1) 데미니미스 면세(800달러 이하 소액물품) 폐지: 중국·홍콩은 2025-05-02, 그 외 전국가는 2025-08-29부터 정지됐고 2026년 2월 행정명령으로 연장, 2026-06-24 연방관보 고시로 우편경로 외 전 운송수단에 대한 '무기한 정지'가 공식화됐다 — 온라인 저가 의류 수입에 구조적 비용 상승 요인. (2) 대중(對中) 관세: 2026-07-24부로 기존 Section 122 10% 관세가 만료되고 Section 301 강제노동 관세(정률 12.5%)로 대체, 기존 List 3(25%)·List 4A(7.5%) 관세와 중첩되어 다수 섬유·의류 품목의 실효세율이 30~50%대로 추정된다(2차 출처 추산, 원문 수치 대조 안 됨). (3) USTR은 2026-07-23 최종조치 고시에서 방글라데시·캄보디아·인도네시아·말레이시아 등 일부국에 한해 대미(對美) 면화·섬유 수출 실적에 연동한 3년 만기 관세율할당(TRQ) '섬유 메커니즘'을 도입한다고 밝혔으나, 대상국 확정 명단·감면율·쿼터 물량은 미확정 상태다.",
+        "summary": "2026-02-20 연방대법원이 IEEPA 근거 관세를 위헌 무효로 판결하며 CBP가 2026-02-24부로 해당 관세 징수를 중단했다. 이후 행정부는 대체 법적 근거로 Section 122 임시 10% 글로벌 관세를 운용하다 2026-07-24 자정부로 60개 경제권 대상 강제노동 관련 Section 301 관세(10%/12.5%, 중국·베트남·브라질·러시아 12.5%)로 전환했다. 의류 원문 대조 기준 미국 의류 수입 평균 실효관세율은 2025-12월 기준 35.1%까지 상승(2025-01 14.7% 대비)했다는 2차 출처 보도가 있으나 원문(관세청·USITC) 수치 대조는 하지 못해 medium으로 등급했다. 또한 2025-08-29 소액면세($800 이하) 전면 폐지가 시행되어 온라인·해외 직구 경로의 저가 의류·잡화 수입 원가가 상승했으며, 법정 완전 폐지 시행일은 2027-07-01로 명시되어 있다. USTR은 미국산 면화·섬유 투입 실적에 연동한 의류 쿼터 감면 메커니즘을 2026-09-01 이후 시행 예정이라고 밝혔으나 확정 시행 여부는 확인하지 못했다.",
         "evidence_ids": [
-          4,
-          5,
+          1,
+          2,
+          3,
           6,
           7
         ],
@@ -105,11 +97,10 @@
       },
       {
         "topic": "customer_capex",
-        "summary": "백화점 업종은 최종소비재 소매업으로 별도의 하방 '발주처'가 존재하지 않아, 가장 근접한 대용치는 구성 종목 자신의 설비·점포 투자 가이던스다. Kohl's는 2026-03-10 실적발표에서 FY2026 capex 가이던스로 약 3.5억~4.0억 달러를 제시했다(세부 매장 리모델링 배분은 원문에서 확인되지 않음). Macy's는 2026-01-09 'Bold New Chapter' 전략의 일환으로 2026년 중 14개 매장 추가 폐점을 발표했고(2024년 이후 누적 150개 폐점 계획 중 일부), 2026-05-28 기준 폐점 효과로 동일점포매출과 연간 가이던스를 상향 조정했다 — 이는 신규 investment라기보다 자산 축소(폐점)를 통한 자본배분 재조정으로, 확장형 capex 가이던스와는 성격이 다르다. Dillard's·PLBL(Polibeli)에 대해서는 향후 12개월 capex/투자 가이던스를 찾지 못했다.",
+        "summary": "본 테마는 소비자 직접판매 소매업으로, 스코어카드 구성원(백화점 자체)이 산업 사슬의 최종 판매처이며 별도의 '수요처(고객)' capex 개념이 적용되지 않는다. 따라서 구성원 자신의 투자 가이던스를 대리 지표로 제시한다: 메이시스(M)는 FY2026 capex 약 $800백만을 가이던스했고 이 중 상당 부분이 'Reimagine 200' 매장 리모델링(기존 125개 매장에서 200개로 확대) 프로그램에 투입될 예정이다. 콜스(KSS)는 FY2026 capex 약 $350~400백만 가이던스, 신규 대규모 매장 폐점 계획 없음을 밝혔다. 딜라즈(DDS) capex 가이던스는 검색 범위 내에서 찾지 못했다.",
         "evidence_ids": [
-          1,
-          2,
-          3
+          8,
+          9
         ],
         "not_found": false
       }
@@ -117,65 +108,65 @@
     "evidence": [
       {
         "id": 1,
-        "claim": "Macy's, CEO Tony Spring의 'Bold New Chapter' 전략에 따라 2026년 중 14개 매장 폐점 발표(2024년 이후 누적 150개 폐점 계획의 일부, 클리어런스 세일은 1월 중순부터 약 10주간 진행)",
-        "source_url": "https://www.forbes.com/sites/pamdanziger/2026/01/09/macys-to-close-only-14-stores-as-its-bold-new-chapter-plan-bears-fruit/",
-        "date": "2026-01-09",
+        "claim": "연방대법원이 2026-02-20 Learning Resources v. Trump 판결에서 IEEPA가 대통령에게 광범위한 관세 부과 권한을 부여하지 않는다고 6-3으로 판시, 상호관세·펜타닐 관세를 무효화. 트럼프 대통령은 같은 날 IEEPA 관세 종료 행정명령을 발동했고 CBP는 2026-02-24부로 관련 관세 징수를 중단했다.",
+        "source_url": "https://www.ropesgray.com/en/insights/alerts/2026/02/supreme-court-strikes-down-ieepa-tariffs-key-takeaways-and-implications-for-importers",
+        "date": "2026-02-20",
         "reliability": "medium"
       },
       {
         "id": 2,
-        "claim": "Macy's, 매장 폐점 전략에 따른 동일점포매출(SSS) +1.9% 개선을 반영해 연간 매출·조정EPS 가이던스 상향",
-        "source_url": "https://www.sahmcapital.com/news/content/macys-store-closures-lift-same-store-sales-guidance-and-dividend-story-2026-05-28",
-        "date": "2026-05-28",
-        "reliability": "medium"
-      },
-      {
-        "id": 3,
-        "claim": "Kohl's, FY2025 4분기·연간 실적발표에서 FY2026 자본적지출(capex) 가이던스로 약 3.5억~4.0억 달러 제시",
-        "source_url": "https://investors.kohls.com/news/news-details/2026/Kohls-Reports-Fourth-Quarter-and-Full-Year-Fiscal-2025-Financial-Results/default.aspx",
-        "date": "2026-03-10",
-        "reliability": "medium"
-      },
-      {
-        "id": 4,
-        "claim": "미 연방관보, 우편경로 외 모든 운송수단으로 도착하는 물품에 대한 데미니미스(800달러 이하) 면세 예외의 '무기한 정지'를 공식 고시",
-        "source_url": "https://www.federalregister.gov/documents/2026/06/24/2026-12670/indefinite-suspension-of-the-de-minimis-exemption-for-merchandise-arriving-through-all-modes-other",
-        "date": "2026-06-24",
-        "reliability": "high"
-      },
-      {
-        "id": 5,
-        "claim": "데미니미스 면세 폐지 타임라인: 중국·홍콩은 2025-05-02, 그 외 전국가는 2025-08-29부터 정지되었고 2026년 2월 행정명령으로 정지 조치가 연장됨",
-        "source_url": "https://www.tariffstool.com/guides/de-minimis-exemption-ended-2026",
-        "date": "2026-01-01",
-        "reliability": "low"
-      },
-      {
-        "id": 6,
-        "claim": "2026-07-24부로 중국산 물품에 대한 기존 Section 122 10% 관세가 만료되고 Section 301 강제노동 관세로 대체되어 정률 12.5% 관세가 적용되며, List 3(25%)·List 4A(7.5%) 등 기존 관세와 중첩되어 다수 섬유·의류 품목의 실효세율이 30~50%대로 추산됨(2차 출처 추산치, 세관 원문 수치 대조 안 됨)",
-        "source_url": "https://www.portless.com/blogs/section-301-tariffs-china",
+        "claim": "2026-07-24 자정(미 동부시간) 임시 Section 122 관세(글로벌 10%)가 만료되고, 60개 경제권을 대상으로 한 신규 Section 301 강제노동 관세(10% 또는 12.5%)로 대체 시행됨. USTR은 2026-03-12 조사를 개시했고 2026-07-23 최종 조치를 발표했다.",
+        "source_url": "https://www.honigman.com/alert-3462",
         "date": "2026-07-24",
         "reliability": "medium"
       },
       {
+        "id": 3,
+        "claim": "Section 301 강제노동 관세는 60개 경제권에 10%(강제노동 수입금지 조치 보유국) 또는 12.5%(미보유국) 부과. 중국·브라질·베트남·러시아는 12.5% 적용. USTR은 미국산 면화·섬유 투입 실적에 연동한 의류·섬유 쿼터 감면 메커니즘을 2026-09-01 이후(가장 이른 시점) 도입 제안.",
+        "source_url": "https://www.hklaw.com/en/insights/publications/2026/07/and-the-tariff-beat-goes-on",
+        "date": "2026-07-24",
+        "reliability": "medium"
+      },
+      {
+        "id": 4,
+        "claim": "미 하원이 2026-05 Combating Organized Retail Crime Act(H.R.2853, CORCA)를 348-60으로 가결. 조직절도·화물절도 연방 단속을 강화하고 ICE 내 전담 조정센터를 신설하는 내용이며 상원에서 심의 대기 중.",
+        "source_url": "https://www.congress.gov/bill/119th-congress/house-bill/2853",
+        "date": "2026-05",
+        "reliability": "medium"
+      },
+      {
+        "id": 5,
+        "claim": "19개 주가 2027-01-01부로 최저임금을 인상하며 830만 명 이상 근로자에 영향. 캘리포니아는 시간당 $17.40, 미시간 $15.00, 로드아일랜드 $17, 버지니아 $13.75 등으로 인상.",
+        "source_url": "https://www.epi.org/blog/over-8-3-million-workers-will-benefit-from-minimum-wage-increases-on-january-1-nineteen-states-will-raise-their-minimum-wages-heres-where/",
+        "date": "2026-08",
+        "reliability": "medium"
+      },
+      {
+        "id": 6,
+        "claim": "$800 이하 소액면세(de minimis) 관세 면제가 2025-08-29 전면 폐지됐고, 이를 항구적으로 법제화하는 완전 폐지 조항은 2027-07-01 발효 예정. 저가 해외직구 품목에 30~54% 관세 또는 정액 수수료가 부과된다.",
+        "source_url": "https://www.retaildive.com/news/de-minimis-ends-trump-big-beautiful-bill/752515/",
+        "date": "2026-06",
+        "reliability": "medium"
+      },
+      {
         "id": 7,
-        "claim": "USTR, 2026-07-23 강제노동 관련 Section 301 최종조치 연방관보고시(FRN)를 발표. 방글라데시·캄보디아·인도네시아·말레이시아 등 일부국 대상, 대미 면화·섬유 수출입 실적에 연동한 3년 만기 관세율할당(TRQ) '섬유 메커니즘' 도입 방침이나 대상국 확정 명단·감면율·물량은 '가능한 한 조속히' 추후 결정 예정",
-        "source_url": "https://ustr.gov/sites/default/files/files/Press/Releases/2026/FLIP%20301%20Investigation%20Final%20Action%20FRN%207-23-26%20FINAL.pdf",
-        "date": "2026-07-23",
-        "reliability": "high"
+        "claim": "미국 의류 수입 평균 관세율이 2025-12월 35.1%로 상승(2025-01 14.7% 대비), 중국산 면제품에 대한 실효관세는 2026년 1분기 50%를 상회했다는 업계 분석.",
+        "source_url": "https://shenglufashion.com/2026/03/09/tariffs-impact-u-s-apparel-sourcing-and-trade-beyond-just-price-updated-march-2026/",
+        "date": "2026-03-09",
+        "reliability": "low"
       },
       {
         "id": 8,
-        "claim": "CFPB가 2024-03 확정했던 신용카드 연체수수료 8달러 상한 규칙은 업계 소송(Chamber of Commerce v. CFPB) 이후 CFPB가 방어를 포기하며 2025-04 사실상 폐기(vacate)됨",
-        "source_url": "https://www.consumerfinancialserviceslawmonitor.com/2025/04/cfpb-abandons-credit-card-late-fee-rule/",
-        "date": "2025-04-01",
+        "claim": "메이시스(M)는 FY2026 capex 가이던스로 약 $800백만을 유지하며, 'Reimagine 200' 매장 리모델링 프로그램(기존 125개→200개 매장 확대)에 투자를 집중한다고 발표.",
+        "source_url": "https://s202.q4cdn.com/285121676/files/doc_financials/2026/q1/1Q26-Presentation-06-03-26.pdf",
+        "date": "2026-06-03",
         "reliability": "medium"
       },
       {
         "id": 9,
-        "claim": "CFPB, 신용카드 연체수수료에 대한 정보요청(RFI)을 OIRA EO 12866 규제심사 대기 목록에 사전규칙제정(prerule) 단계로 등재 — 신규 규칙안 발표 일정은 미확정",
-        "source_url": "https://www.consumerfinancemonitor.com/2026/07/08/cfpb-signals-it-may-revisit-credit-card-late-fee-regulation/",
-        "date": "2026-07-08",
+        "claim": "콜스(KSS)는 FY2026 capex 가이던스로 약 $350~400백만을 제시했으며, 대규모 신규 매장 폐점 계획이 없다고 밝혔다.",
+        "source_url": "https://www.sec.gov/Archives/edgar/data/0000885639/000119312526242967/d84873dex991.htm",
+        "date": "2026-03-10",
         "reliability": "medium"
       }
     ]

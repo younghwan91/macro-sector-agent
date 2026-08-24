@@ -1,0 +1,133 @@
+{
+  "model": "claude-sonnet-5",
+  "provider": "claude_code",
+  "usage": {
+    "input_tokens": 240495,
+    "output_tokens": 11913,
+    "search_queries": 0
+  },
+  "notional_usd": 0.497979,
+  "output": {
+    "findings": [
+      {
+        "topic": "capacity_and_closures",
+        "summary": "Health Information Services(헬스케어 IT)는 물리적 생산설비가 없는 SW·서비스 산업이라 전통적 '가동률' 개념이 적용되지 않는다. 근사 지표로 EHR 벤더 설치기반(병원 수/병상 수) 점유율 변화를 확인: KLAS 2026 보고서 기준 Epic이 2025년 미국 급성치료 병원 시장의 43.7%(병상 기준 56.9%)를 차지했고, Oracle Health(옛 Cerner)는 21.9%(병상 20.4%)로 2021년 이후 순 173개 병원을 잃은 반면 Epic은 순 568개 병원을 획득했다. Oracle Health는 모기업 오라클이 AI/데이터센터(Stargate) 투자로 전략을 전환하면서 2025~2026년 캔자스시티 본부 등에서 대규모 인력 감축을 발표했다 — 이는 '폐쇄·감산'에 준하는 사건이나 공장 폐쇄가 아니라 사업부 구조조정임에 유의.",
+        "evidence_ids": [
+          4,
+          6
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "pipeline_3y",
+        "summary": "프로젝트별 규모·시점·FID 확정도를 갖춘 물리적 증설 파이프라인 목록은 찾지 못했다(이 산업에 해당 개념이 존재하지 않음). 근사 신호로, KLAS 2026 보고서는 2025년 병원의 신규 EHR 구매결정 건수(영향받은 병원 수)가 2024년 대비 40%, 2023년 대비 약 50% 감소했다고 밝혀 — 신규 '증설' 파이프라인이 오히려 위축되고 있음을 시사한다. 이는 향후 3년의 확정 프로젝트 리스트가 아니라 최근 1년 추세 데이터이며, FID(계약 확정) 단위의 개별 프로젝트 공시는 찾지 못했다.",
+        "evidence_ids": [
+          5
+        ],
+        "not_found": true
+      },
+      {
+        "topic": "inventories",
+        "summary": "소프트웨어·서비스 매출 구조인 헬스케어 IT 산업에는 거래소 재고, 유통 재고 등의 물리적 재고 개념이 존재하지 않는다. 관련 데이터를 찾지 못했다.",
+        "evidence_ids": [],
+        "not_found": true
+      },
+      {
+        "topic": "lead_time",
+        "summary": "광산·fab·조선소류의 '리드타임' 개념과 정확히 대응하지 않으나, 근사치로 대형 병원의 엔터프라이즈 EHR 신규 도입/교체 프로젝트는 계약 후 가동(go-live)까지 통상 12~36개월이 소요되며, 업계 관행상 벤더가 제시한 견적(예: 6개월)보다 실제로는 훨씬 길어지는(예: 14개월) 경향이 보고된다. 다만 이 수치는 벤더/컨설팅 마케팅 성격 블로그에서 나온 것으로 KLAS·ONC 등 1차 출처로 교차검증하지 못했다 — 신뢰도 낮음으로 표기.",
+        "evidence_ids": [
+          7
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "cost_curve",
+        "summary": "상품(commodity) 시장의 P50/P90 현금원가 곡선이나 한계 생산자 셧다운 개념이 적용되는 산업이 아니다(SaaS/서비스 매출·EBITDA 마진 구조). 원가곡선에 해당하는 데이터를 찾지 못했다.",
+        "evidence_ids": [],
+        "not_found": true
+      },
+      {
+        "topic": "unit_demand_series",
+        "summary": "물리적 최종수요 단위 시계열의 근사치로 CAQH Index가 집계하는 미국 의료 행정거래량(자격확인·청구제출 등, 10억 건 단위)을 확인했으나, 확보한 연도별 절대치는 2018/2019/2020 3개년(의료 부문 27.4bn/32.4bn/37.6bn 건)뿐이며 2023→2024년은 %증가율(의료 +13%, 치과 +20%)만 확인되어 절대 수치가 없다. 요구되는 최소 10년 연속 물리단위 시계열 기준을 충족하지 못해 found=false로 처리한다.",
+        "evidence_ids": [
+          2
+        ],
+        "not_found": true
+      }
+    ],
+    "unit_demand_series": {
+      "found": false,
+      "unit": "10억 건(billion transactions) — 의료 행정거래(자격확인, 청구제출, 청구상태조회 등)",
+      "scope": "미국 의료(medical) 산업, 지불자(payer)·의료제공자(provider) 간 전자 행정거래, CAQH Index 조사 대상(2024년 조사는 보험가입자의 63% 커버)",
+      "source": "CAQH Index Report (2022년판 'A Decade of Progress' 및 2023년판 'A New Normal')",
+      "years": [
+        [
+          2018,
+          27.4
+        ],
+        [
+          2019,
+          32.4
+        ],
+        [
+          2020,
+          37.6
+        ]
+      ],
+      "evidence_ids": [
+        2
+      ]
+    },
+    "evidence": [
+      {
+        "id": 1,
+        "claim": "2023 CAQH Index: 의료 부문 전체 거래량 +13%, 치과 부문 +20% 증가; 자격확인 전자화율 의료 96%/치과 82%",
+        "source_url": "https://caqh.org/hubfs/43908627/drupal/2024-01/2023_CAQH_Index_Report.pdf",
+        "date": "2024-01-15",
+        "reliability": "medium"
+      },
+      {
+        "id": 2,
+        "claim": "CAQH Index 시계열: 의료 부문 행정거래량 2018년 27.4bn건, 2019년 32.4bn건, 2020년 37.6bn건",
+        "source_url": "https://www.caqh.org/hubfs/43908627/drupal/2022-caqh-index-report%20FINAL%20SPREAD%20VERSION.pdf",
+        "date": "2023-01-31",
+        "reliability": "medium"
+      },
+      {
+        "id": 3,
+        "claim": "2024년 기준 미국 비연방 급성치료 병원의 99% 이상이 인증 EHR을 도입, 2008년 10% 미만에서 상승 — 시장이 거의 완전 포화 상태",
+        "source_url": "https://healthit.gov/data/data-briefs/non-federal-acute-care-hospital-electronic-health-record-adoption-2008-2024/",
+        "date": "2025-06-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 4,
+        "claim": "KLAS 2026 보고서: 2025년 급성치료 병원 EHR 시장점유율 Epic 43.7%(병상 56.9%), Oracle Health 21.9%(병상 20.4%); Oracle Health는 2021년 이후 순 173개 병원 이탈, Epic은 순 568개 병원 획득",
+        "source_url": "https://hitconsultant.net/2026/05/14/klas-2026-ehr-market-share-report/",
+        "date": "2026-05-14",
+        "reliability": "medium"
+      },
+      {
+        "id": 5,
+        "claim": "2025년 EHR 구매결정에 영향받은 병원 수가 2024년 대비 40%, 2023년 대비 약 50% 감소",
+        "source_url": "https://healthsystemcio.com/2026/05/14/acute-care-ehr-market-share-2026/",
+        "date": "2026-05-14",
+        "reliability": "medium"
+      },
+      {
+        "id": 6,
+        "claim": "오라클이 AI/데이터센터(Stargate) 투자 재원 마련을 위한 구조조정 과정에서 Oracle Health(옛 Cerner) 사업부에서 캔자스시티 본부 등 대규모 인력 감축 발표 (2025~2026)",
+        "source_url": "https://www.healthcareitnews.com/news/oracle-cuts-staff-including-its-health-business",
+        "date": "2025-09-15",
+        "reliability": "medium"
+      },
+      {
+        "id": 7,
+        "claim": "엔터프라이즈 EHR(Epic, Cerner 등) 구현 프로젝트는 통상 12~36개월 소요되며, 벤더가 제시한 견적보다 실제 기간이 길어지는 경향이 업계에서 보고됨",
+        "source_url": "https://www.mindbowser.com/ehr-implementation-guide/",
+        "date": "2026-01-01",
+        "reliability": "low"
+      }
+    ]
+  }
+}

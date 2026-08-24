@@ -1,0 +1,176 @@
+{
+  "model": "claude-sonnet-5",
+  "provider": "claude_code",
+  "usage": {
+    "input_tokens": 191159,
+    "output_tokens": 7006,
+    "search_queries": 0
+  },
+  "notional_usd": 0.386309,
+  "output": {
+    "calendar": [
+      {
+        "date": "2026-01-01",
+        "event": "OBBBA(공법 119-21)에 따라 주거용 에너지효율 개선 세액공제(25C)·주거용 청정에너지 세액공제(25D)가 2025-12-31 이후 설치분부터 폐지 — 2026년 회계연도 내내 적용되는 기저 정책 상태",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          1
+        ]
+      },
+      {
+        "date": "2026-01-01",
+        "event": "업홀스터드(목재) 가구 대중국 관세 25%→30% 인상, 주방 캐비닛·바니티 관세 25%→50% 인상 (Section 301/232 계열) 발효",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          4
+        ]
+      },
+      {
+        "date": "2026-07-24",
+        "event": "미 상무부, 신규 Section 301 관세 신고 규정 발표·즉시 시행 (기존 글로벌 잠정관세 만료 후 전환)",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          3
+        ]
+      },
+      {
+        "date": "2026-08-18",
+        "event": "홈디포 2026회계연도 2분기 실적 발표 — FY2026 가이던스 재확인(설비투자 약 매출 대비 2.5%)",
+        "kind": "customer_capex",
+        "evidence_ids": [
+          5
+        ]
+      },
+      {
+        "date": "2026-08-19",
+        "event": "로우스 2026회계연도 2분기 실적 발표 — FY2026 설비투자 가이던스 최대 25억 달러",
+        "kind": "customer_capex",
+        "evidence_ids": [
+          6
+        ]
+      },
+      {
+        "date": "2026-09-15",
+        "event": "FOMC 정례회의(9/15~16, 점도표 포함) — 정책금리 결정, 주택개량 수요에 영향(신용금리 사이클)",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          7
+        ]
+      },
+      {
+        "date": "2026-10-01",
+        "event": "상무부, 목재/목재파생품(하드우드 등) 추가 관세 필요 여부에 대한 검토 보고서 제출 기한",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          2
+        ]
+      },
+      {
+        "date": "2026-10-27",
+        "event": "FOMC 정례회의(10/27~28) — 정책금리 결정",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          7
+        ]
+      },
+      {
+        "date": "2026-12-08",
+        "event": "FOMC 정례회의(12/8~9, 점도표 포함) — 정책금리 결정",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          7
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "topic": "policy_calendar",
+        "summary": "향후 12개월 내 확정된 주택개량 전용 규제 이벤트는 확인되지 않았다. 대신 (1) 이미 2026-01-01부로 발효된 IRA 주거용 에너지효율 세액공제(25C)·청정에너지 세액공제(25D) 조기 폐지가 2026년 내내 유효한 정책 배경으로 작용하고 있고, (2) 신용금리 사이클(cycle_class=credit_rate)과 직결되는 FOMC 정례회의가 9/15-16, 10/27-28, 12/8-9로 예정돼 있어 모기지 금리·주택 거래량에 영향을 줄 수 있다. 상무부의 목재 관세 재검토 보고서(10/1 기한)도 정책 캘린더에 해당한다.",
+        "evidence_ids": [
+          1,
+          7,
+          2
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "budgets_subsidies_orders",
+        "summary": "주택개량 소매/자재 업종을 겨냥한 확정된 연방 예산·보조금·발주 프로그램은 검색으로 찾지 못했다. 기존 IRA 주거 에너지효율 보조·세액공제(25C/25D)는 2025-12-31로 조기 폐지되어 신규 예산 배정이 아닌 축소 방향이며, 이를 대체하는 신규 예산·보조금 발표는 확인되지 않았다.",
+        "evidence_ids": [
+          1
+        ],
+        "not_found": true
+      },
+      {
+        "topic": "trade_measures",
+        "summary": "무역 조치는 다수 확인됐다: (1) Section 232에 따라 연화(softwood) 목재·제재목에 10% 글로벌 관세가 2025-10-14부로 시행 중이며 인상 발표는 없음. (2) 업홀스터드 목재가구 관세가 2026-01-01부로 25%→30%, 주방 캐비닛·바니티가 25%→50%로 인상됐다. (3) 중국산 가구는 기존 Section 301 관세(25%)에 강제노동 관련 12.5%가 중첩 적용돼 최대 37.5% 수준까지 관세 부담이 발생한다는 업계 보도가 있다. (4) 2026-07-24 상무부가 새 Section 301 관세 신고 규정을 발표·즉시 시행했다. (5) 상무부는 하드우드 목재·파생품에 대한 추가 관세 필요성을 2026-10-01까지 재검토·보고할 예정이다. (3)~(4) 항목은 업계지·2차 출처 기반으로 원문(연방관보/USTR 공고) 대조는 하지 못했다.",
+        "evidence_ids": [
+          2,
+          3,
+          4
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "customer_capex",
+        "summary": "핵심 수요처(대형 리테일러)의 FY2026 설비투자 가이던스가 확인됐다: 홈디포는 2026-08-18 2분기 실적 발표에서 FY2026 설비투자를 총매출 대비 약 2.5% 수준으로 재확인했고(연 매출 TTM 166.6bn 기준 약 4.2bn 달러 규모 추정 가능), 로우스는 2026-08-19 실적 발표에서 FY2026 설비투자 가이던스를 최대 25억 달러로 제시했다. 로우스 수치는 2차 요약 기반으로 원문 보도자료 직접 대조는 하지 못했다.",
+        "evidence_ids": [
+          5,
+          6
+        ],
+        "not_found": false
+      }
+    ],
+    "evidence": [
+      {
+        "id": 1,
+        "claim": "OBBBA(공법 119-21, 2025-07-04)에 따라 25C(에너지효율 주택개량 세액공제)는 2025-12-31 이후 설치 자산부터, 25D(주거용 청정에너지 세액공제)는 2025-12-31 이후 지출분부터 폐지된다.",
+        "source_url": "https://www.irs.gov/newsroom/faqs-for-modification-of-sections-25c-25d-25e-30c-30d-45l-45w-and-179d-under-public-law-119-21-139-stat-72-july-4-2025-commonly-known-as-the-one-big-beautiful-bill-obbb",
+        "date": "2025-07-04",
+        "reliability": "high"
+      },
+      {
+        "id": 2,
+        "claim": "2025-10-14부로 연화(softwood) 목재·제재목에 10% 글로벌 Section 232 관세가 발효되었고, 상무장관은 하드우드 목재·파생품에 대한 추가 관세 필요 여부를 2026-10-01까지 보고해야 한다.",
+        "source_url": "https://www.nahb.org/blog/2025/09/section-232-tariffs",
+        "date": "2025-09-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 3,
+        "claim": "미국은 2026-07-24 새로운 Section 301 관세 신고 규정을 공식 발표하고 즉시 시행에 들어갔으며, 기존 글로벌 잠정관세는 만료됐다.",
+        "source_url": "https://en.ciff-sh.com/Industry_Information/1637",
+        "date": "2026-07-27",
+        "reliability": "medium"
+      },
+      {
+        "id": 4,
+        "claim": "2026-01-01부로 업홀스터드 목재가구 관세가 25%→30%, 주방 캐비닛·바니티 관세가 25%→50%로 인상됐으며, 중국산 가구는 기존 Section 301(25%) 관세에 강제노동 관련 관세(12.5%)가 중첩 적용돼 최대 37.5%까지 관세 부담이 발생할 수 있다.",
+        "source_url": "https://tariffkit.com/furniture-tariffs-2026",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 5,
+        "claim": "홈디포는 2026-08-18 발표한 2026회계연도 2분기 실적에서 FY2026 가이던스를 재확인했으며, 여기에는 총매출 대비 약 2.5% 수준의 설비투자가 포함된다.",
+        "source_url": "https://www.prnewswire.com/news-releases/the-home-depot-announces-second-quarter-fiscal-2026-results-reaffirms-fiscal-2026-guidance-302853312.html",
+        "date": "2026-08-18",
+        "reliability": "high"
+      },
+      {
+        "id": 6,
+        "claim": "로우스는 2026-08-19 발표한 2026회계연도 2분기 실적에서 FY2026 설비투자 가이던스를 최대 25억 달러로 유지했다.",
+        "source_url": "https://corporate.lowes.com/newsroom/press-releases/lowes-reports-second-quarter-2026-sales-and-earnings-results-08-19-26",
+        "date": "2026-08-19",
+        "reliability": "medium"
+      },
+      {
+        "id": 7,
+        "claim": "연준의 2026년 잔여 FOMC 정례회의 일정은 9월 15-16일(SEP 포함), 10월 27-28일, 12월 8-9일(SEP 포함)이다.",
+        "source_url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20240809a.htm",
+        "date": "2024-08-09",
+        "reliability": "high"
+      }
+    ]
+  }
+}

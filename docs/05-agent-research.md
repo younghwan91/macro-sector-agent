@@ -286,6 +286,15 @@ evidence:                         # 비면 스키마 검증 실패 (CLAUDE.md §
 `--bare` 는 쓰지 않는다. CLAUDE.md 자동 탐색을 끄지만 인증이 `ANTHROPIC_API_KEY` 전용으로 고정되어
 목적과 정면으로 충돌한다. CLAUDE.md 오염은 중립 임시 디렉터리를 `cwd` 로 주어 막는다.
 
+**모델 배치 (2026-08-25 지시).** 구독 경로는 **역할 구분 없이 전부 `claude-sonnet-5`** 다
+(`providers.SUBSCRIPTION_MODELS`). 실측 근거: 6테마 병렬 라운드에서 `bear`(opus·high)가
+9분으로 sonnet 역할(2~3분)의 3배였고, `referee` 가 앞의 셋을 기다리므로 **병렬로 돌려도
+라운드 전체 시간이 줄지 않았다.** 병목은 동시성이 아니라 역할 안의 순서다.
+
+**깊이(effort)는 낮추지 않았다** — `bear`·`referee` 는 여전히 `high` 다. 바꾼 것은 모델뿐이고,
+판별의 엄격함을 담당하는 것은 게이트와 스키마이지 모델 등급이 아니다.
+`MSA_L3_MODEL_TOP`/`MSA_L3_MODEL_STANDARD` 를 주면 그것이 이긴다 (구독 경로에는 모델 제한이 없다).
+
 **차이점 세 가지.**
 
 | | `AnthropicProvider` | `ClaudeCodeProvider` |

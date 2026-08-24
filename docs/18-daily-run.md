@@ -123,7 +123,7 @@ cycle_confidence : 0.45
 
 | provider | 인증 | 비용 | 모델 |
 |---|---|---|---|
-| **`claude_code`** (기본) | 구독 로그인 | **API 크레딧 0** | `bear`·`referee` = opus, 나머지 = sonnet |
+| **`claude_code`** (기본) | 구독 로그인 | **API 크레딧 0** | 전부 **sonnet** (깊이는 `bear`·`referee` 만 high) |
 | `fixture` | 없음 | **0 · 오프라인** | 없음 (녹화 재생) |
 | `mock` | 없음 | 0 | 없음 (합성) |
 | `anthropic` | `ANTHROPIC_API_KEY` | **크레딧 차감** | **haiku 만** (2026-08-25 지시) |
@@ -168,6 +168,11 @@ grep -H "편입 가능\|cycle_confidence" /tmp/msa_*.log
 최신이 아닐 수 있다.
 
 **처음에는 2~3개로 시작한다.** 구독 한도에 걸리면 그 테마만 실패하고 나머지는 산다.
+
+**병렬로 돌려도 줄지 않는 시간이 있다.** 한 테마 안에서 `supply`·`catalyst`·`bear` 는 동시에
+돌지만 `referee` 는 셋이 끝나야 시작한다. 2026-08-25 실측(6테마 동시, opus 배치):
+촉매·공급 2~3분 → **베어 9분** → 심판. 베어가 라운드 전체의 병목이었고, 그래서 구독 경로의
+기본 모델을 sonnet 으로 내렸다 (`docs/05` §7.1).
 
 ---
 

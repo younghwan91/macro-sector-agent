@@ -1,0 +1,142 @@
+{
+  "model": "claude-sonnet-5",
+  "provider": "claude_code",
+  "usage": {
+    "input_tokens": 248974,
+    "output_tokens": 6617,
+    "search_queries": 0
+  },
+  "notional_usd": 0.4614468,
+  "output": {
+    "findings": [
+      {
+        "topic": "capacity_and_closures",
+        "summary": "글로벌 해상시추 MODU 선단은 2025년 말 기준 약 629기(가동 502기, 가동률 80%)로 전년대비 10기 감소. 세분화하면 마케팅 가능 잭업 공급 약 405기(2026년 전망, 가동률 90%), 드릴십 약 89기(가동률 94% 전망), 세미submersible 약 73기(가동률 88% 전망). 드릴십 선단의 13%(14기)가 콜드스택 상태이며 모두 2009~2023년 건조된 비교적 신형 선박. 잭업은 39기 콜드스택, 19기 웜스택(7기는 1년 이상). 2023~2025년 폐선(scrap) 활동: 2024년 23기 스크랩(대부분 노후 반잠수식·잭업), 2025년은 24기 은퇴 중 스크랩은 4기(모두 육상 리그)로 급감 — 즉 2025년에는 폐선 대신 콜드스태킹·매각·용도전환이 우세. 노블은 반잠수식 Ocean Onyx·Ocean Valiant 스크랩, 드릴십 Pacific Meltem·Pacific Scirocco 영구 은퇴; 발라리스는 반잠수식 DPS-3·5·6 은퇴(스크랩 또는 용도전환 예정).",
+        "evidence_ids": [
+          1,
+          2,
+          8,
+          9
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "pipeline_3y",
+        "summary": "신조 드릴십·잭업 파이프라인은 극히 얇다. 2024년 8월 이후 건조중 리그 수는 오히려 4기 감소했고, 최근 1년간 신규 발주는 잭업 2기뿐 — ARO Drilling·Saudi Aramco·IMI 합작으로 발주된 Kingdom 3(2024년 4분기 발주)와 Kingdom 4(2025년 중 발주 추정). 고비용·공급망 제약으로 대형 신조 프로그램은 시장 펀더멘털상 지지되지 않으며, 계약자들은 신조보다 기존 리그의 효율·환경성능 개량(업그레이드)에 집중. 애널리스트들은 2026년 말~2027년에 걸쳐 수요 회복(FID 파이프라인) 모멘텀을 예상하나 이는 리그 발주가 아닌 프로젝트 FID(예: Shell Bonga North, Shell HI 가스 프로젝트) 관련. 확정도(FID) 기준으로 볼 때, 신조 리그 자체의 3년 파이프라인은 사실상 '없음'에 가까운 수준으로 확인됨.",
+        "evidence_ids": [
+          3
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "inventories",
+        "summary": "해상시추는 재화 재고(거래소·유통재고) 개념이 적용되지 않는 서비스 산업이다. 대신 유휴 설비(idle capacity)가 재고에 상응하는 지표로 쓰인다: 드릴십 콜드스택 비율 13%(14기), 잭업 콜드스택 39기 + 웜스택 19기(이 중 7기는 1년 이상 웜스택). 역사적 백분위 비교가 가능한 시계열(예: 지난 10년 유휴율 분포)은 확인하지 못했다 — not_found.",
+        "evidence_ids": [
+          9
+        ],
+        "not_found": true
+      },
+      {
+        "topic": "lead_time",
+        "summary": "검색 결과 드릴십 신조의 표준 리드타임을 명시한 1차 자료를 찾지 못했다. 과거 사례(Stena DrillMAX, 2005년 발주~2007년 12월 인도)로부터 역산하면 약 2~3년이 추정되나, 이는 2005년 계약 사례이며 현재(2026년) 공급망·야드 여건을 반영한 공식 수치가 아니다. 삼성중공업은 2001년 이후 신규 드릴십 건조 실적이 없다는 점도 확인됨 — 즉 드릴십 신조를 위한 야드 능력 자체가 최근 사실상 휴면 상태였다. 정확한 현재 리드타임(연 단위)에 대한 신뢰할 수 있는 1차 출처는 찾지 못함 — not_found.",
+        "evidence_ids": [
+          4
+        ],
+        "not_found": true
+      },
+      {
+        "topic": "cost_curve",
+        "summary": "해상시추 원가곡선(P50/P90 현금원가)에 대한 정량적 1차 자료(예: 리그별 현금 손익분기 일당 요율)는 찾지 못했다. 다만 2026년 초 7세대 드릴십 리딩엣지 일당 요율이 30.95만~54만 달러(일부 특수작업은 60만 달러 근접)로 형성되어 있고, 근시일물(spot) 드릴십 요율은 한때 40만 달러 아래로 하락했다는 보도가 있었다. 재가동(reactivation) 비용이 리그당 1억 달러를 초과해 장기 콜드스태킹이 재가동보다 경제적으로 선호된다는 정성적 서술은 확인됨(이는 한계 공급자의 사실상 '셧다운' 결정 근거로 해석 가능). 그러나 명확한 P50/P90 현금원가 수치나 한계 생산자의 공식 셧다운 발표 목록은 확인하지 못함 — not_found.",
+        "evidence_ids": [
+          5,
+          6,
+          9
+        ],
+        "not_found": true
+      },
+      {
+        "topic": "unit_demand_series",
+        "summary": "글로벌 해상 유정(offshore wells) 시추 건수의 연속 10년 시계열을 단일 출처로 확인하지 못했다. 단편적 수치만 확보: 2019년 약 2,500건 미만, 2020년 2,300건 미만(팬데믹 영향), 2021년 약 2,500건, 2022년 전망치 2,700건 초과(Rystad Energy). 이는 동일 보고서의 완결된 시계열이 아니라 여러 개별 기사에서 조각조각 확인된 수치이며, 2023~2026년 구간의 공식 물리단위(해상 유정 건수) 수치는 확인하지 못했다. 연속·검증 가능한 10년 시계열은 없다고 판단 — found=false.",
+        "evidence_ids": [
+          7
+        ],
+        "not_found": true
+      }
+    ],
+    "unit_demand_series": {
+      "found": false,
+      "unit": "offshore wells drilled per year (건)",
+      "scope": "글로벌 해상 석유·가스 유정 시추 건수",
+      "source": "Rystad Energy 관련 보도(2차 출처, 단편적 수치만 확인 — 연속 시계열 미확보)",
+      "years": [],
+      "evidence_ids": [
+        7
+      ]
+    },
+    "evidence": [
+      {
+        "id": 1,
+        "claim": "Westwood는 2026년 마케팅 가능 잭업 공급을 405기(2025년 395기)로, 잭업 가동률 90%(2025년 89%)로 전망; 드릴십 가동률 94%(2026·2027년), 세미submersible 가동률 88%(2026년)로 전망",
+        "source_url": "https://jpt.spe.org/2026-offshore-challenge-softening-demand-puts-the-brakes-on-day-rates",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 2,
+        "claim": "Baker Hughes 2026년 1월 발표: 인터내셔널(해외) 리그 카운트 1,079기(전월대비 +14); 국제 해상(offshore) 리그 카운트 231기로 전월대비 +11, 전년동월(244기) 대비는 -13",
+        "source_url": "https://rigcount.bakerhughes.com/news-releases/news-release-details/january-2026-baker-hughes-rig-count-international-14-1079",
+        "date": "2026-01-01",
+        "reliability": "high"
+      },
+      {
+        "id": 3,
+        "claim": "2024년 8월 이후 건조중인 해상 리그 수는 4기 감소; 최근 1년간 신규 발주는 ARO Drilling/Saudi Aramco/IMI의 잭업 Kingdom 3(2024년 4분기 발주), Kingdom 4(2025년 발주 추정) 2기뿐; 신조 프로그램에 대한 시장 펀더멘털 미지지, 계약자들은 기존 선단 업그레이드에 집중; 수요 회복은 2026년 말~2027년 모멘텀 기대",
+        "source_url": "https://www.offshore-mag.com/rigs/article/55315783/excess-supply-still-overhangs-offshore-rig-construction-market",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 4,
+        "claim": "삼성중공업의 마지막 신규 드릴십 완공은 2001년(그 이전 2000년 3척, 1999년 2척 건조); 2005년 Stena DrillMAX 1호선은 5.26억 달러에 계약되어 거제조선소에서 건조, 2007년 12월 완공 예정이었음",
+        "source_url": "https://www.ogj.com/general-interest/companies/article/17224563/drilling-market-focus-25-billion-going-to-korean-yards-for-new-drillships",
+        "date": "2005-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 5,
+        "claim": "2026년 초 7세대 드릴십(골든트라이앵글) 공시 일당요율은 30.95만~54만 달러 범위; 일부 20K 사양 리그는 GoM Lower Tertiary 작업에서 55만 달러 이상 계약, 브라질·서아프리카·GoM 고급 드릴십은 52.5만~58.5만 달러, 최고 60만 달러 근접",
+        "source_url": "https://offshoreindustry.co.uk/drillship-dayrates-break-550000-transocean-valaris-and-noble-capitalise/",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 6,
+        "claim": "근시일물 드릴십 일당요율이 40만 달러 아래로 하락한 시기 존재; 계약 미확보 리그는 2026년 어려움을 겪을 것으로 전망되며, 재가동 비용은 리그당 1억 달러를 초과해 장기 콜드스태킹이 경제적으로 더 유리",
+        "source_url": "https://jpt.spe.org/global-offshore-drilling-fleet-shrinks-day-rate-pressure-remains",
+        "date": "2025-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 7,
+        "claim": "2019년 해상 유정 시추 건수는 약 2,500건에 못 미침; 2020년(팬데믹) 2,300건 미만; 2021년 약 2,500건; Rystad는 2022년 해상 유정 시추 건수가 2,700건을 넘어설 것으로 전망",
+        "source_url": "https://www.rystadenergy.com/insights/wells-in-focus-overview-of-global-well-activity",
+        "date": "2022-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 8,
+        "claim": "2024년 총 23기의 리그가 스크랩됨; 2025년에는 24기가 선단에서 제거(드릴십 8, 잭업 8, 세미submersible 6 등 22기 은퇴 집계)되었으나 이 중 스크랩된 것은 4기(모두 육상 리그)에 불과 — 2021년 이후 최다 은퇴 기록이나 스크랩 비중은 급감. 노블은 반잠수식 Ocean Onyx·Ocean Valiant를 스크랩, 드릴십 Pacific Meltem·Pacific Scirocco를 영구 콜드스택 은퇴시켰고, 발라리스는 반잠수식 DPS-3·DPS-5·DPS-6을 은퇴시켜 스크랩 또는 용도전환 예정",
+        "source_url": "https://www.marinelink.com/news/rig-retirements-set-rise-utilization-525343",
+        "date": "2025-03-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 9,
+        "claim": "2025년 말 기준 글로벌 MODU 선단 629기(전년대비 -10), 가동 리그 502기, 가동률 80%; 드릴십 선단의 13%(14기)가 콜드스택 상태(2009~2023년 건조 비교적 신형 선박 포함); 잭업은 39기 콜드스택, 19기 웜스택(이 중 7기는 1년 이상); 경쟁 계약 가동률은 2025년 말 약 89%에서 2026년 6월까지 약 80%로 하락 전망",
+        "source_url": "https://www.offshore-mag.com/rigs/article/55314726/cold-stacked-or-dead-stacked-the-future-of-long-idle-drillships",
+        "date": "2025-03-01",
+        "reliability": "medium"
+      }
+    ]
+  }
+}

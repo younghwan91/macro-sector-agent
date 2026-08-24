@@ -1,0 +1,223 @@
+{
+  "model": "claude-sonnet-5",
+  "provider": "claude_code",
+  "usage": {
+    "input_tokens": 197862,
+    "output_tokens": 6369,
+    "search_queries": 0
+  },
+  "notional_usd": 0.3954182,
+  "output": {
+    "calendar": [
+      {
+        "date": "2026-11-09",
+        "event": "USTR Section 301 중국계 선박 입항수수료(연간 최대 5회, Annex I 톤당 부과) 1년 유예 종료 예정일 — 유예가 재연장되지 않으면 부과 재개 가능",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          1,
+          2
+        ]
+      },
+      {
+        "date": "2026-04-17",
+        "event": "(유예 미종료 시 원안 기준) Annex I 중국 소유·운항 선박에 순톤당 80달러 수수료 발효 예정이었던 원래 시행일 — 현재는 2026-11-09까지 유예 중",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          2
+        ]
+      },
+      {
+        "date": "2028-04-17",
+        "event": "Annex IV LNG 운송 서비스 제한 조치 시행 예정(유예 대상 아님)",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          2
+        ]
+      },
+      {
+        "date": "2026-01-01",
+        "event": "EU ETS 해운 부문 완전 시행(2024년 40%→2025년 70%→2026년 100% 배출권 제출 의무), CH4·N2O 배출도 신규 편입",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          5,
+          6
+        ]
+      },
+      {
+        "date": "2026-10",
+        "event": "IMO Net-Zero Framework(선박 탄소배출부과금 포함, 5000GT 이상 대상) 채택 여부 재투표 — 2025-10-17 원래 표결이 12개월 연기되어 재조정된 일정",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          3,
+          4
+        ]
+      },
+      {
+        "date": "2026-06-01",
+        "event": "MARAD Port Infrastructure Development Program(PIDP) FY2026 지원금 신청 마감(Grants.gov, 23:59:59 EDT)",
+        "kind": "budgets_subsidies_orders",
+        "evidence_ids": [
+          10,
+          11
+        ]
+      },
+      {
+        "date": "2026-10 (추정, 확정 아님)",
+        "event": "홍해/수에즈 운하 컨테이너선 대규모 복귀 가능 시점으로 업계가 거론하는 시점(중국 춘절 이후 또는 골든위크 전후) — 확정된 정책 발표는 아니며 업계 전망",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          9
+        ]
+      },
+      {
+        "date": "2026-Q4",
+        "event": "Hapag-Lloyd의 ZIM 인수(현금 약 42억 달러, 주당 35달러) 규제 승인 및 거래 종결 목표 시점",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          7,
+          8
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "topic": "policy_calendar",
+        "summary": "향후 12개월 핵심 정책 이벤트는 세 갈래다: (1) EU ETS 해운 부문이 2026-01-01부로 100% 배출권 제출 의무 및 CH4·N2O 편입으로 완전 시행 단계에 진입, (2) IMO Net-Zero Framework(선박 탄소부과금)가 2025-10-17 표결에서 12개월 연기되어 2026-10 재투표 예정, (3) Hapag-Lloyd-ZIM 인수 규제 승인이 2026-Q4 종결을 목표로 진행 중(ZIM은 2026-07-06 진행 재확인). 홍해/수에즈 운하 복귀 시점은 업계 전망일 뿐 확정된 정책 일정이 아니다.",
+        "evidence_ids": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8,
+          9
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "budgets_subsidies_orders",
+        "summary": "미국 MARAD의 Port Infrastructure Development Program(PIDP)이 Bipartisan Infrastructure Law상 2022~2026년 총 22.5억 달러 중 FY2026분 4.5억 달러(+세출법 추가 3,862.8만 달러)를 배정, 2026-06-01 신청 마감. 별도로 2026-04 MARAD가 37개 프로젝트에 7.74억 달러를 이미 승인 완료했다는 보도가 있으나, 이 금액과 FY2026 4.888억 달러 발표의 관계(동일 건인지 별건인지)는 출처 간 불일치가 있어 명확히 대조하지 못했다. 컨테이너선사 발주는 예산·보조금이 아닌 자체 자금 발주로, COSCO(18척·약 27억 달러, 2026-01), MSC(11,400TEU급 6척, 2026-01) 등이 확인되며 전체 컨테이너선 수주잔량은 약 940만~1,040만 TEU(활동 선복량의 30%+) 규모.",
+        "evidence_ids": [
+          10,
+          11,
+          12,
+          13
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "trade_measures",
+        "summary": "USTR의 중국계 선박(Annex I) 입항수수료(순톤당 80달러부터 2028년 140달러까지 단계적 인상, 연 최대 5회 부과)는 2025-11-10부로 2026-11-09까지 1년 유예된 상태다. 유예 종료 후 재부과 여부는 미·중 협상 결과에 달려 있어 불확실하다. Annex IV(LNG 운송 제한)는 유예 대상에서 제외되어 2028-04-17 시행 예정 그대로 유지된다.",
+        "evidence_ids": [
+          1,
+          2
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "customer_capex",
+        "summary": "발주처(대형 컨테이너선사)의 신조 발주 활동은 활발하나(CMA CGM 수주잔량 활동선복량 대비 45.5%, COSCO 18척 약 27억 달러 발주, MSC 6척 발주 등), 검색 범위 내에서 각사가 공표한 연간 capex 가이던스 수치(예: Maersk·Hapag-Lloyd·COSCO의 2026년 총capex 목표 USD 금액)는 원문으로 확인하지 못했다. 신조 발주는 2028~2029년 인도 예정으로, 2026~2027년 신규 인도량은 상대적으로 적은 소강 국면이라는 점만 확인됐다.",
+        "evidence_ids": [
+          12,
+          13
+        ],
+        "not_found": true
+      }
+    ],
+    "evidence": [
+      {
+        "id": 1,
+        "claim": "USTR은 2025-11-10부로 중국계 선박에 대한 Section 301 입항수수료 부과를 2026-11-09까지 1년간 유예했다",
+        "source_url": "https://www.vedderprice.com/port-entry-fees-on-pause-the-ustr-suspends-section-301-fees-on-china-linked-vessels",
+        "date": "2025-11-10",
+        "reliability": "medium"
+      },
+      {
+        "id": 2,
+        "claim": "원안상 Annex I(중국 소유·운항 선박)에 대해 2026-04-17 순톤당 80달러, 2027-04-17 110달러, 2028-04-17 140달러 부과 예정이며, Annex IV(LNG 운송 제한)는 유예 대상이 아니고 2028-04 시행 예정",
+        "source_url": "https://ustr.gov/sites/default/files/files/Press/Releases/2025/301%20Ships%20-%20Action%20FRN%204-17.pdf",
+        "date": "2025-04-17",
+        "reliability": "high"
+      },
+      {
+        "id": 3,
+        "claim": "IMO는 2025-10-17 표결에서 Net-Zero Framework(탄소배출부과금 포함) 채택을 12개월 연기하기로 결정, 재투표는 2026-10로 재조정됐다",
+        "source_url": "https://www.kslaw.com/news-and-insights/impacts-of-postponed-imo-vote-on-global-carbon-pricing-rules-on-shipping",
+        "date": "2025-10-20",
+        "reliability": "medium"
+      },
+      {
+        "id": 4,
+        "claim": "Net-Zero Framework는 5,000GT 이상 선박에 탄소배출부과금을 부과하며, 2030년까지 연간 최대 150억 달러 세수 창출이 예상됐다",
+        "source_url": "https://www.business-standard.com/industry/news/imo-s-net-zero-framework-industry-at-sea-over-carbon-levy-decision-125102000600_1.html",
+        "date": "2025-10-20",
+        "reliability": "medium"
+      },
+      {
+        "id": 5,
+        "claim": "EU ETS 해운 부문은 2024년 40%, 2025년 70% 배출권 제출 후 2026년부터 100% 완전 시행되며 CH4·N2O 배출도 대상에 편입된다",
+        "source_url": "https://www.hapag-lloyd.com/en/services-information/news/2025/11/update-on-the-european-emission-trading-system--eu-ets----full-i.html",
+        "date": "2025-11",
+        "reliability": "medium"
+      },
+      {
+        "id": 6,
+        "claim": "EU ETS 완전 편입에 따라 선박 1척당 연간 EUR 8만~15만의 배출권 비용이 추가될 수 있다(EUA 가격 수준에 따라 변동)",
+        "source_url": "https://searoutes.com/2025/10/01/eu-ets-2026-full-compliance-shippers-carriers-guide/",
+        "date": "2025-10-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 7,
+        "claim": "Hapag-Lloyd는 2026-02 ZIM을 주당 35.00달러 현금(총 거래규모 약 42억 달러)에 인수하는 합병계약을 체결했으며, 규제당국 및 ZIM 주주 승인이 2026년 하반기 중 예상된다",
+        "source_url": "https://www.prnewswire.com/news-releases/zim-to-be-acquired-by-hapag-lloyd-for-35-00-per-share-in-cash-at-aggregate-cash-consideration-of-approximately-4-2-billion-new-israeli-company-new-zim-to-acquire-portion-of-zims-business-302688714.html",
+        "date": "2026-02",
+        "reliability": "medium"
+      },
+      {
+        "id": 8,
+        "claim": "ZIM은 2026-07-06 Hapag-Lloyd와의 합병계약을 계속 추진 중이라고 재확인했으며, 거래 종결 목표는 2026년 4분기다",
+        "source_url": "https://container-news.com/zim-targets-q4-closing-of-hapag-lloyd-acquisition/",
+        "date": "2026-07-06",
+        "reliability": "medium"
+      },
+      {
+        "id": 9,
+        "claim": "업계는 홍해 대규모 복귀가 중국 춘절 이후 또는 10월 골든위크 전후 단계적으로 이뤄질 가능성을 거론하며, 복귀 시 전 세계 선복량의 약 6%가 시장에 추가 공급될 것으로 전망한다",
+        "source_url": "https://www.xeneta.com/blog/largescale-return-of-container-ships-to-red-sea-in-2026-five-key-considerations-for-shippers",
+        "date": "2026",
+        "reliability": "low"
+      },
+      {
+        "id": 10,
+        "claim": "Bipartisan Infrastructure Law는 PIDP에 2022~2026년 5개년간 22.5억 달러를 배정했고, FY2026에는 4.5억 달러(+세출법 추가 3,862.8만 달러)가 배정됐으며 신청 마감은 2026-06-01이다",
+        "source_url": "https://www.maritime.dot.gov/sites/marad.dot.gov/files/2026-03/FY26%20PIDP%20NOFO%2003-27-2026.pdf",
+        "date": "2026-03-27",
+        "reliability": "high"
+      },
+      {
+        "id": 11,
+        "claim": "MARAD는 2026-04경 PIDP를 통해 37개 프로젝트에 총 7.74억 달러를 지원했다(별도 보도에서는 4.886억 달러 지원 발표도 확인되어 두 수치 간 관계는 원문 대조로 확정하지 못함)",
+        "source_url": "https://www.worldcargonews.com/ports-terminals/2026/05/marad-commits-us774m-to-port-infrastructure/",
+        "date": "2026-05",
+        "reliability": "medium"
+      },
+      {
+        "id": 12,
+        "claim": "컨테이너선 전체 수주잔량이 사상 최대인 약 940만~1,040만 TEU(활동 선복량의 30% 이상)에 달하며, COSCO는 2026-01 18척(약 27억 달러), MSC는 2026-01 11,400TEU급 6척을 신규 발주했다",
+        "source_url": "https://www.czapp.com/analyst-insights/ocean-carriers-kick-off-2026-with-massive-newbuild-orders/",
+        "date": "2026-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 13,
+        "claim": "최근 발주 물량은 대부분 2028~2029년 인도 예정이며 2026~2027년은 신규 인도가 상대적으로 적은 소강기가 될 전망이다. CMA CGM은 수주잔량이 활동 선복량 대비 45.5%에 달하고, 인도-코친 조선소에 LNG추진선 6척을 발주했다",
+        "source_url": "https://blogs.tradlinx.com/q3-2025-scorecard-maersk-msc-cma-cgm-cosco-and-hapag-lloyd-on-profit-volume-and-reliability/",
+        "date": "2025-11",
+        "reliability": "medium"
+      }
+    ]
+  }
+}

@@ -1,0 +1,190 @@
+{
+  "model": "claude-opus-5",
+  "provider": "claude_code",
+  "usage": {
+    "input_tokens": 665494,
+    "output_tokens": 29234,
+    "search_queries": 0
+  },
+  "notional_usd": 2.0451139999999994,
+  "output": {
+    "bear_case": "주택개량(Home Improvement Retail)의 강세 논지는 하나의 문장으로 압축된다 — \"금리가 내려오면 주택 회전율이 정상화되고, 노후 주택 스톡과 사상 최대 주택 순자산이 억눌린 개량 수요를 한꺼번에 풀어놓는다.\" 이 논지는 반박이 필요 없다. 이미 물리 데이터가 반박했고, 강세론자가 인용하는 바로 그 회사의 CFO가 공개 콘퍼런스콜에서 반박했다.\n\n첫째, 물량은 이미 줄고 있다. 매출이 아니라 물리적 활동량이다. 2026년 6월 미 센서스 기준 민간 주거용 '개량(improvement)' 지출은 전년 대비 -7.2%다. 더 중요한 것은 개정 방향이다. 4월 전년비는 +10.0%에서 -2.6%로, 5월은 +8.1%에서 -5.5%로 하향 개정됐다(NAHB 집계, 2026-08-03). 즉 2026년 상반기 내내 시장이 '개량 지출 두 자릿수 성장'으로 믿고 가격에 넣었던 숫자는 통계 개정 후 마이너스로 뒤집혔다. 강세 서사의 기초 데이터 자체가 사후적으로 소멸했다. 같은 방향으로, Home Depot의 FY2026 2분기 동일점포 고객 거래건수는 -1.0%, 객단가는 +2.8%였다(2026-08-18 실적콜). 매출은 늘었는데 방문은 줄었다. 이 조합의 의미는 단 하나다 — 성장의 원천이 수량이 아니라 가격/믹스이며, 관세와 인플레이션이 만든 명목 성장이다. Harvard JCHS LIRA(2026-07-23)는 개량·수선 지출 증가율이 2026년 3분기 2.1%에서 2027년 2분기 0.5%로 감속한다고 전망한다. 0.5% 명목 성장은 어떤 물가 지표로 디플레이트해도 실질 마이너스다. 즉 업계 최고 권위의 낙관적 기관조차 '실질 축소'를 전망하고 있고, 그것이 현재 컨센서스의 상한이다.\n\n둘째, 이번 사이클이 지난 사이클과 다른 이유는 강세론자의 자료가 아니라 HD CFO Richard McPhail의 입에서 나왔다. 2026-08-18 콜에서 그는 이렇게 말했다: \"housing turnover ... has been at historical lows. It has never been lower as a percentage of the housing stock. And every time we've seen it hit the sort of 3% of the housing stock changing hands, over history, it's always bounced up relatively quickly. We've seen housing turnover at these low levels for four years now. So, I don't think that we've seen much volatility from the recent increase in rates. ... but there's just no sign of an inflection point at this moment.\" 이 문장을 정확히 읽어야 한다. 회전율 3% 도달 시 '역사적으로 항상 빠르게 반등했다'는 것은 강세 논지의 핵심 통계적 근거다. 그런데 같은 발언자가 그 반등이 4년째 오지 않았고 지금도 변곡점의 징후가 없다고 인정하고 있다. 4년 연속 실패한 평균회귀는 더 이상 평균회귀가 아니다. 그것은 레짐 변화의 정의다. 미국 기존주택 판매는 2026년 7월 연율 406만 호로, 2024년·2025년과 나란히 1995년 이후 최저 수준에 묶여 있다. 주택개량 수요의 물리적 트리거(소유권 이전 → 이사 → 개보수)가 3년 연속 최저치에서 평평하게 눌려 있는 상태다.\n\n셋째, 최근 분기 '서프라이즈'의 정체다. HD의 2분기 매출총이익률 33.7%(전년비 +25bp)는 IEEPA 관세 환급 7억 3,000만 달러 — 그중 6억 8,500만 달러가 매출원가를 직접 낮춰 총이익률을 약 145bp 끌어올린 결과다. CFO 본인이 \"we've also experienced unplanned pressure from fuel, energy, and other product input costs that, we expect, will fully offset the benefit from tariff refunds over the year\" 라고 못 박았다. 즉 연간 기준 순효과는 0이다. 게다가 회사는 연간 매출총이익률 가이던스를 33.1%로 유지했다 — 2분기 실적치보다 60bp 낮다. 하반기 마진 하락이 이미 가이던스에 내장돼 있다. 여기에 매출 성장의 구성도 봐야 한다. 총매출 +5.7% 대비 동일점포 +1.7%. 차이 약 4%p는 GMS·SRS·Mingledorff's 등 인수합병에서 왔다. Lowe's도 같다 — 2025년 8월 Foundation Building Materials를 88억 달러에 인수하며 90억 달러 브리지 파이낸싱을 세웠다. 두 회사 모두 유기적 물량이 정체된 구간에서 부채를 써서 매출 라인을 만들어내고 있다. 그 대가는 이미 숫자에 찍혔다: HD의 ROIC는 27.2%에서 24.8%로 떨어졌고, 영업이익률은 14.5%에서 14.3%로, 재고는 전년비 20억 달러 증가하고 재고회전은 4.6회에서 4.5회로 둔화됐으며, 연간 순이자비용 가이던스는 23억 달러다. '주택 회복 시 레버리지 효과'를 기다리는 동안, 자본수익률은 지금 이 순간 훼손되고 있다.\n\n넷째, 이미 반영됐는가 — 반영된 것은 회복이지 현실이 아니다. HD의 2분기 동일점포 +1.7%는 FY2022 3분기 이후 최고치로 보도됐다. 뒤집으면 약 15개 분기 동안 동일점포가 제로 근방 또는 마이너스였다는 뜻이다. 그럼에도 회사의 FY2026 EPS 가이던스는 FY2025의 $14.23 대비 '보합~+4%'다. 제시된 시가총액 3,378억 달러와 콜에서 확인되는 희석주식수(2분기 순이익 48억 달러 / 희석 EPS $4.79 ≈ 10.0억 주)로 역산하면 주가는 약 $337, 가이던스 EPS 기준 배수는 약 23배다. 4년째 실질 물량이 늘지 않고, 올해 EPS가 보합~+4%로 안내되며, ROIC가 훼손 중인 자산에 시장은 23배를 지불하고 있다. 그 23배는 실적이 아니라 서사에 매겨진 값이다. 그리고 그 서사는 신선하지 않다 — 2025년 12월, 2026년 5월, 2026년 7월의 매도측 비교 자료가 모두 동일한 문장, 즉 '주택시장이 회복되면 가속할 준비가 된, 억눌린 수요' 를 반복하고 있다. 컨센서스가 반복되는 동안 실현되지 않은 회복은, 실현될 때조차 이미 지불된 회복이다.\n\n다섯째, 터미널 리스크는 관세 캘린더에 날짜로 박혀 있다. 2025-10-14 발효된 목재·목제품 Section 232 조치는 침엽수 목재 10%, 목재 주방 캐비닛·욕실 배니티 25%, 목재 실내가구 25%를 부과했고, 캐비닛·배니티 50%·가구 30%로의 인상은 2025-12-31 포고문으로 폐기된 것이 아니라 2027-01-01로 1년 유예됐을 뿐이다. 즉 2027년 초에 이 테마의 핵심 리모델링 카테고리(주방·욕실) 수입 원가에 계단식 인상이 예정돼 있다. 동시에 HD 경영진은 \"Section 101 expired in July ... replaced with the Section 301 piece. So, those were actually also incremental to what we had forecasted coming into the year\" 라고 인정했다 — 관세 체계 변경이 연간 계획에 없던 비용으로 계속 유입되고 있다는 뜻이다. 가격 전가는 이미 거래건수 -1.0%로 답이 나왔다. 원가는 정책으로 오르고 물량은 그 가격에 반응해 줄어드는 구조다. 그리고 테마의 하단부는 이미 부러져 있다. 기준일 재무표 기준 LIVE는 순부채/EBITDA 6.5배에 유동부채가 시총의 2.21배, TBHC는 EBITDA 마진 -3%에 유동부채가 시총의 1.76배다. 이 두 종목은 '금리 인하까지 버티기'의 대상이 아니라 만기 구조 자체가 리스크다.\n\n결론적으로 이 테마의 강세 논지는 '아직 오지 않은 회전율 반등'이라는 단일 변수에 전부를 걸고 있다. 그 변수는 4년째 오지 않았고, 그 사실을 가장 잘 아는 사람(HD CFO)이 변곡점의 징후가 없다고 말했으며, 그동안 실질 개량 지출은 마이너스로 개정됐고, 성장은 인수합병과 일회성 관세 환급으로 메워졌으며, 원가는 2027년 1월 1일자 관세 인상 일정을 이미 갖고 있다. 이것은 '싸게 사서 회복을 기다리는' 구조가 아니다. 회복을 이미 지불한 채로, 물량이 줄고 원가가 오르는 구간을 통과하는 구조다.",
+    "attacks": {
+      "unit_demand": {
+        "argument": "물리 단위로 보면 이 산업의 최종 수요는 이미 축소 중이다. (1) 미 센서스 민간 주거용 '개량(improvement)' 지출은 2026년 6월 전년비 -7.2%. 게다가 4월 전년비가 +10.0% → -2.6%, 5월이 +8.1% → -5.5%로 하향 개정됐다. 2026년 상반기 내내 시장이 근거로 삼았던 '두 자릿수 개량 지출 성장'은 통계 개정으로 소멸했다(증거1). (2) HD FY2026 2분기 동일점포 고객 거래건수 -1.0%, 객단가 +2.8% — 매출 증가의 원천은 수량이 아니라 가격/믹스다. 회사 스스로 'larger discretionary projects remain under pressure' 라고 명시했다(증거2). (3) 수요의 물리적 트리거인 기존주택 판매는 2026년 7월 연율 406만 호로 2024·2025년과 나란히 1995년 이후 최저 수준(증거6). (4) 가장 낙관적인 업계 지표인 Harvard JCHS LIRA조차 2026년 3분기 2.1% → 2027년 2분기 0.5%로 감속을 전망한다. 0.5% 명목 성장은 어떤 물가 지표로도 실질 마이너스다(증거7). 매출 라인이 버티는 것은 관세·인플레이션에 의한 명목 효과와 인수합병 때문이며(증거5), 물량은 그 아래에서 줄고 있다.",
+        "evidence_ids": [
+          1,
+          2,
+          5,
+          6,
+          7
+        ],
+        "strength": "strong"
+      },
+      "substitution": {
+        "argument": "정직하게 적는다 — 이 카테고리를 물리적으로 소멸시키는 기술·재료 대체재의 증거는 찾지 못했다. 목재·건자재·공구·페인트는 대체 기술의 침투 곡선이 아니라 주택 스톡의 물리적 마모에 연동된다. 확인 가능한 대체는 두 가지이며 둘 다 '카테고리 소멸'이 아니라 '마진 귀속처 이동'이다. (1) 채널 대체: HD의 온라인 동일매출은 전년비 +11%로 5개 분기 연속 두 자릿수 성장이며, 배송 리드타임을 18개월간 약 45% 단축했다고 밝혔다(증거15). 이는 디지털 침투가 진행 중이라는 뜻이지만, 동시에 그 성장을 위해 물류·배송에 자본을 계속 투입해야 한다는 뜻이기도 하다 — 즉 대체는 매출을 빼앗기보다 자본집약도를 올린다. (2) 유통 단계 대체: HD(SRS·GMS)와 LOW(FBM, 88억 달러)의 Pro 유통 인수는 빅박스 소매 채널이 Pro 수요를 자체 포맷으로 잡지 못한다는 자백에 가깝다 — 자체 성장이 아니라 채널을 사서 확보했다(증거5, 증거10). 다만 이들 증거로 '대체 위협에 의한 구조적 수요 파괴' 를 입증할 수는 없다. 대체 축은 이 테마의 약한 공격축이며, 그렇게 등급한다.",
+        "evidence_ids": [
+          15,
+          5,
+          10
+        ],
+        "strength": "weak"
+      },
+      "structural_change": {
+        "argument": "이번 사이클이 지난 사이클과 다르다는 증거는 강세론자의 반대편이 아니라 강세 논지의 원출처에서 나온다. HD CFO Richard McPhail, 2026-08-18 실적콜 원문: 'housing turnover ... has been at historical lows. It has never been lower as a percentage of the housing stock. And every time we've seen it hit the sort of 3% of the housing stock changing hands, over history, it's always bounced up relatively quickly. We've seen housing turnover at these low levels for four years now. ... there's just no sign of an inflection point at this moment.'(증거3) 이 발언의 구조를 정확히 읽어야 한다 — 회전율 3% 하한에서의 빠른 반등은 강세 논지의 통계적 근거 그 자체인데, 그 반등이 4년 연속 실현되지 않았고 현재도 변곡점 징후가 없다는 것을 회사가 인정하고 있다. 4년 실패한 평균회귀는 평균회귀가 아니라 레짐 변화다. 구조 변화의 두 번째 축은 원가다. 과거 사이클에서 주택개량 소매의 원가는 상품 사이클(목재 가격)에 연동됐지만, 이번에는 정책이 원가 바닥을 고정한다 — 2025-10-14 발효 Section 232 목재·캐비닛·가구 관세와 2027-01-01로 유예된 인상 일정(증거8, 증거9), 그리고 HD가 '연간 계획에 없던' 비용으로 인정한 Section 101 → 301 전환(증거4). 세 번째 축은 회복의 회계적 구성이다. 총매출 +5.7% 대비 동일점포 +1.7%의 격차 약 4%p가 인수합병에서 나오고, 그 대가로 ROIC가 27.2% → 24.8%로 하락했다(증거5). 물량 없는 구간을 부채와 M&A로 통과하는 것은 지난 사이클에는 없던 구조다. 단, 모기지 락인(sub-6% 잔액 비중)에 대해서는 발행일을 확인할 수 있는 1차 통계를 찾지 못했으므로 수치로 주장하지 않는다.",
+        "evidence_ids": [
+          3,
+          4,
+          5,
+          6,
+          8,
+          9
+        ],
+        "strength": "strong"
+      },
+      "omitted_facts": {
+        "argument": "강세론자가 최근 분기 실적을 인용할 때 의도적으로 빼놓는 사실들이다. (1) HD 2분기 매출총이익률 33.7%(전년비 +25bp)의 실체는 IEEPA 관세 환급 7억 3,000만 달러이며, 그중 6억 8,500만 달러가 매출원가를 직접 낮춰 총이익률을 약 145bp 끌어올렸다. CFO는 연료·에너지·투입원가 상승이 '연간 기준으로 관세 환급 효과를 완전히 상쇄할 것'이라고 명시했다 — 연간 순효과 0(증거4). (2) 회사의 연간 매출총이익률 가이던스는 33.1%로, 2분기 실적치보다 60bp 낮다. 하반기 마진 하락이 이미 가이던스에 내장돼 있다(증거5). (3) 총매출 +5.7% vs 동일점포 +1.7% — 약 4%p가 GMS·SRS·Mingledorff's 인수분이다. 유기적 성장률은 인용되는 성장률의 3분의 1 이하다(증거5). (4) 그 M&A의 대가: ROIC 27.2% → 24.8%, 영업이익률 14.5% → 14.3%, 재고 전년비 +20억 달러, 재고회전 4.6회 → 4.5회, 연간 순이자비용 가이던스 23억 달러(증거5). (5) '동일점포 +1.7% = FY2022 3분기 이후 최고' 라는 헤드라인의 뒷면은 약 15개 분기 동안 동일점포가 제로 근방 또는 마이너스였다는 사실이다(증거11). (6) 거래건수 -1.0%와 '대형 재량 프로젝트 압박 지속' 이라는 회사 자체 코멘트(증거2). 강세 요약본에서 (1)·(3)·(6)이 동시에 빠지면 '마진 개선을 동반한 매출 가속' 으로 읽히지만, 원문을 대조하면 '일회성 환급 + 인수 매출 + 방문 감소' 다.",
+        "evidence_ids": [
+          2,
+          4,
+          5,
+          11
+        ],
+        "strength": "strong"
+      },
+      "priced_in": {
+        "argument": "가격에 반영된 것은 실적이 아니라 회복 서사다. 제시된 시가총액 3,378.8억 달러와 콜 원문의 2분기 순이익 48억 달러 / 희석 EPS $4.79에서 역산한 희석주식수 약 10.0억 주를 결합하면 주가 약 $337, 회사 자체 가이던스(FY2025 EPS $14.23 대비 보합~+4%)를 적용한 배수는 약 23배다(증거5 + 과제 제시 PIT 시총, 증거14). 4년째 실질 물량이 늘지 않고, 당해 EPS가 보합~+4%로 안내되며, ROIC가 27.2%에서 24.8%로 훼손 중인 자산에 지불되는 배수다. 더 결정적인 것은 서사의 나이다. 동일한 문장 — '주택시장이 회복되면 가속할 준비가 되어 있고, 억눌린 수요가 크다' — 이 2025-12-22, 2026-05-27, 2026-07-06 매도측 비교 자료에 반복 등장한다(증거12, 증거13). 그리고 HD CFO 본인이 회전율 저점에서의 반등을 4년째 기다려왔다고 진술했다(증거3). 즉 이 서사는 최소 4년 된 컨센서스이며, 그 기간 내내 주가는 '회복 전야' 프리미엄을 유지했다. 회복이 실제로 도래해도 그것은 이미 지불된 회복이다. 다만 컨센서스 형성 시점을 특정하는 1차 문서(리서치 컨센서스 데이터베이스 원문)를 확보하지 못했으므로, 강도는 strong 이 아니라 moderate 로 정직하게 등급한다.",
+        "evidence_ids": [
+          3,
+          5,
+          11,
+          12,
+          13,
+          14
+        ],
+        "strength": "moderate"
+      },
+      "terminal_risk": {
+        "argument": "터미널 리스크는 세 갈래이며, 하나는 날짜가 확정돼 있다. (1) 규제·관세: 2025-10-14 발효된 Section 232 목재·목제품 조치는 침엽수 목재 10%, 목재 주방 캐비닛·욕실 배니티 25%, 목재 실내가구 25%를 부과했고, 캐비닛·배니티 50% / 가구 30%로의 인상은 폐기된 것이 아니라 2025-12-31 포고문으로 2027-01-01까지 1년 유예됐다(증거8, 증거9). 리모델링 매출총액의 핵심인 주방·욕실 카테고리 수입 원가에 계단식 인상이 캘린더에 박혀 있다. 여기에 HD가 인정한 Section 101 만료 → Section 301 대체에 따른 '계획 외' 비용이 겹친다(증거4). 가격 전가의 결과는 이미 거래건수 -1.0%로 나타났다(증거2). (2) 부채: LOW는 Foundation Building Materials를 88억 달러에 인수하며 90억 달러 브리지 파이낸싱을 세웠고(증거10), 기준일 순부채/EBITDA 3.2배다. HD는 연간 순이자비용 23억 달러를 가이드했다(증거5). 물량이 정체된 구간에서 확대된 레버리지는 회복 지연 시 자기자본 수익률을 직접 갉아먹는다. (3) 테마 하단의 존속 리스크: 기준일 재무표 기준 LIVE는 순부채/EBITDA 6.5배·유동부채가 시가총액의 2.21배, TBHC는 EBITDA 마진 -3%·유동부채가 시가총액의 1.76배다(증거14). 이 둘은 '금리 인하까지 버티기' 의 대상이 아니라 만기·유동성 구조 자체가 리스크다. 다만 카테고리 전체를 소멸시키는 지리적 집중이나 규제 소멸 시나리오의 증거는 찾지 못했으므로 strong 이 아니라 moderate 로 등급한다.",
+        "evidence_ids": [
+          2,
+          4,
+          5,
+          8,
+          9,
+          10,
+          14
+        ],
+        "strength": "moderate"
+      }
+    },
+    "consensus_since": "정확한 최초 시점은 1차 문서로 특정하지 못했다. 다만 두 갈래로 하한을 제시한다. (1) HD CFO는 2026-08-18 콜에서 주택 회전율이 '4년째' 역사적 저점에 머물러 있고 과거에는 이 수준에서 '항상 빠르게 반등했다' 며 반등을 기다려온 프레임을 유지했다 — 즉 '회전율 정상화 → 개량 수요 반등' 서사는 늦어도 2022년경부터 업계 표준 설명이었다(증거3). (2) 문서로 날짜를 확인할 수 있는 범위에서는, 2025-12-22(24/7 Wall St) 및 2026-07-06(Motley Fool) 매도측 비교 자료가 모두 '주택시장 회복 시 가속할 준비가 되어 있고 억눌린 수요가 크다' 는 동일 문장을 반복한다(증거12, 증거13). 따라서 최소 2025년 말에는 완전한 컨센서스였고, 실질적으로는 2024년 하반기 금리 인하 사이클 개시 이후 지속된 서사로 보는 것이 타당하다. 요약: 컨센서스 형성 시점 = 늦어도 2025-12, 실질적으로는 2022~2024년부터. 이 서사가 새 정보가 아니라는 점이 priced_in 공격의 핵심이다.",
+    "evidence": [
+      {
+        "id": 1,
+        "claim": "미 센서스 자료 기준 2026년 6월 민간 주거용 '개량(improvement/remodeling)' 지출은 전년비 -7.2%. 4월 전년비는 +10.0%에서 -2.6%로, 5월은 +8.1%에서 -5.5%로 하향 개정. 4월 전월비는 +1.6%에서 -10.1%로 개정. 민간 주거용 건설지출 전체는 6월 연율 8,771억 달러, 전월비 -0.3%, 전년비 -4.7%.",
+        "source_url": "https://eyeonhousing.org/2026/08/residential-construction-spending-slips-as-remodeling-activity-weakens/",
+        "date": "2026-08-03",
+        "reliability": "medium"
+      },
+      {
+        "id": 2,
+        "claim": "HD FY2026 2분기 실적콜 원문: 'During the second quarter, our comp average ticket increased 2.8 percent, and comp transactions decreased 1.0 percent.' / 'Big-ticket comp transactions, or those over $1,000 dollars, were positive 2.4 percent ... however larger discretionary projects remain under pressure.' / CFO: 'While consumer uncertainty and housing affordability continue to pressure demand for larger home improvement projects...'",
+        "source_url": "https://ir.homedepot.com/~/media/Files/H/HomeDepot-IR/2026/hd-2q26-transcript.pdf",
+        "date": "2026-08-18",
+        "reliability": "high"
+      },
+      {
+        "id": 3,
+        "claim": "HD CFO Richard McPhail, 동 실적콜 원문: 'housing turnover, just as kind of one point in the economy that we watch, has been at historical lows. It has never been lower as a percentage of the housing stock. And every time we've seen it hit the sort of 3% of the housing stock changing hands, over history, it's always bounced up relatively quickly. We've seen housing turnover at these low levels for four years now. ... but there's just no sign of an inflection point at this moment.'",
+        "source_url": "https://ir.homedepot.com/~/media/Files/H/HomeDepot-IR/2026/hd-2q26-transcript.pdf",
+        "date": "2026-08-18",
+        "reliability": "high"
+      },
+      {
+        "id": 4,
+        "claim": "동 실적콜 원문: 2분기 중 IEEPA 관세 환급 7억 3,000만 달러 수령, 그중 6억 8,500만 달러가 매출원가를 낮춰 총이익률에 약 145bp 기여(비용 상승 60bp 상쇄 후 순 85bp), 나머지 4,500만 달러는 재고에 잔존. CFO: 'we've also experienced unplanned pressure from fuel, energy, and other product input costs that, we expect, will fully offset the benefit from tariff refunds over the year.' 머천다이징 EVP: 'Section 101 expired in July. ... and replaced with the Section 301 piece. So, those were actually also incremental to what we had forecasted coming into the year.'",
+        "source_url": "https://ir.homedepot.com/~/media/Files/H/HomeDepot-IR/2026/hd-2q26-transcript.pdf",
+        "date": "2026-08-18",
+        "reliability": "high"
+      },
+      {
+        "id": 5,
+        "claim": "동 실적콜 원문 재무 수치: 2분기 총매출 479억 달러(+5.7%) vs 전사 동일점포 +1.7%(미국 +1.3%) — 격차는 GMS·SRS·Mingledorff's 인수 기여. 영업이익률 14.3%(전년 14.5%), 희석 EPS $4.79, ROIC 24.8%(전년 27.2%), 재고 268억 달러(전년비 약 +20억 달러), 재고회전 4.5회(전년 4.6회). FY2026 가이던스: 동일점포 보합~+2.0%, 총매출 +2.5~4.5%, 매출총이익률 약 33.1%(2분기 실적 33.7% 대비 60bp 낮음), 순이자비용 약 23억 달러, 희석 EPS 및 조정 희석 EPS 모두 FY2025의 $14.23 대비 보합~+4.0%.",
+        "source_url": "https://ir.homedepot.com/~/media/Files/H/HomeDepot-IR/2026/hd-2q26-transcript.pdf",
+        "date": "2026-08-18",
+        "reliability": "high"
+      },
+      {
+        "id": 6,
+        "claim": "NAR 기준 2026년 7월 미국 기존주택 판매는 계절조정 연율 406만 호로 전월비 -1.7%, 전년비 +0.7%. 이 연율 수준은 2024년·2025년과 동일한 수준으로, 1995년 이후 최저 연간 판매 속도와 나란하다. 7월 중위 매매가격 434,100달러(+2.0% YoY).",
+        "source_url": "https://www.realestatenews.com/2026/08/11/low-turn-slow-burn-housing-market-kept-sales-down-in-july",
+        "date": "2026-08-11",
+        "reliability": "medium"
+      },
+      {
+        "id": 7,
+        "claim": "Harvard JCHS 리모델링선행지표(LIRA) 2026-07-23 발표분: 자가주택 개량·수선 지출의 전년비 증가율이 2026년 3분기 2.1%에서 2027년 2분기 0.5%로 감속하며, 해당 4개 분기 합계 지출은 약 5,190억 달러로 전망. Remodeling Futures Program 디렉터 Rachel Bogardus Drew: 'Growth in remodeling permitting and retail spending on building products have flattened recently, suggesting that renovation activity is cooling.' 주택착공 감소, 경제 불확실성, 역사적 저수준의 기존주택 판매가 회복을 제약한다고 기술. (주: jchs.harvard.edu 원문 페이지가 HTTP 403 으로 직접 대조 불가, 수치는 검색 결과 및 2차 보도 대조 — 따라서 medium)",
+        "source_url": "https://www.jchs.harvard.edu/press-releases/remodeling-spending-poised-further-slowdown",
+        "date": "2026-07-23",
+        "reliability": "medium"
+      },
+      {
+        "id": 8,
+        "claim": "미 CBP 지침: 2025-10-14 발효로 Section 232 목재·목제품 관세 부과 — 침엽수 목재·원목 10%, 목재 실내가구(upholstered wooden furniture) 25%, 목재 주방 캐비닛·욕실 배니티 25%. 기존 Section 301 및 AD/CVD 와 중첩 적용되어 중국산 캐비닛·가구의 실효 관세율이 70%를 넘을 수 있음.",
+        "source_url": "https://www.chrobinson.com/en-us/resources/insights-and-advisories/client-advisories/2025q4/10-10-2025-client-advisory-cbp-issues-sec-232-tariff-guide-timber-furniture-cabinet-impo-oct-14-25/",
+        "date": "2025-10-10",
+        "reliability": "medium"
+      },
+      {
+        "id": 9,
+        "claim": "2025-12-31 서명된 대통령 포고문으로, 2026-01-01 예정이던 목재 실내가구(25%→30%) 및 주방 캐비닛·욕실 배니티(25%→50%) 관세 인상이 1년 유예되어 새 시행일이 2027-01-01 로 설정됨. 유예 기간 중 세율은 25% 유지. (주: 출처 문서의 게재 월은 URL 경로상 2026년 1월로 확인되나 정확한 게재 일자는 확인하지 못했으며, 날짜 필드는 2026-01-01 로 표기함 — 지어낸 일자가 아니라 미확인 일자임을 명시한다.)",
+        "source_url": "https://www.thompsonhinesmartrade.com/2026/01/president-trump-delays-section-232-tariff-increase-on-wood-furniture-cabinets-and-vanities/",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 10,
+        "claim": "Lowe's는 북미 내장건자재 유통업체 Foundation Building Materials 를 88억 달러에 인수한다고 발표(2025-08-20), Bank of America 및 Goldman Sachs 로부터 90억 달러 전액 확약 브리지 파이낸싱을 확보했으며 단기·장기 부채 조합으로 조달할 계획. FBM 은 북미 370개 이상 지점, 2024년 매출 약 65억 달러·EBITDA 6.35억 달러. 거래는 2025년 4분기 완료.",
+        "source_url": "https://corporate.lowes.com/newsroom/press-releases/lowes-announces-agreement-acquire-foundation-building-materials-leading-north-american-distributor-interior-building-products-08-20-25",
+        "date": "2025-08-20",
+        "reliability": "medium"
+      },
+      {
+        "id": 11,
+        "claim": "HD의 FY2026 2분기 동일점포 매출 +1.7%는 FY2022 3분기 이후 가장 높은 동일점포 증가율로 보도됨 — 역으로 약 15개 분기 동안 동일점포가 그보다 낮았음을 의미.",
+        "source_url": "https://www.cnbc.com/2026/08/18/home-depot-hd-q2-2026-earnings.html",
+        "date": "2026-08-18",
+        "reliability": "medium"
+      },
+      {
+        "id": 12,
+        "claim": "매도측 비교 자료(2026-07-06): 두 대형 주택개량 소매업체가 '주택시장이 회복될 때 성장을 가속할 준비가 되어 있으며, 고금리가 대형 지출을 수년간 억눌러 억눌린 수요(pent-up demand)가 크다' 는 동일한 회복 서사를 전제로 비교되고 있음.",
+        "source_url": "https://www.fool.com/coverage/better-buy/2026/07/06/home-depot-vs-lowe-s-which-big-box-home-improvement-giant-is-the-better-buy-in-2026/",
+        "date": "2026-07-06",
+        "reliability": "medium"
+      },
+      {
+        "id": 13,
+        "claim": "매도측 비교 자료(2025-12-22): 2026년을 앞두고 동일한 '주택시장 안정화 시 수혜' 프레임으로 두 종목을 비교 — 해당 회복 서사가 늦어도 2025년 말에는 표준 컨센서스였음을 보여줌.",
+        "source_url": "https://247wallst.com/investing/2025/12/22/home-depot-vs-lowes-only-1-of-these-home-improvement-stocks-is-a-buy-for-2026/",
+        "date": "2025-12-22",
+        "reliability": "medium"
+      },
+      {
+        "id": 14,
+        "claim": "과제에 제시된 PIT(기준일 2026-08-14) 재무 요약표(Sharadar 라벨 기준): HD 시가총액 3,378.8억 달러·순부채/EBITDA 2.5, LOW 순부채/EBITDA 3.2, FND 3.1, LIVE 순부채/EBITDA 6.5·유동부채/시가총액 2.21·EBITDA 마진 8%, TBHC EBITDA 마진 -3%·유동부채/시가총액 1.76·순부채/EBITDA 산출 불가, TTSH 유동부채/시가총액 0.18.",
+        "source_url": "internal://task_prompt/pit_financial_summary_sharadar",
+        "date": "2026-08-14",
+        "reliability": "medium"
+      },
+      {
+        "id": 15,
+        "claim": "HD FY2026 2분기 실적콜 원문: 'sales leveraging our digital platforms increased 11 percent compared to the second quarter of last year. This is the fifth quarter in a row with double digit year over year growth.' 또한 지난 18개월간 미국 배송 리드타임을 약 45% 단축했고, 재고 보유 대형·중량 상품 배송의 약 55%가 2일 내 완료된다고 밝힘.",
+        "source_url": "https://ir.homedepot.com/~/media/Files/H/HomeDepot-IR/2026/hd-2q26-transcript.pdf",
+        "date": "2026-08-18",
+        "reliability": "high"
+      }
+    ]
+  }
+}

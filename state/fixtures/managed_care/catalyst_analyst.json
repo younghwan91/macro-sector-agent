@@ -1,0 +1,248 @@
+{
+  "model": "claude-sonnet-5",
+  "provider": "claude_code",
+  "usage": {
+    "input_tokens": 388737,
+    "output_tokens": 8376,
+    "search_queries": 0
+  },
+  "notional_usd": 0.5413038,
+  "output": {
+    "calendar": [
+      {
+        "date": "2026-01-26",
+        "event": "CMS CY2027 Medicare Advantage & Part D Advance Notice 발표 (제안 순증 +0.09%, 리스크스코어 트렌드 반영 시 +2.54%)",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          1
+        ]
+      },
+      {
+        "date": "2026-02-25",
+        "event": "CY2027 Advance Notice 의견 수렴 마감",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          1
+        ]
+      },
+      {
+        "date": "2026-04-06",
+        "event": "CMS CY2027 Medicare Advantage & Part D 최종 Rate Announcement 발표 (순증 +2.48%, 약 $13B)",
+        "kind": "budgets_subsidies_orders",
+        "evidence_ids": [
+          2
+        ]
+      },
+      {
+        "date": "2027-01-01",
+        "event": "OBBBA Medicaid 확대집단(expansion population) 대상 월 80시간 근로요건(work requirements) 연방 의무 시행일 (주별 2028-12-31까지 선의노력 예외 신청 가능)",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          5
+        ]
+      },
+      {
+        "date": "2026-05-01",
+        "event": "네브래스카주, 전미 최초로 Medicaid 근로요건 시행",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          5
+        ]
+      },
+      {
+        "date": "2026-07-01",
+        "event": "몬태나·아칸소주 Medicaid 근로요건 시행 (아칸소는 2027-01까지 '소프트' 시행, 미준수로 인한 자격 박탈 유예)",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          5
+        ]
+      },
+      {
+        "date": "2026-12-01",
+        "event": "아이오와주 Medicaid 근로요건 시행 (연방 시한 앞서 선행)",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          5
+        ]
+      },
+      {
+        "date": "2027-01-01",
+        "event": "OBBBA Section 71107: Medicaid 확대집단 자격 재심사(redetermination) 주기 연 1회 → 6개월로 단축 시행 (2026-12-31 이후 갱신분부터 적용)",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          6
+        ]
+      },
+      {
+        "date": "2027-01-01",
+        "event": "OBBBA 주(state) provider tax 상한 단계적 인하 시작 (ACA 확대주 6.0%→3.5%, 2027~2031년 매년 0.5%p씩 축소); 10년간 Medicaid 지출 약 $625B 감축, 주정부 재원 약 $340B 손실 추정(CBO)",
+        "kind": "budgets_subsidies_orders",
+        "evidence_ids": [
+          7,
+          8
+        ]
+      },
+      {
+        "date": "2026-07-01",
+        "event": "Medicaid Access/Managed Care 최종규정 — 주정부 FFS 지급률 및 방법론 공시, 비교분석 공개 의무 시행",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          10
+        ]
+      },
+      {
+        "date": "2027-07-09",
+        "event": "Medicaid Managed Care 최종규정 추가 조항(계약연도 2027-07-09 이후 시작 계약분부터) 시행",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          10
+        ]
+      },
+      {
+        "date": "2025-12-31",
+        "event": "ACA 확대(enhanced) 프리미엄 세액공제(PTC) 만료 — 2026년 보조금 수급자 평균 연간 보험료 $888→$1,904로 상승 추정(KFF)",
+        "kind": "budgets_subsidies_orders",
+        "evidence_ids": [
+          3
+        ]
+      },
+      {
+        "date": "2025-12-18",
+        "event": "美 하원, PTC 3년 연장 법안 표결을 강제하는 discharge petition 가결 — 2026년 1월 표결 가능성, 상원 통과 여부 불확실",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          3
+        ]
+      },
+      {
+        "date": "2026-04-02",
+        "event": "트럼프 대통령, Section 232 특허(patented) 의약품·API 수입에 대한 100% 관세 포고령 서명 (미국 내 생산시설 보유/구축 중이거나 MFN 약가 협약 체결 시 예외)",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          11
+        ]
+      },
+      {
+        "date": "2026-07-31",
+        "event": "Section 232 의약품 관세, Annex III 지정 기업 대상 우선 발효",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          11
+        ]
+      },
+      {
+        "date": "2026-09-29",
+        "event": "Section 232 의약품 관세, 나머지 전체 기업 대상 발효",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          11
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "topic": "policy_calendar",
+        "summary": "12개월 내 관리의료 핵심 정책 일정은 (1) CMS CY2027 MA/Part D 요율 확정(2026-04-06, +2.48%/$13B), (2) OBBBA Medicaid 근로요건 연방 시행일 2027-01-01(주별 선행 시행 사례 존재), (3) Medicaid 6개월 재심사 시행 2027-01-01, (4) Medicaid Access/Managed Care 규정 주정부 공시 의무 2026-07-01로 확인됨. ACA 확대 PTC는 이미 2025-12-31 만료되어 의회 연장 여부가 유동적 변수로 남아있음.",
+        "evidence_ids": [
+          1,
+          2,
+          3,
+          5,
+          6,
+          10
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "budgets_subsidies_orders",
+        "summary": "CMS는 CY2027 MA/Part D 지급을 전년 대비 +2.48%(약 $13B) 인상 확정(2026-04-06). OBBBA는 향후 10년간 Medicaid 지출을 약 $625B 감축하며, 주정부 provider tax 상한을 2027~2031년 단계적으로 6.0%→3.5%로 낮춰 주정부 재원 약 $340B 손실이 예상됨(CBO 추정치, 원문 수치 대조는 2차 출처 기준). ACA PTC 확대분은 2025-12-31 만료로 신규 보조금 편성은 확인되지 않음(의회 연장안은 미확정).",
+        "evidence_ids": [
+          2,
+          7,
+          8,
+          3
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "trade_measures",
+        "summary": "관리의료 업계에 직접적인 관세·수출통제·쿼터는 없으나, 2026-04-02 서명된 Section 232 특허의약품 100% 관세(2026-07-31/09-29 순차 발효)가 PBM(예: CVS Caremark, Cigna Express Scripts)의 리베이트 협상 구조와 약가에 간접 영향을 줄 수 있다는 점이 업계 분석에서 지적됨. 관리의료 보험사 자체를 대상으로 한 관세나 쿼터는 확인되지 않음.",
+        "evidence_ids": [
+          11
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "customer_capex",
+        "summary": "관리의료 업종은 제조업형 '발주처 capex'가 존재하지 않는 서비스업으로, 수요처(연방정부·주정부·고용주)의 '투자 계획'에 해당하는 자본지출 가이던스를 찾지 못함. 가장 근접한 대용 지표는 CMS의 MA 지급률 인상(연방 재정 배분, budgets_subsidies_orders에 기재)과 OBBBA에 따른 주정부 Medicaid 재원 축소이나, 이는 capex 성격이 아니므로 별도 항목으로는 확인되지 않음.",
+        "evidence_ids": [],
+        "not_found": true
+      }
+    ],
+    "evidence": [
+      {
+        "id": 1,
+        "claim": "CMS는 2026-01-26 CY2027 Medicare Advantage/Part D Advance Notice를 발표했으며, 제안된 정책은 순증 +0.09%(약 $700M+), 리스크스코어 트렌드 반영 시 평균 +2.54% 지급 변화를 전망했고 의견수렴 마감은 2026-02-25, 최종안은 2026-04-06까지 발표 예정이었다.",
+        "source_url": "https://www.cms.gov/newsroom/fact-sheets/2027-medicare-advantage-part-d-advance-notice",
+        "date": "2026-01-26",
+        "reliability": "high"
+      },
+      {
+        "id": 2,
+        "claim": "CMS는 2026-04-06 CY2027 Medicare Advantage/Part D 최종 Rate Announcement를 발표, 지급 순증 +2.48%(약 $13B 이상)로 상향 확정했다.",
+        "source_url": "https://www.cms.gov/newsroom/fact-sheets/2027-medicare-advantage-part-d-rate-announcement",
+        "date": "2026-04-06",
+        "reliability": "high"
+      },
+      {
+        "id": 3,
+        "claim": "ACA 확대 프리미엄 세액공제는 2025-12-31 만료되었으며, KFF는 보조 수급자의 연평균 보험료가 2025년 $888에서 2026년 $1,904로 상승할 것으로 추정했다. 2025-12-18 미 하원은 3년 연장안 표결을 강제하는 discharge petition을 가결했다.",
+        "source_url": "https://www.kff.org/quick-insights/there-is-no-drop-dead-date-for-an-aca-tax-credit-extension-but-coverage-losses-will-mount-as-the-clock-ticks/",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 5,
+        "claim": "OBBBA는 Medicaid 확대집단에 대해 2027-01-01부터 월 80시간 근로요건을 의무화했으며(주별 2028-12-31까지 선의노력 예외 가능), 네브래스카(2026-05-01), 몬태나·아칸소(2026-07-01, 아칸소는 소프트 시행), 아이오와(2026-12-01)가 조기 시행에 나섰다.",
+        "source_url": "https://news.ballotpedia.org/2026/01/23/mandatory-medicaid-work-requirements-are-coming-what-do-they-look-like-now/",
+        "date": "2026-01-23",
+        "reliability": "medium"
+      },
+      {
+        "id": 6,
+        "claim": "OBBBA Section 71107에 따라 Medicaid 확대(ACA expansion) 집단의 자격 재심사 주기가 2027-01-01부터(2026-12-31 이후 갱신 예정분부터) 연 1회에서 6개월로 단축된다.",
+        "source_url": "https://www.hfma.org/payment-reimbursement-and-managed-care/medicaid-six-month-eligibility-redeterminations-cms-guidance/",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 7,
+        "claim": "OBBBA(2025-07-04 서명)는 향후 10년간 Medicaid 지출을 약 $625B 감축하며, CBO는 근로요건·재심사 강화·연방매칭 축소·provider tax 개혁으로 780만 명이 Medicaid 자격을 상실할 것으로 추정했다.",
+        "source_url": "https://benefitsusa.org/en/blog/medicaid-cuts-2026",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 8,
+        "claim": "ACA 확대주(40개 주+DC)의 provider tax 상한이 현행 6.0%에서 3.5%로 2027~2031년 매년 0.5%p씩 단계적으로 인하되며, 이로 인해 주정부는 약 $340B의 재원을, 120만 명이 Medicaid 혜택을 잃을 것으로 추정된다.",
+        "source_url": "https://www.commonwealthfund.org/publications/explainer/2025/dec/how-new-limits-state-provider-taxes-will-affect-medicaid-funding",
+        "date": "2025-12-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 10,
+        "claim": "CMS의 Medicaid Access/Managed Care 최종규정 중 FFS 지급률·방법론 공시 및 비교분석 공개 의무는 2026-07-01부터 시행되며, 추가 조항은 2027-07-09 이후 시작되는 계약연도부터 적용된다.",
+        "source_url": "https://ccf.georgetown.edu/2024/08/07/an-explanation-of-final-medicaid-managed-care-and-access-rules/",
+        "date": "2024-08-07",
+        "reliability": "medium"
+      },
+      {
+        "id": 11,
+        "claim": "2026-04-02 트럼프 대통령이 Section 232에 근거해 특허(patented) 의약품·API 수입에 대한 기본 100% 관세 포고령에 서명했으며, Annex III 지정 기업은 2026-07-31, 나머지 기업은 2026-09-29부터 발효된다. 미국 내 생산시설 구축 계획 승인 기업은 20%, MFN 약가 협약 체결국은 낮은 세율이 적용된다.",
+        "source_url": "https://www.crowell.com/en/insights/client-alerts/trump-administration-imposes-section-232-tariffs-on-patented-pharmaceutical-imports-tiered-rate-structure-takes-effect-beginning-july-31-2026",
+        "date": "2026-04-02",
+        "reliability": "medium"
+      }
+    ]
+  }
+}

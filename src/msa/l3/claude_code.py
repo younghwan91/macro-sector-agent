@@ -57,6 +57,7 @@ from typing import Any
 
 from msa.l3.providers import (
     HAIKU_ONLY,
+    SUBSCRIPTION_MODELS,
     CompletionRequest,
     CompletionResult,
     ModelConfig,
@@ -193,8 +194,20 @@ class ClaudeCodeProvider:
         # 기본(구독)에서는 제한이 없다: 크레딧이 나가지 않으므로 bear·referee 가 상위 모델을 쓴다.
         if models is not None:
             self.models = models
+        elif use_api_key:
+            self.models = HAIKU_ONLY
         else:
-            self.models = HAIKU_ONLY if use_api_key else ModelConfig.from_env()
+            # 구독 기본은 전부 sonnet. 환경변수를 준 경우에만 그것이 이긴다.
+            env = ModelConfig.from_env()
+            self.models = ModelConfig(
+                top=os.environ.get("MSA_L3_MODEL_TOP", "").strip() or SUBSCRIPTION_MODELS.top,
+                standard=(
+                    os.environ.get("MSA_L3_MODEL_STANDARD", "").strip()
+                    or SUBSCRIPTION_MODELS.standard
+                ),
+                effort_top=env.effort_top,
+                effort_standard=env.effort_standard,
+            )
         if use_api_key:
             enforce_api_credit_models(self.models)
         self.budget = budget or SearchBudget()

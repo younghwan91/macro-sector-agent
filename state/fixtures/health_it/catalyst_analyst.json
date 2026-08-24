@@ -1,0 +1,183 @@
+{
+  "model": "claude-sonnet-5",
+  "provider": "claude_code",
+  "usage": {
+    "input_tokens": 281075,
+    "output_tokens": 6360,
+    "search_queries": 0
+  },
+  "notional_usd": 0.4388068,
+  "output": {
+    "calendar": [
+      {
+        "date": "2026-01-01",
+        "event": "CMS-0057-F 상호운용성·사전승인 규칙 — 관리형케어 플랜(Medicaid/CHIP 관리형케어, QHP)의 사전승인(PA) 프로세스 요건 및 결정기한(긴급 72시간·표준 7일) 시행 개시",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          1
+        ]
+      },
+      {
+        "date": "2026-03-31",
+        "event": "CMS-0057-F 적용 대상 지불자, 2025 회계연도 사전승인 승인율/거부율/평균처리시간 등 지표를 자사 웹사이트에 최초 공개 보고",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          2
+        ]
+      },
+      {
+        "date": "2026-06-15",
+        "event": "CMS-0062-P(약제 사전승인 상호운용성 표준 제안규칙, 2026-04-14 연방관보 게재) 공개 의견수렴 마감",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          3
+        ]
+      },
+      {
+        "date": "2026-08-25",
+        "event": "Section 232 의료기기·PPE·의료소모품 국가안보 조사(2025-09-26 개시) 진행 중 — 상무부 보고서 제출 기한은 조사 개시일로부터 270일 이내(2026-06-23 경 도래 추정), 관세 등 조치는 이르면 2026년 여름 이후 가능",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          5
+        ]
+      },
+      {
+        "date": "2026-12-01",
+        "event": "OBBBA(2025-07-04 서명) Medicaid 근로요건 — 주별 80시간/월 커뮤니티 참여 요건 적용 개시(주에 따라 1115 웨이버로 조기 시행 가능)",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          4
+        ]
+      },
+      {
+        "date": "2026-12",
+        "event": "OBBBA에 따라 Medicaid 확대군 가입자 자격 재심사 주기가 12개월에서 6개월로 단축 시행",
+        "kind": "budgets_subsidies_orders",
+        "evidence_ids": [
+          4
+        ]
+      },
+      {
+        "date": "2027-01-01",
+        "event": "CMS-0057-F 적용 대상 지불자(Medicare Advantage, Medicaid/CHIP 관리형케어, QHP 발급사)의 사전승인 API(Prior Authorization API 등 4종 FHIR API) 프로덕션 가동 의무화",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          1,
+          6
+        ]
+      },
+      {
+        "date": "2027-01-01",
+        "event": "OBBBA Medicaid 근로요건 전체 주(州) 의무 시행 기한(HHS 장관 재량으로 최대 2028-12-31까지 1회 유예 가능)",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          4
+        ]
+      },
+      {
+        "date": "2027-10-01",
+        "event": "CMS-0062-P 확정 시 예정된 발효일 — 약제 사전승인 전자화, API 엔드포인트·사용현황 CMS 보고 의무 등 시행(확정 여부는 미확인, 제안 단계)",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          3
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "topic": "policy_calendar",
+        "summary": "CMS-0057-F(2024-02-08 연방관보 게재)가 2026-01-01 사전승인 프로세스 요건, 2026-03-31 최초 지표 공개, 2027-01-01 API(프로덕션 4종 FHIR API) 의무화로 이어지는 다단계 시행 일정을 갖는다. ONC(ASTP) HTI-2/HTI-3 규칙은 2024-12-17(HTI-3, Protecting Care Access) 및 2025-01-15(HTI-2, TEFCA)에 이미 발효되어 12개월 창(기준일 2026-08-14 기준 과거 이벤트)을 벗어나지만, TEFCA QHIN 거버넌스·정보차단 예외 등 후속 시행이 진행 중이다. 다만 2025-12-29 연방관보에 HTI-2 계열 후속 제안규칙 중 일부(Patient Engagement, Information Sharing, and Public Health Interoperability)가 철회(withdrawal)된 사실이 확인되어, 해당 조항은 시행되지 않는다. 2026-04-14 게재된 CMS-0062-P(약제 사전승인 확대)는 2026-06-15 의견수렴 마감, 확정 시 2027-10-01 시행 예정이나 아직 최종규칙이 아니다.",
+        "evidence_ids": [
+          1,
+          2,
+          3,
+          6,
+          7
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "budgets_subsidies_orders",
+        "summary": "연방 차원에서 헬스케어IT 섹터에 직접 지급되는 확정 보조금·발주 규모는 찾지 못했다(HITECH식 EHR 인센티브와 같은 신규 지급 프로그램은 미확인). 대신 예산 축소 방향의 확정 입법을 확인: OBBBA(2025-07-04 서명)가 향후 10년간 Medicaid 지출을 약 6,250억 달러 삭감하는 것으로 보도되었고(2차 출처, 수치 원문 대조 미실시), 2026-12부터 확대군 재심사 주기를 6개월로 단축해 커버리지 축소 압력이 커진다. 이는 헬스케어IT 발주처인 병원·보험사의 지불능력에 간접적 하방 압력으로 작용할 수 있는 재정적 맥락이나, industry 자체에 대한 보조금·발주는 아니다.",
+        "evidence_ids": [
+          4
+        ],
+        "not_found": true
+      },
+      {
+        "topic": "trade_measures",
+        "summary": "상무부가 2025-09-26 Section 232(무역확장법 국가안보 조항)에 근거해 PPE·의료소모품·의료기기(주사기, 카테터, 영상장비, 인슐린펌프, 심박조율기 등)에 대한 조사를 개시했으며, 조사 결과 보고서는 개시 후 270일 이내(약 2026-06-23) 제출 기한이고 실제 관세 등 조치는 이르면 2026년 여름 이후로 예상된다는 2차 보도가 있다. 다만 이 조사는 하드웨어(의료기기·소모품) 중심이며, 검색 결과에서 헬스케어IT 소프트웨어·데이터서비스(Sharadar Health Information Services 업종에 해당하는 VEEV·GEHC 소프트웨어사업부·WAY·DOCS 등)를 직접 겨냥한 관세·수출통제·쿼터 조치는 확인하지 못했다.",
+        "evidence_ids": [
+          5
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "customer_capex",
+        "summary": "수요처(병원·헬스시스템)의 2026년 IT capex 가이던스는 방향이 엇갈린다. Sage Growth Partners C-suite 서베이(2차출처)에 따르면 응답자의 41%가 향후 2년 자본투자 축소를 전망하고 20%+ 증가를 기대하는 곳은 5%에 불과했으며, Black Book HCIT 서베이(2차출처)는 CIO의 60%가 플랫폼 업그레이드 일시중단·계약 결제조건 연장·12개월 내 ROI 입증 프로젝트로의 전환을 시행 중이라고 보도했다. 반면 동일 자료에서 사이버보안 예산은 CIO의 84%가 확대 계획(중앙값 약 26% 증가)이며, AI 투자는 EMR 최적화를 제치고 최우선순위로 부상(신규 수익원 관련 우선순위 응답 46%, 2023년 34% 대비 상승)한 것으로 나타났다. 즉 총 capex는 위축 압력이 있으나 사이버보안·AI 항목으로의 예산 재배분이 진행 중이라는 것이 2차 출처의 공통된 진단이다. 원문(설문 데이터) 대조는 하지 못해 reliability는 medium으로 처리했다.",
+        "evidence_ids": [
+          8
+        ],
+        "not_found": false
+      }
+    ],
+    "evidence": [
+      {
+        "id": 1,
+        "claim": "CMS-0057-F는 적용 지불자에게 2026-01-01까지 사전승인 프로세스 요건(긴급 72시간·표준 7일 결정기한 포함)을, 2027-01-01까지 4종 프로덕션 FHIR API(Prior Authorization API 포함) 구축을 요구한다",
+        "source_url": "https://www.cms.gov/initiatives/burden-reduction/overview/interoperability/policies-regulations/cms-interoperability-prior-authorization-final-rule-cms-0057-f",
+        "date": "2024-02-08",
+        "reliability": "high"
+      },
+      {
+        "id": 2,
+        "claim": "CMS-0057-F 적용 지불자는 2025년 데이터 기준 사전승인 지표(승인율·거부율·이의신청 후 승인율·평균 결정소요시간)를 2026-03-31까지 자사 웹사이트에 최초 공개해야 한다",
+        "source_url": "https://myersandstauffer.com/insights/blog-prior-authorization-provisions-implementation-timelines-update/",
+        "date": "2025-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 3,
+        "claim": "CMS-0062-P(2026 CMS 상호운용성 표준·약제 사전승인 제안규칙)는 2026-04-14 연방관보에 게재되었고 공개 의견수렴 마감은 2026-06-15, 확정 시 대부분 조항의 발효일은 2027-10-01로 제안되었다",
+        "source_url": "https://www.federalregister.gov/documents/2026/04/14/2026-07205/medicare-and-medicaid-programs-patient-protection-and-affordable-care-act-interoperability-standards",
+        "date": "2026-04-14",
+        "reliability": "high"
+      },
+      {
+        "id": 4,
+        "claim": "2025-07-04 서명된 OBBBA는 향후 10년간 Medicaid 지출을 약 6,250억 달러 삭감하며, Medicaid 근로요건(월 80시간 커뮤니티 참여)은 2026-12부터 단계적 적용, 전 주(州) 의무화는 2027-01-01(HHS 장관 재량으로 2028-12-31까지 1회 유예 가능)이고, 확대군 재심사 주기는 2026-12부터 6개월로 단축된다",
+        "source_url": "https://www.americanprogress.org/article/when-do-the-one-big-beautiful-bill-acts-health-care-provisions-go-into-effect/",
+        "date": "2025-08-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 5,
+        "claim": "상무부는 2025-09-26 Section 232 조사를 PPE·의료소모품·의료기기(주사기·카테터·인슐린펌프·심박조율기·영상장비 등)에 대해 개시했으며, 보고서 제출 기한은 조사 개시 후 270일 이내이고 실제 조치는 이르면 2026년 여름부터 가능하다는 진단이 있다",
+        "source_url": "https://www.medtechdive.com/news/section-232-tariff-uncertainty-medtech/761224/",
+        "date": "2025-09-29",
+        "reliability": "medium"
+      },
+      {
+        "id": 6,
+        "claim": "CMS-0057-F 관련하여 관리형케어 플랜은 2027-01-01 이후 Prior Authorization API를 반드시 갖춰야 한다",
+        "source_url": "https://fire.ly/blog/cms-0057-f-decoded-must-have-apis-vs-nice-to-have-igs-for-2026-2027/",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 7,
+        "claim": "ASTP/ONC의 HTI-2(TEFCA, 2025-01-15 발효)와 HTI-3(Protecting Care Access, 2024-12-17 발효) 최종규칙이 공개되었으나, 후속 제안규칙 중 일부(Patient Engagement, Information Sharing, and Public Health Interoperability)는 2025-12-29 연방관보에 철회 고시가 게재되었다",
+        "source_url": "https://www.federalregister.gov/documents/2025/12/29/2025-23890/health-data-technology-and-interoperability-patient-engagement-information-sharing-and-public-health",
+        "date": "2025-12-29",
+        "reliability": "high"
+      },
+      {
+        "id": 8,
+        "claim": "Sage Growth Partners 2026-2027 C-suite 서베이에서 응답 병원 경영진의 41%가 향후 2년 자본투자 축소를 예상했고 20%+ 증가 기대는 5%에 그쳤으며, Black Book HCIT 서베이에서는 CIO의 60%가 플랫폼 업그레이드 일시중단 등 지출 억제 조치를 시행 중이나 84%는 사이버보안 예산을 중앙값 약 26% 확대할 계획이라고 보도되었다",
+        "source_url": "https://hitconsultant.net/2026/03/24/sage-growth-partners-health-it-purchasing-forecast-2026-2027-ai-roi/",
+        "date": "2026-03-24",
+        "reliability": "medium"
+      }
+    ]
+  }
+}

@@ -294,8 +294,20 @@ class ModelConfig:
 #: 거기서는 크레딧이 나가지 않으므로 `bear`·`referee` 가 상위 모델을 그대로 쓴다.
 API_CREDIT_ALLOWED_MODELS: tuple[str, ...] = ("claude-haiku-4-5",)
 
-#: 크레딧 경로의 기본 배치. 역할 구분 없이 전부 haiku 다 — 상위/표준 구분은 크레딧을
-#: 쓰지 않는 경로에만 남는다.
+#: 구독 경로(`ClaudeCodeProvider`)의 기본 배치. **역할 구분 없이 전부 sonnet**
+#: (사용자 지시 2026-08-25). 실측에서 `bear`(opus·high) 한 역할이 9분으로 sonnet 역할의
+#: 3배가 걸렸고, 그것이 라운드 전체의 병목이었다 — 뒤의 `referee` 가 앞의 셋을 기다리기
+#: 때문에 병렬로 돌려도 이 시간은 줄지 않는다.
+#: **깊이(effort)는 낮추지 않는다** — `bear`·`referee` 는 여전히 high 다. 바꾼 것은
+#: 모델뿐이고, 판별의 엄격함을 담당하는 것은 게이트와 스키마이지 모델 등급이 아니다.
+SUBSCRIPTION_MODELS = ModelConfig(
+    top="claude-sonnet-5",
+    standard="claude-sonnet-5",
+    effort_top="high",
+    effort_standard="medium",
+)
+
+#: 크레딧 경로의 기본 배치. 역할 구분 없이 전부 haiku 다.
 HAIKU_ONLY = ModelConfig(
     top="claude-haiku-4-5",
     standard="claude-haiku-4-5",

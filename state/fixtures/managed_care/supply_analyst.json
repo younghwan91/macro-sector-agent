@@ -1,0 +1,189 @@
+{
+  "model": "claude-sonnet-5",
+  "provider": "claude_code",
+  "usage": {
+    "input_tokens": 247634,
+    "output_tokens": 9116,
+    "search_queries": 0
+  },
+  "notional_usd": 0.5073605999999999,
+  "output": {
+    "findings": [
+      {
+        "topic": "capacity_and_closures",
+        "summary": "관리의료는 물리적 생산설비가 없는 서비스 산업이라 '가동률' 개념은 적용되지 않는다. 대신 공급 능력의 대용치로 볼 수 있는 것은 (1) Medicare Advantage(MA) 플랜 상품 수와 (2) 서비스 카운티 커버리지다. 2026 플랜연도 기준 전국 개인가입용 MA 플랜은 3,373개로 2025년 대비 9% 감소했다. 지난 3년간 주요 보험사들의 감산(플랜·카운티 축소) 발표: UnitedHealthcare는 2026년 225개 카운티에서 철수(신규 진입은 14개 카운티에 그침, 약 60만 명 영향), Humana는 198개 카운티에서 철수(신규 진입 5개 카운티)했다. 미네소타 UCare, 오리건 Samaritan Health Plans 등 중소형 보험사도 MA 시장에서 완전 철수했다. 원인으로는 노인층의 의료이용량·단가 상승과 워싱턴발 상환정책 압박이 지목된다. ACA 마켓플레이스 쪽에서도 2026년 강화 보조금(ARP/IRA 세제혜택) 종료로 실효 가입자 수 위축이 보고됐다.",
+        "evidence_ids": [
+          1,
+          2,
+          3
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "pipeline_3y",
+        "summary": "향후 3년(2027~2029) '증설' 개념은 신규 MA/ACA 플랜 출시·지역 확대가 유일한 대응 지표다. 확정도가 검증 가능한 것은 2027 플랜연도 CMS 요율뿐이다: CMS는 2027년 최종 요율 발표(2026-04-06)에서 MA 지불액을 2.48%(약 130억 달러) 인상했고, 위험점수 추세를 반영하면 실질 4.98% 인상 효과라고 밝혔다. 이는 2026-01-26 사전공지(Advance Notice)의 사실상 동결(+0.09%) 대비 크게 상향된 것이다. 다만 이 수치는 '공급 확장' 자체가 아니라 보험사가 신규 플랜을 낼지 여부에 영향을 주는 정책 변수이며, 개별 보험사의 2027년 신규 카운티 진입·플랜 출시 계획(각사 6월 입찰서 기준)은 아직 공개되지 않아 프로젝트 단위의 파이프라인 목록은 찾지 못했다.",
+        "evidence_ids": [
+          4,
+          5
+        ],
+        "not_found": true
+      },
+      {
+        "topic": "inventories",
+        "summary": "관리의료는 재화가 아닌 보험/의료관리 서비스업이므로 거래소 재고·유통재고 개념이 존재하지 않는다. 유사 대용치(예: 병상 가동률, 처방약 재고)도 이번 산업 정의(Healthcare Plans) 범위 밖이며 신뢰할 수 있는 공개 시계열을 찾지 못했다. 찾지 못함으로 처리한다.",
+        "evidence_ids": [],
+        "not_found": true
+      },
+      {
+        "topic": "lead_time",
+        "summary": "'신규 공급'에 대응하는 것은 CMS의 연례 MA/Part D 요율·입찰 주기다: 매년 1월 하순 Advance Notice(2027년의 경우 2026-01-26) → 4월 초 최종 요율 발표(2026-04-06) → 6월 보험사 입찰서 제출 및 CMS 심사 → 9월 플랜 승인 → 10~12월 연례 가입기간(AEP) → 익년 1월 시행. 즉 요율 공지부터 신규 가입자 실제 서비스 개시까지 약 9~11개월이 최소 리드타임이며, 신규 카운티 진입이나 신설 보험사(예: 신규 MA 조직) 라이선스 취득까지 포함하면 통상 1~2년 이상 소요된다는 것이 업계 관행이나, 이를 수치로 명시한 1차 출처는 찾지 못했다.",
+        "evidence_ids": [
+          4,
+          5
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "cost_curve",
+        "summary": "채굴·제조업의 P50/P90 현금원가 곡선에 정확히 대응하는 개념은 없지만, 가장 가까운 대용치는 의료손실률(Medical Loss Ratio, MLR/MCR)이다. UnitedHealth는 2026년 2분기 의료비율(MCR) 86.7%(전분기 89.4%에서 하락)를 보고했고 2026년 연간 가이던스는 88.1%±25bp다. 상업보험 부문 의료비 추세(cost trend)는 11%를 소폭 상회했으며, 이는 독립분쟁해결(IDR) 절차와 병원 청구 관행 강도 증가가 요인으로 지목됐다. Medicaid 부문 마진은 -1%~-1.7%로 가장 열위(한계) 상태다. Centene은 ACA 보험료 인상과 의료비 추세 둔화(tapering)로 2026년 ACA 마진 가이던스를 4.5~5%로 상향했다. 즉 '한계 생산자'에 해당하는 것은 Medicaid 사업부(마진 음수)이며, 명시적 '셧다운(사업 철수) 발표'는 capacity_and_closures 항목의 카운티·플랜 철수로 나타난다. 다만 이 지표들은 개별 보험사 재무 보고서에서 나온 것으로, 산업 전체의 P50/P90 원가곡선을 구성할 수 있는 1차 통계는 찾지 못했다.",
+        "evidence_ids": [
+          6,
+          7
+        ],
+        "not_found": true
+      },
+      {
+        "topic": "unit_demand_series",
+        "summary": "물리 단위(가입자 수, 명)로 본 최종 수요 시계열은 CMS 데이터를 요약한 KFF 자료에서 확인된다: Medicare Advantage 가입자 수는 2016년 1,760만 명에서 2026년 2월 기준 3,500만 명 이상으로 10년간 약 2배 증가했으며, 최근 성장률은 둔화 추세(2025년 +4%, 2026년 +3%, 2007~2024년 평균 +9%와 대비)다. 2026년 성장분의 83%는 특수필요플랜(SNP)에서 발생(800만 명, +90만 명 YoY)했다. 다만 개별 연도값은 여러 KFF 기사(발행 시점이 다른 스냅샷)에서 취합한 것으로, CMS 원본 월별 등록 파일과 직접 대조하지 않아 신뢰도는 medium으로 표기한다. 2022년 수치는 검색 결과 간 불일치(한 자료는 1월 기준 2,540만 명으로 2021년 2,760만 명보다 낮게 표기)가 있어 특히 주의가 필요하며, 정확한 값은 CMS Monthly Enrollment by Plan 원자료 대조가 필요하다.",
+        "evidence_ids": [
+          1,
+          8
+        ]
+      }
+    ],
+    "unit_demand_series": {
+      "found": true,
+      "unit": "가입자 수 (명, million enrollees)",
+      "scope": "미국 Medicare Advantage(MA) 가입자, CMS/KFF 집계, 전국 기준, 개인 가입용 플랜(Group/Employer 플랜 일부 제외 가능)",
+      "source": "KFF, \"Medicare Advantage in 2026: Enrollment Update and Key Trends\" 및 관련 연도별 KFF Medicare Advantage Spotlight 시리즈 (원 데이터는 CMS Medicare Advantage/Part D Contract and Enrollment Data)",
+      "years": [
+        [
+          2016,
+          17.6
+        ],
+        [
+          2017,
+          19.1
+        ],
+        [
+          2018,
+          20.5
+        ],
+        [
+          2019,
+          22.1
+        ],
+        [
+          2020,
+          24.1
+        ],
+        [
+          2021,
+          27.6
+        ],
+        [
+          2023,
+          30.4
+        ],
+        [
+          2024,
+          33.0
+        ],
+        [
+          2025,
+          34.1
+        ],
+        [
+          2026,
+          35.2
+        ]
+      ],
+      "evidence_ids": [
+        1,
+        8
+      ]
+    },
+    "evidence": [
+      {
+        "id": 1,
+        "claim": "Medicare Advantage 가입자 수는 2016년 17.6백만 명, 2017년 19.1백만, 2018년 20.5백만, 2019년 22.1백만, 2020년 24.1백만, 2021년 27.6백만, 2023년 30.4백만, 2024년 약 33백만, 2025년 34.1백만 명으로 증가했다 (KFF가 CMS 데이터를 취합한 여러 연도별 스냅샷 기사의 종합, 원문 CMS 파일과 개별 대조는 하지 않음)",
+        "source_url": "https://www.kff.org/medicare/medicare-advantage-in-2026-enrollment-update-and-key-trends/",
+        "date": "2026-08-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 2,
+        "claim": "UnitedHealthcare, Humana, Aetna 등이 2026 플랜연도 Medicare Advantage 서비스지역을 축소; UnitedHealthcare는 225개 카운티에서 철수하고 14개 카운티에만 신규 진입(약 60만 명 영향), Humana는 198개 카운티 철수·5개 신규 진입",
+        "source_url": "https://www.healthcaredive.com/news/medicare-advantage-plans-2026-unitedhealthcare-humana-aetna/801761/",
+        "date": "2025-10-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 3,
+        "claim": "2026 플랜연도 전국 개인가입용 Medicare Advantage 플랜 수는 3,373개로 2025년 대비 9% 감소",
+        "source_url": "https://www.kff.org/medicare/medicare-advantage-2026-spotlight-a-first-look-at-plan-offerings/",
+        "date": "2025-10-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 4,
+        "claim": "CMS는 2027년 최종 요율 발표(2026-04-06)에서 Medicare Advantage 지급액을 2.48%(약 130억 달러) 인상했고, 위험점수 추세 반영 시 실질 4.98% 인상 효과; 2026-01-26 사전공지 당시에는 사실상 동결(+0.09%) 제안이었음",
+        "source_url": "https://www.beckerspayer.com/payer/medicare-advantage/cms-hikes-medicare-advantage-rate-2-48-for-2027-6-notes/",
+        "date": "2026-04-07",
+        "reliability": "medium"
+      },
+      {
+        "id": 5,
+        "claim": "CMS는 2026-01-26에 2027 Medicare Advantage/Part D Advance Notice를 발표했고, 2026-04-06에 최종 Rate Announcement를 발표함 (연례 요율·입찰 주기의 1차 확인)",
+        "source_url": "https://www.cms.gov/newsroom/fact-sheets/2027-medicare-advantage-part-d-rate-announcement",
+        "date": "2026-04-06",
+        "reliability": "high"
+      },
+      {
+        "id": 6,
+        "claim": "UnitedHealth 2026년 2분기 의료비율(Medical Care Ratio) 86.7%(전 분기 89.4%에서 하락), 2026년 연간 가이던스 88.1%±25bp; 상업보험 원가추세 11% 소폭 상회; Medicaid 마진 -1%~-1.7% 예상",
+        "source_url": "https://www.fool.com/earnings/call-transcripts/2026/07/16/unitedhealth-unh-q2-2026-earnings-call-transcript/",
+        "date": "2026-07-16",
+        "reliability": "medium"
+      },
+      {
+        "id": 7,
+        "claim": "Centene은 2026년 2분기 매출 536억 달러(YoY +10%), 순이익 11억 달러 기록, ACA 보험료 인상과 의료비 추세 둔화(tapering)로 2026년 ACA 사업 마진 가이던스를 4.5~5%로 상향",
+        "source_url": "https://www.healthcaredive.com/news/centene-cnc-q2-2026-guidance-hike-aca-medicaid/826286/",
+        "date": "2026-07-25",
+        "reliability": "medium"
+      },
+      {
+        "id": 8,
+        "claim": "2026년 2월 기준 Medicare Advantage 가입자 3,500만 명 이상(전년 대비 +110만 명, +3%), 2026년 성장분의 83%가 특수필요플랜(SNP, 800만 명, +90만 명 YoY)에서 발생; 2026년 전체 Medicare 대비 MA 비중 55%(공지 시점별로 48%로도 보고됨)",
+        "source_url": "https://www.kff.org/medicare/medicare-advantage-in-2026-enrollment-update-and-key-trends/",
+        "date": "2026-08-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 9,
+        "claim": "Medicaid/CHIP 전국 등록자는 2023년 3월 계속가입 조항 종료 시점 9,400만 명 정점 이후 감소; 2024년 10월까지 순감소 1,500만 명(아동 약 500만 명 포함); 2025년 6월 기준 총 7,770만 명으로 2023년 3월 대비 18% 감소",
+        "source_url": "https://www.kff.org/medicaid/medicaid-enrollment-spending-growth-fy-2025-2026/",
+        "date": "2025-10-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 10,
+        "claim": "ARP/IRA의 ACA 보조금 강화 조치가 2025년 말 종료되어, 동일 플랜 유지 시 보조금 수급 가입자의 평균 보험료 납부액이 2025년 888달러에서 2026년 1,904달러로 114% 상승; CBO는 이로 인해 마켓플레이스 가입자 약 25% 감소(약 400만 명) 전망",
+        "source_url": "https://www.kff.org/affordable-care-act/aca-marketplace-enrollment-is-down-in-2026-but-all-of-the-data-isnt-in-yet/",
+        "date": "2026-02-01",
+        "reliability": "medium"
+      }
+    ]
+  }
+}

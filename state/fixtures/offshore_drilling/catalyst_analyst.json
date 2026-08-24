@@ -1,0 +1,249 @@
+{
+  "model": "claude-sonnet-5",
+  "provider": "claude_code",
+  "usage": {
+    "input_tokens": 251545,
+    "output_tokens": 7410,
+    "search_queries": 0
+  },
+  "notional_usd": 0.47207619999999995,
+  "output": {
+    "calendar": [
+      {
+        "date": "2026-08-12",
+        "event": "BOEM Gulf of America(멕시코만) Big Beautiful Gulf 3(BBG3) 임대판매 — One Big Beautiful Bill Act(OBBBA)에 따른 30건 의무 매각 중 3번째, 미개발 블록 약 15,066개(8,040만 에이커) 공고",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          1,
+          2
+        ]
+      },
+      {
+        "date": "2026-2039",
+        "event": "OBBBA 법정 의무: 매년 최소 2회 멕시코만 임대판매(3/15 및 8/15까지) 시행 — 2040년까지 최소 1회 추가",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          2
+        ]
+      },
+      {
+        "date": "2027-2030",
+        "event": "트럼프 행정부 제안: 캘리포니아·플로리다 연안 포함 6회 신규 해상 임대판매(5개년 프로그램)",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          3
+        ]
+      },
+      {
+        "date": "2026-05-05",
+        "event": "노르웨이 에너지부 APA(Awards in Predefined Areas) 2026 라운드 개시 — 북해·노르웨이해·바렌츠해에 신규 탐사 블록 70개 추가",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          9
+        ]
+      },
+      {
+        "date": "2026-09-01",
+        "event": "노르웨이 APA 2026 라운드 신청 마감(Norwegian Offshore Directorate 제출 기한)",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          9
+        ]
+      },
+      {
+        "date": "2027-Q1",
+        "event": "노르웨이 APA 2026 생산 라이선스 발급(수여) 예정",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          9
+        ]
+      },
+      {
+        "date": "2026-03-05",
+        "event": "트럼프 행정부, 국방물자생산법(Defense Production Act, 1950년 냉전시대 법) 활용해 Sable Offshore의 캘리포니아 산타바바라 해상 시추·파이프라인 재가동 연방 긴급명령 추진",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          10,
+          11
+        ]
+      },
+      {
+        "date": "2026-06-07",
+        "event": "OPEC+ 장관급 회의 — 2026년 그룹 전체 산유량 쿼터 유지 결정, 2027년부터 쿼터 산정에 쓸 회원국 최대 생산능력 평가 메커니즘 합의",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          4
+        ]
+      },
+      {
+        "date": "2026-08-02",
+        "event": "OPEC+, 2026년 마지막 산유량 쿼터 인상안 승인",
+        "kind": "policy_calendar",
+        "evidence_ids": [
+          4
+        ]
+      },
+      {
+        "date": "2026-04-06",
+        "event": "미국 Section 232 철강·알루미늄·구리 관세 개편안 발효(2026-04-02 포고) — 파생제품 25%, 금속제품 50% 추가 관세, 특정 금속집약 산업장비는 2027-12-31까지 15% 혼합 최소관세 적용",
+        "kind": "trade_measures",
+        "evidence_ids": [
+          12
+        ]
+      }
+    ],
+    "findings": [
+      {
+        "topic": "policy_calendar",
+        "summary": "향후 12개월 핵심 이벤트: (1) 2026-08-12 BOEM 멕시코만 BBG3 임대판매(OBBBA 의무 30건 중 3번째, 법정 스케줄상 2026~2039년 매년 최소 2회 시행 의무), (2) 2026-05-05 개시·2026-09-01 마감·2027-Q1 발급 예정인 노르웨이 APA 2026 탐사 라이선스 라운드(신규 블록 70개), (3) 2026-03-05 트럼프 행정부의 국방물자생산법을 통한 Sable Offshore 캘리포니아 해상시추 재가동 긴급명령 — 캘리포니아 주정부와 소송 중이나 연방판사가 재가동 유지 인용, (4) 트럼프 행정부의 캘리포니아·플로리다 연안 포함 2027~2030년 6회 해상 임대판매 제안. 이 중 BBG3, APA 2026, Sable 사안은 1차 출처(연방관보·정부 발표·법원 판단 보도)로 확인됨.",
+        "evidence_ids": [
+          1,
+          2,
+          3,
+          9,
+          10,
+          11
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "budgets_subsidies_orders",
+        "summary": "확정된 정부 보조금·예산 편성은 확인되지 않음(not found). 다만 발주처(오퍼레이터) 확정 투자계획으로 페트로브라스가 2026~2030년 5개년 총 1,090억달러 capex(이 중 탐사·생산 부문에 780억달러, 71.6% 배분) 사업계획을 이사회 승인했으며, 신규 해상생산설비(FPSO) 8기 신규 착공 및 100개 신규 유정 시추, 노후설비 18개 플랫폼 철거(97억달러)를 포함한다고 공시함. OBBBA 법 자체는 임대판매 일정을 의무화하나 시추업체향 직접 보조금 규모는 확인되지 않음.",
+        "evidence_ids": [
+          5,
+          6
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "trade_measures",
+        "summary": "(1) 대러시아 제재: 미국은 러시아 에너지부문 대상 탐사·시추·완결·생산·정유 관련 서비스 제공을 제재 대상으로 지정했으며, 2025년 6월 하원 통과된 Ukraine Support Act(H.R.2913)는 대러 수출통제 강화 및 러시아 석유·가스·석탄·광물 채굴·정제 관련 기업 전반에 대한 추가 제재를 담고 있음(입법 진행 상황은 원문 대조 필요, 2026-08 기준 상원 통과 여부는 확인하지 못함). (2) 관세: 2026-04-06 발효된 Section 232 철강·알루미늄·구리 관세 개편으로 파생제품 25%, 순수 금속제품 50% 관세가 부과되며 일부 금속집약 산업장비는 2027년말까지 15% 혼합 최소관세를 적용받음 — 해상 시추설비(리그·파이프 등) 특정 품목의 면제 여부(Annex II)는 원문 세부 대조가 필요해 확정하지 못함. (3) 미국의 캘리포니아 해상시추 재가동 관련 연방-주 관할권 충돌은 무역조치라기보다 연방 긴급명령이나, 공급측 정책조치로서 policy_calendar에도 중복 기재함.",
+        "evidence_ids": [
+          13,
+          14,
+          12
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "customer_capex",
+        "summary": "확인된 발주처(오일메이저·국영석유사) capex/리그 수요 가이던스: (1) 페트로브라스 2026~2030년 총 1,090억달러 투자계획(2025-11 저유가로 하향조정 후 확정), 부이오스(Búzios)·세피아2(Sépia 2)·아타푸2(Atapu 2) 등 신규 FPSO 프로젝트로 2028년까지 원유생산 2.7백만b/d 정점 목표. (2) 사우디 아람코는 2026년 초 정지됐던 잭업리그 중 최소 6~9기(자료에 따라 8~10~15기 범위로 보도 편차 있음)를 재가동 예정이라고 업계지가 보도했으나, 아람코의 공식 2026 capex 가이던스 수치 원문은 검색에서 확인하지 못함(not found 처리). (3) 엑슨모빌은 가이아나 스타브룩 블록에서 2028~2033년 35개 유정 탐사·평가 시추 프로그램을 규제당국에 제안했다고 보도됐으나 이는 규제 승인 대기 단계이며 확정 capex 금액은 확인하지 못함.",
+        "evidence_ids": [
+          5,
+          6,
+          15,
+          7,
+          8
+        ],
+        "not_found": false
+      }
+    ],
+    "evidence": [
+      {
+        "id": 1,
+        "claim": "BOEM이 2026-08-12 멕시코만(Gulf of America) BBG3 임대판매를 시행하며 미개발 블록 약 15,066개(8,040만 에이커)를 공고함 — OBBBA 의무 30건 매각 중 3번째",
+        "source_url": "https://www.federalregister.gov/documents/2026/07/08/2026-13779/gulf-of-america-outer-continental-shelf-oil-and-gas-one-big-beautiful-bill-act-lease-sale-3",
+        "date": "2026-07-08",
+        "reliability": "high"
+      },
+      {
+        "id": 2,
+        "claim": "One Big Beautiful Bill Act은 2026~2039년 매년 최소 2회(3/15, 8/15까지) 멕시코만 임대판매를 법정 의무화, 2040년까지 최소 1회 추가",
+        "source_url": "https://www.boem.gov/oil-gas-energy/national-program/obbba-oil-and-gas-leasing-program",
+        "date": "2026-07-08",
+        "reliability": "high"
+      },
+      {
+        "id": 3,
+        "claim": "트럼프 행정부가 2027~2030년 캘리포니아·플로리다 연안 포함 6회 해상 임대판매를 제안",
+        "source_url": "https://www.pbs.org/newshour/politics/trump-administration-proposes-new-oil-drilling-off-the-coasts-of-california-and-florida",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 4,
+        "claim": "OPEC+가 2026-06-07 회의에서 2026년 그룹 산유량 쿼터를 유지하고 2027년 쿼터 산정을 위한 최대생산능력 평가 메커니즘에 합의, 2026-08-02 마지막 쿼터 인상안 승인",
+        "source_url": "https://www.cnbc.com/2026/06/07/opec-set-for-fourth-oil-quota-hike-since-strait-of-hormuz-closure.html",
+        "date": "2026-06-07",
+        "reliability": "medium"
+      },
+      {
+        "id": 5,
+        "claim": "페트로브라스 이사회가 2026~2030년 5개년 총 1,090억달러 투자계획을 승인, 탐사·생산 부문에 780억달러(71.6%) 배분",
+        "source_url": "https://agencia.petrobras.com.br/en/w/negocio/petrobras-aprova-plano-de-neg%C3%B3cios-2026-2030",
+        "date": "2026-08-20",
+        "reliability": "high"
+      },
+      {
+        "id": 6,
+        "claim": "페트로브라스 계획에 신규 FPSO 8기, 신규 유정 100개 시추, 노후 플랫폼 18개 철거(97억달러) 포함, 원유생산 2028년 2.7백만b/d 정점 목표",
+        "source_url": "https://www.bnamericas.com/en/analysis/how-will-petrobras-u109bn-capex-be-distributed-in-202630",
+        "date": "2026-08-20",
+        "reliability": "medium"
+      },
+      {
+        "id": 7,
+        "claim": "엑슨모빌이 가이아나 스타브룩 블록에서 2028~2033년 35개 유정 탐사·평가 시추 프로그램을 규제당국에 제안(규제승인 대기)",
+        "source_url": "https://brazilenergyinsight.com/2026/06/16/exxonmobil-returns-to-barreleye-as-stabroek-exploration-campaign-continues-offshore-guyana/",
+        "date": "2026-06-16",
+        "reliability": "medium"
+      },
+      {
+        "id": 8,
+        "claim": "가이아나 국가 산유량이 현재 900,000b/d를 상회, 스타브룩 블록은 엑슨모빌(45%)·헤스(30%)·CNOOC(25%) 지분 운영",
+        "source_url": "https://energycapitalandpower.africa-newsroom.com/press/beyond-stabroek-guyanas-offshore-basin-attracts-new-wave-of-exploration-investment?lang=en",
+        "date": "2026-06-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 9,
+        "claim": "노르웨이 에너지부가 2026-05-05 APA 2026 라운드를 개시, 북해·노르웨이해·바렌츠해에 신규 탐사블록 70개 추가, 신청 마감 2026-09-01, 라이선스 발급 2027-Q1 예정",
+        "source_url": "https://www.regjeringen.no/en/whats-new/announcement-of-apa-2026/id3158497/",
+        "date": "2026-05-05",
+        "reliability": "high"
+      },
+      {
+        "id": 10,
+        "claim": "트럼프 행정부가 국방물자생산법(1950년)을 활용해 Sable Offshore Corp의 캘리포니아 산타바바라 해상시추·파이프라인 재가동을 허용하는 연방 긴급명령을 추진",
+        "source_url": "https://www.notus.org/energy/trump-step-emergency-powers-offshore-drilling",
+        "date": "2026-01-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 11,
+        "claim": "연방판사가 에너지부 장관의 긴급 재가동 명령을 인용, 캘리포니아 주정부의 집행중지 요청을 기각 — Sable은 Platform Harmony에서 일산 약 22,000배럴 생산 중이며 셰브론에 원유 판매",
+        "source_url": "https://news.bgov.com/environment-and-energy/sable-pipeline-restart-to-proceed-judge-upholds-emergency-order",
+        "date": "2026-03-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 12,
+        "claim": "2026-04-02 포고로 Section 232 철강·알루미늄·구리 관세가 개편되어 2026-04-06부터 발효 — 파생제품 25%, 순수 금속제품 50%, 일부 금속집약 산업장비는 2027-12-31까지 15% 혼합 최소관세 적용",
+        "source_url": "https://perkinscoie.com/insights/update/restructured-and-additional-section-232-tariffs-aluminum-steel-and-copper",
+        "date": "2026-04-02",
+        "reliability": "medium"
+      },
+      {
+        "id": 13,
+        "claim": "미국이 러시아 에너지부문 대상 탐사·시추·완결·생산·정유 관련 서비스 제공을 제재 대상으로 지정, Denkars·Energy of Oil and Gas Service LLC 등 시추리그 유지보수·유정건설 서비스 기업 제재",
+        "source_url": "https://www.atlanticcouncil.org/energy-sanctions-dashboard/",
+        "date": "2026-02-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 14,
+        "claim": "2025-06 미 하원이 Ukraine Support Act(H.R.2913)를 통과시켜 대러 수출통제 강화 및 러시아 석유·가스·석탄·광물 채굴·정제기업 전반에 대한 추가 제재 조항을 포함 — 상원 처리 상황은 확인 못함",
+        "source_url": "https://sanctionsnews.bakermckenzie.com/u-s-house-passes-ukraine-support-act-advancing-additional-russia-related-sanctions-and-trade-measures/",
+        "date": "2026-02-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 15,
+        "claim": "사우디 아람코가 2026년 초 정지됐던 잭업리그 중 6~9기(일부 보도는 8~10기)를 재가동할 예정이라고 업계지가 보도, 2026년 계약수요 약 175기로 회복 전망",
+        "source_url": "https://www.worldoil.com/magazine/2026/february/special-focus-2026-forecast-review/middle-east-jackup-fleet-continues-to-shrink-following-saudi-suspensions/",
+        "date": "2026-02-01",
+        "reliability": "medium"
+      }
+    ]
+  }
+}

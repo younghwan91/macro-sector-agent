@@ -1,0 +1,177 @@
+{
+  "model": "claude-sonnet-5",
+  "provider": "claude_code",
+  "usage": {
+    "input_tokens": 390717,
+    "output_tokens": 11557,
+    "search_queries": 0
+  },
+  "notional_usd": 0.7644312,
+  "output": {
+    "findings": [
+      {
+        "topic": "capacity_and_closures",
+        "summary": "테마 자체(주택개량 소매)는 순확장 국면 — HD 는 2025년 12개, 2026년 12개 신규점 오픈(폐점 발표 없음), LOW 는 2024~2025년 대규모 영구 폐점 발표를 찾지 못함(정기 부활절 임시휴무만 확인). 반면 상류 원자재(북미 침엽수 제재)는 감산 중: West Fraser 가 2025-11-06 에 Augusta(GA)·100 Mile House(BC) 영구 폐쇄(합산 300 MMBF), 2024년 비확정 감산이었던 Huttig(AR)·Lake Butler(FL) 를 영구화 — 사유는 수요 부진·관세/듀티·원목 조달난.",
+        "evidence_ids": [
+          1,
+          2,
+          3,
+          4
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "pipeline_3y",
+        "summary": "확정 파이프라인은 FY2026 1년치만 확인됨: HD 2026년 8개주 12개 신규점(1.6백만 sqft, 확정·위치 공개), SRS Distribution 브랜치 40~50개 추가 오픈 계획(FY2026), FY2026 capex 가이던스 매출 대비 약 2.5%(FY2025 약 2.2%에서 상향). 2027~2028년까지 이어지는 3개년 단위 프로젝트별 파이프라인(규모·시점·FID)은 검색으로 확인하지 못함 — 1년 이상 구간은 not_found 에 준함.",
+        "evidence_ids": [
+          1,
+          5
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "inventories",
+        "summary": "Census/FRED 건자재·원예용품 소매업 재고(계절조정): 2025-12 약 $86,497백만, 2026-01 약 $87,582백만. 역사적 백분위(historical percentile) 순위는 산출된 자료를 찾지 못함 — 절대 수준만 확인.",
+        "evidence_ids": [
+          6
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "lead_time",
+        "summary": "이 테마는 소매업으로 광산·fab 성격의 '신규 공급 리드타임' 개념이 직접 적용되지 않음. 대신 신규 매장 공급(리드타임 대용)으로 보면: 대형 박스 매장은 인허가 4~12주 + 착공~오픈까지 대형 포맷 기준 최대 8~12개월(업계 블로그, 낮은 신뢰도), 실제 사례로 HD 플로리다 Lake Nona 매장은 착공부터 오픈까지 약 2년 소요(현지 보도). 표준화된 1차 출처 통계는 없음.",
+        "evidence_ids": [
+          7,
+          8
+        ],
+        "not_found": false
+      },
+      {
+        "topic": "cost_curve",
+        "summary": "소매업 특성상 P50/P90 현금원가 곡선 개념 자체가 성립하지 않아 해당 데이터를 찾지 못함. 가장 근접한 상류 신호는 West Fraser 의 한계 제재소 폐쇄 발표(수요 부진·관세·원목 조달난을 사유로 명시, 2025-11-06)이며, 수요측 원가 압력으로는 NAHB RMI 2026년 2분기: 리모델러의 74%가 2026-03 이후 공급자 자재가 인상을 보고, 평균 6.7% 인상 — 이는 원가곡선이 아닌 정성적 신호에 불과함.",
+        "evidence_ids": [
+          3,
+          9
+        ],
+        "not_found": true
+      },
+      {
+        "topic": "unit_demand_series",
+        "summary": "매출이 아닌 물리 단위(주택 매매 건수, 착공 호수)로 최소 10년 연간 시계열을 1차 출처로 검증하려 했으나 실패. 확보한 것은 단편적 수치뿐: 기존주택 매매 2021년 연 612만 건(2차 출처, 원문 대조 못함), 2025~2026년 월간 SAAR(예: 2026-07 전월비 -1.7%, 2026-06 전월비 -2.4%, NAR 공식 발표); 신규주택 착공은 집계 사이트마다 2024년 수치가 상충(1,367천 vs 1,471천으로 출처 간 불일치)하여 신뢰할 수 없음. 10개년 연속 연간 시계열은 구성하지 못했으므로 found=false 로 보고.",
+        "evidence_ids": [
+          10,
+          11,
+          12,
+          13
+        ],
+        "not_found": true
+      }
+    ],
+    "unit_demand_series": {
+      "found": false,
+      "unit": "건 (기존주택 매매) / 호 (신규주택 착공) — 두 후보 단위 모두 10년 연속 시계열을 1차 출처로 검증하지 못함",
+      "scope": "미국 전역, 주거용",
+      "source": "NAR(기존주택 매매, globenewswire 배포 공식 보도자료) 및 여러 2차 집계 사이트(Census 착공 통계 재인용) — 사이트 간 수치 불일치로 신뢰 불가",
+      "years": [],
+      "evidence_ids": [
+        10,
+        11,
+        12,
+        13
+      ]
+    },
+    "evidence": [
+      {
+        "id": 1,
+        "claim": "Home Depot는 2026년 8개 주에 신규 매장 12개를 오픈하며 총 160만 sqft 이상 추가 — 매장별 위치·오픈 시기(봄/여름/가을 2026) 확정 발표",
+        "source_url": "https://corporate.homedepot.com/news/company/home-depot-adds-12-new-stores-across-eight-states-its-us-footprint",
+        "date": "2026-03-17",
+        "reliability": "high"
+      },
+      {
+        "id": 2,
+        "claim": "Lowe's는 2024~2025년 영구 매장 폐쇄를 발표하지 않았다는 취지의 언론 종합 — 부활절 임시 1일 휴무만 확인, 대규모 폐점 리스트는 확인되지 않음",
+        "source_url": "https://finance.yahoo.com/news/lowe-stores-closing-yes-only-130000154.html",
+        "date": "2025-04-01",
+        "reliability": "low"
+      },
+      {
+        "id": 3,
+        "claim": "West Fraser는 2025-11-06 자로 Augusta(GA)·100 Mile House(BC) 제재소를 연내 영구 폐쇄(합산 300 MMBF 감산, 약 295명 고용 영향), 2024년 비확정 감산이던 Huttig(AR)·Lake Butler(FL)도 영구화 — 사유는 수요 부진, 관세·듀티, 원목 조달난",
+        "source_url": "https://www.westfraser.com/investors/news/news-releases/west-fraser-reduces-lumber-capacity",
+        "date": "2025-11-06",
+        "reliability": "high"
+      },
+      {
+        "id": 4,
+        "claim": "West Fraser 100 Mile House 폐쇄는 경제적으로 타당한 원목 물량 확보 실패, 수요 부진·관세·듀티 심화가 복합 원인이라는 보충 보도",
+        "source_url": "https://www.woodworkingnetwork.com/news/woodworking-industry-news/west-fraser-closes-us-canadian-mills",
+        "date": "2025-11-06",
+        "reliability": "medium"
+      },
+      {
+        "id": 5,
+        "claim": "Home Depot는 FY2026 중 SRS Distribution 지점 40~50개를 추가 오픈할 계획이며 FY2026 capex 가이던스는 매출 대비 약 2.5%(FY2025 약 2.2%에서 상향)",
+        "source_url": "https://distributionstrategy.com/2026/08/home-depot-connects-srs-gms-to-broader-pro-growth-strategy/",
+        "date": "2026-08-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 6,
+        "claim": "미국 건자재·원예용품 소매업 재고(계절조정, Census MRTSIM444USN 시리즈): 2025-12 약 $86,497백만, 2026-01 약 $87,582백만",
+        "source_url": "https://fred.stlouisfed.org/series/MRTSIM444USN",
+        "date": "2026-02-01",
+        "reliability": "medium"
+      },
+      {
+        "id": 7,
+        "claim": "대형 박스형 소매 매장의 일반적 인허가 소요기간은 소도시 4~8주, 대도시 8~12주 이상이며 착공~오픈은 중형 몇 개월~최대 대형 포맷 8~12개월",
+        "source_url": "https://www.rolloutiq.com/blog/retail-rollout-timeline",
+        "date": "2024-01-01",
+        "reliability": "low"
+      },
+      {
+        "id": 8,
+        "claim": "Home Depot 플로리다 Lake Nona West 매장은 약 2년간의 건설 끝에 2026년 5월 오픈",
+        "source_url": "https://www.growthspotter.com/2026/08/19/lake-nona-could-finally-get-its-first-home-depot/",
+        "date": "2026-08-19",
+        "reliability": "medium"
+      },
+      {
+        "id": 9,
+        "claim": "NAHB 리모델링시장지수(RMI) 2026년 2분기 61(현재상황지수 70, 향후지표지수 52); 응답 리모델러의 74%가 2026년 3월 이후 공급자 자재가 인상을 보고했으며 평균 인상률 6.7%",
+        "source_url": "https://www.nahb.org/news-and-economics/press-releases/2026/07/remodeling-market-sentiment-remains-in-positive-territory-in-second-quarter",
+        "date": "2026-07-01",
+        "reliability": "high"
+      },
+      {
+        "id": 10,
+        "claim": "Harvard JCHS LIRA: 2026년 초 리모델링 지출 전년비 성장률 2.9%에서 연말 1.6%로 둔화 전망, 2026년 말 기준 연간 자가주택 개보수 지출 총 $518B 전망",
+        "source_url": "https://www.jchs.harvard.edu/press-releases/remodeling-growth-set-downshift-late-2026",
+        "date": "2026-01-01",
+        "reliability": "high"
+      },
+      {
+        "id": 11,
+        "claim": "NAR 공식 발표: 2026년 7월 기존주택 매매(계절조정연율)는 전월비 1.7% 감소",
+        "source_url": "https://www.globenewswire.com/news-release/2026/08/11/3342871/0/en/nar-existing-home-sales-report-shows-1-7-decrease-in-july.html",
+        "date": "2026-08-11",
+        "reliability": "high"
+      },
+      {
+        "id": 12,
+        "claim": "NAR 공식 발표: 2026년 6월 기존주택 매매(계절조정연율)는 전월비 2.4% 감소",
+        "source_url": "https://www.globenewswire.com/news-release/2026/07/09/3324917/0/en/nar-existing-home-sales-report-shows-2-4-decrease-in-june.html",
+        "date": "2026-07-09",
+        "reliability": "high"
+      },
+      {
+        "id": 13,
+        "claim": "신규주택 착공 연간 총계 추정치(2차 집계, 출처 간 불일치 확인): 2023년 약 142.0만 호, 2024년 약 136.7만 호(또는 다른 출처 147.1만 호로 상충), 2025년 약 135.7만 호 — 원문 Census 표와 대조하지 못해 신뢰도 낮음",
+        "source_url": "https://ipropertymanagement.com/research/housing-starts",
+        "date": "2026-01-01",
+        "reliability": "low"
+      }
+    ]
+  }
+}

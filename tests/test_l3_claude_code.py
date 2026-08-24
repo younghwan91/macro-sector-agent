@@ -129,8 +129,8 @@ def test_argv_opens_search_and_closes_mutation(
     for t in ("Bash", "Edit", "Write"):
         assert t in denied
     assert argv[argv.index("--append-system-prompt") + 1] == "너는 반대 의견을 낸다"
-    # bear 는 상위 모델·high effort (docs/05 §5)
-    assert argv[argv.index("--model") + 1] == "claude-opus-5"
+    # 구독 경로는 역할 구분 없이 sonnet — 다만 bear 의 깊이(effort)는 high 로 남는다
+    assert argv[argv.index("--model") + 1] == "claude-sonnet-5"
     assert argv[argv.index("--effort") + 1] == "high"
 
 
@@ -253,10 +253,27 @@ def test_make_provider_accepts_the_alias(monkeypatch: pytest.MonkeyPatch) -> Non
 # ---------------------------------------------------------------- 크레딧 정책
 
 
-def test_subscription_path_keeps_the_role_model_split(
+def test_subscription_path_is_sonnet_for_every_role(
     monkeypatch: pytest.MonkeyPatch, req: CompletionRequest
 ) -> None:
-    """구독 경로에는 haiku 제한이 없다 — 크레딧이 나가지 않으므로 bear 가 상위 모델을 쓴다."""
+    """구독 경로는 전부 sonnet (2026-08-25 지시) — 모델은 낮추되 깊이는 낮추지 않는다.
+
+    실측 근거: `bear`(opus·high)가 9분으로 sonnet 역할의 3배였고, `referee` 가 그것을
+    기다리므로 병렬로 돌려도 라운드 시간이 줄지 않았다.
+    """
+    monkeypatch.delenv("MSA_L3_MODEL_TOP", raising=False)
+    monkeypatch.delenv("MSA_L3_MODEL_STANDARD", raising=False)
+    prov, rec = _provider(monkeypatch, [_envelope('{"verdict":"x","evidence":[]}')])
+    prov.complete(req)
+    argv = rec.calls[0]["argv"]
+    assert argv[argv.index("--model") + 1] == "claude-sonnet-5"
+    assert argv[argv.index("--effort") + 1] == "high"
+
+
+def test_env_override_still_wins_on_the_subscription_path(
+    monkeypatch: pytest.MonkeyPatch, req: CompletionRequest
+) -> None:
+    monkeypatch.setenv("MSA_L3_MODEL_TOP", "claude-opus-5")
     prov, rec = _provider(monkeypatch, [_envelope('{"verdict":"x","evidence":[]}')])
     prov.complete(req)
     argv = rec.calls[0]["argv"]
