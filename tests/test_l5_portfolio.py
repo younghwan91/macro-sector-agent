@@ -25,7 +25,7 @@ from msa.l5.inputs import (
 )
 from msa.l5.optimize import Problem, compress_confidence, solve
 from msa.l5.plan import render_plan
-from msa.l5.run import PortfolioInputs, build_portfolio, write_outputs
+from msa.l5.run import PortfolioInputs, PortfolioResult, build_portfolio, write_outputs
 from msa.themes import ThemeSet, load_themes
 
 REPO = Path(__file__).resolve().parents[1]
@@ -752,3 +752,112 @@ def test_portfolio_inputs_themes_sorted(tmp_path: Path) -> None:
     _write_inputs(tmp_path)
     pi: PortfolioInputs = load_inputs(tmp_path, cases_path=None)
     assert pi.themes() == ["coal", "grid_equipment", "uranium"]
+
+
+# ------------------------------------------- Tier-2 두 규칙 · 표시와 파일의 짝 (회귀)
+#
+# 스탑 가격은 틀리면 안 되는 자리다. `docs/07` §4 는 Tier-2 를 "평단 −35%, 또는 포지션 손실이
+# 총자본의 8% — 둘 중 **먼저 오는 쪽**" 으로 선언했다. 계획서·CSV 가 **적용된 규칙의 가격과
+# 하락률을 같은 짝으로** 찍는지 두 케이스 모두에서 잰다.
+#   · w=0.16 → 자본 규칙은 평단 −50% 라 더 멀다 → 평단 −35% 가 유효 (초기가 −40.5%)
+#   · w=0.30 → 자본 규칙은 평단 −26.7% 라 더 가깝다 → 자본 8% 가 유효 (초기가 −32.9%)
+
+
+def _tier2_plans() -> tuple[ladders.PositionPlan, ladders.PositionPlan]:
+    th = _thesis("uranium", 0.65)  # 50/30/20 → 완납 평단 0.9150
+    avg_case = ladders.build_position_plan(
+        Pick(theme="uranium", ticker="CCJ", role="anchor", entry_price=100.0),
+        th,
+        target_weight=0.16,
+        asof=ASOF,
+    )
+    cap_case = ladders.build_position_plan(
+        Pick(theme="uranium", ticker="UEC", role="torque", entry_price=100.0),
+        th,
+        target_weight=0.30,
+        asof=ASOF,
+    )
+    return avg_case, cap_case
+
+
+def test_tier2_effective_pairs_price_and_drawdown_in_both_cases() -> None:
+    avg_case, cap_case = _tier2_plans()
+
+    # (1) 평단 규칙이 이기는 쪽 — 문서 §4 표의 −40.5% 그대로
+    assert avg_case.tier2_rule == ladders.TIER2_RULE_AVG
+    assert avg_case.tier2_effective_price == pytest.approx(59.475)
+    assert avg_case.tier2_effective_vs_initial == pytest.approx(-0.405, abs=5e-4)
+    assert avg_case.tier2_capital_rule_price == pytest.approx(45.75)  # 평단 −50%, 더 멀다
+
+    # (2) 자본 규칙이 이기는 쪽 — 가격과 하락률이 **자본 규칙 한 쌍**이어야 한다
+    assert cap_case.tier2_rule == ladders.TIER2_RULE_CAPITAL
+    assert cap_case.tier2_effective_price == pytest.approx(91.5 * (1 - 0.08 / 0.30))
+    assert cap_case.tier2_effective_price == pytest.approx(67.10, abs=0.01)
+    assert cap_case.tier2_effective_vs_initial == pytest.approx(-0.329, abs=5e-4)
+    # 진 규칙(평단 −35% = 초기가 −40.5%)은 참고로만 남는다 — 유효 하락률이 아니다
+    assert cap_case.tier2_price == pytest.approx(59.475)
+    assert cap_case.tier2_vs_initial == pytest.approx(-0.405, abs=5e-4)
+
+    # 유효가와 유효 하락률은 언제나 같은 규칙을 가리킨다 (가격 = 초기가 × (1 + 하락률))
+    for p in (avg_case, cap_case):
+        assert p.entry_price is not None
+        assert p.tier2_effective_price == pytest.approx(
+            p.entry_price * (1 + p.tier2_effective_vs_initial)
+        )
+        assert p.r_unit == pytest.approx(p.entry_price - p.tier2_effective_price)
+
+    # 임계는 옮기지 않았다
+    assert ladders.TIER2_FROM_AVG == 0.35 and ladders.TIER2_CAPITAL_LOSS == 0.08
+
+
+def test_plan_tier2_line_names_the_applied_rule() -> None:
+    """계획서 문구 — 규칙 이름·가격·하락률이 서로 어긋나면 실패한다."""
+    from msa.l5.plan import _position_block
+
+    avg_case, cap_case = _tier2_plans()
+    avg_line = next(ln for ln in _position_block(avg_case) if "Tier2" in ln)
+    cap_line = next(ln for ln in _position_block(cap_case) if "Tier2" in ln)
+
+    assert "Tier2  $59.48 (평단 −35% = 초기가 −40.5%)" in avg_line
+    assert "자본 8% 규칙" not in avg_line  # 진 규칙을 굳이 끌고 오지 않는다
+    assert "Tier2  $67.10 (자본 8% 규칙이 먼저 = 초기가 −32.9%" in cap_line
+    assert "평단 −35% 는 $59.48 = 초기가 −40.5% 로 더 멀다" in cap_line
+    # 옛 버그: 자본 규칙 가격에 평단 규칙 하락률을 붙여 찍었다
+    assert "$67.10 (평단 −35% = 초기가 −40.5%" not in cap_line
+
+
+def test_weights_csv_tier2_columns_are_one_pair(tmp_path: Path) -> None:
+    """`weights.csv` 의 tier2_price·tier2_vs_initial·tier2_rule 이 한 규칙에서 나온다."""
+    avg_case, cap_case = _tier2_plans()
+    res = PortfolioResult(
+        asof=ASOF,
+        inputs_dir="",
+        theme_rows=(),
+        positions=(avg_case, cap_case),
+        solution=None,
+        cov=None,
+        enb=None,
+        lam=0.3,
+        mu_method="(a) 균등",
+        mdd_budget=0.30,
+        k=2.2,
+        anchor_share=None,
+        warnings=(),
+        axis1_universe=(0, 1),
+    )
+    write_outputs(res, tmp_path / "out")
+    rows = {
+        str(r["ticker"]): r
+        for r in pd.read_csv(tmp_path / "out" / "weights.csv").to_dict("records")
+    }
+    assert rows["CCJ"]["tier2_rule"] == "avg−35%"
+    assert float(rows["CCJ"]["tier2_price"]) == pytest.approx(59.475, abs=1e-3)
+    assert float(rows["CCJ"]["tier2_vs_initial"]) == pytest.approx(-0.405, abs=5e-4)
+    assert rows["UEC"]["tier2_rule"] == "capital 8%"
+    assert float(rows["UEC"]["tier2_price"]) == pytest.approx(67.10, abs=0.01)
+    assert float(rows["UEC"]["tier2_vs_initial"]) == pytest.approx(-0.329, abs=5e-4)
+    # 짝이 맞는가 — 진입 100 기준 (CSV 는 하락률을 소수 4자리로 적는다 → 가격 오차 0.01 안)
+    for r in rows.values():
+        assert float(r["tier2_price"]) == pytest.approx(
+            float(r["entry_price"]) * (1 + float(r["tier2_vs_initial"])), abs=0.01
+        )

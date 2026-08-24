@@ -7,8 +7,9 @@
 확실히 권유다.
 
 배달: 텔레그램은 `MSA_TELEGRAM_TOKEN` · `MSA_TELEGRAM_CHAT_ID` 가 **둘 다** 있을 때만 보낸다.
-없으면 "not configured" 로 보고한다. 어느 경우든 `state/checks/<date>/alerts.json` 에 남는다 —
-텔레그램은 배달 수단이고 기록은 파일이다.
+없으면 "not configured" 로 보고한다. 호출자가 발신을 끄면(`send=False` — `msa check --no-send`,
+`msa run daily` 를 `--send` 없이) `suppressed` 다. 어느 경우든 `state/checks/<date>/alerts.json` 에
+남는다 — 텔레그램은 배달 수단이고 기록은 파일이다.
 """
 
 from __future__ import annotations
@@ -152,7 +153,10 @@ def format_alert(a: Alert) -> str:
     elif a.kind is AlertKind.DAILY_DIGEST:
         head = f"[일간 후보 다이제스트] {f.get('asof')}"
         news = f.get("new_items") or []
-        L = ["오늘 새로 올라온 것:"]
+        # 파일(digest.md)이 머리·꼬리에 두 번 적는 고지를 알림도 적는다 — 본문이 종합·S/T/M·
+        # 스코어보드 순위를 나열하므로, 알림만 보는 사람이 그것을 선정 규칙으로 읽으면 안 된다
+        L = [str(f.get("honesty") or ""), ""] if f.get("honesty") else []
+        L += ["오늘 새로 올라온 것:"]
         L += [f"  - {x}" for x in news] if news else ["  (없음)"]
         omitted = int(f.get("omitted") or 0)
         if omitted:  # 조용한 절단 금지 — 자른 개수를 적는다 (CLAUDE.md §2)
@@ -170,6 +174,15 @@ def format_alert(a: Alert) -> str:
         t_om = int(f.get("themes_omitted") or 0)
         if t_om:
             L.append(f"  … 외 테마 {t_om}개 (전문: {f.get('path', 'state/daily/')})")
+        dem = f.get("demoted") or []
+        if dem:  # 스코어보드 상위가 말없이 빠지지 않게 (CLAUDE.md §2)
+            who = ", ".join(
+                f"{d['theme']}(스코어보드 {d['rank']}위)"
+                if d.get("rank") is not None
+                else str(d["theme"])
+                for d in dem
+            )
+            L.append(f"  소표본이라 뒤로 밀려 상위 K 에서 빠진 테마 {len(dem)}개: {who}")
         legend = f.get("legend") or []
         if legend:
             L.append("")
@@ -185,7 +198,7 @@ def format_alert(a: Alert) -> str:
             L += [f"  - {x}" for x in (pc.get("problems") or [])]
         L.append("")
         L.append(f"전문: {f.get('path', 'state/daily/')}")
-        L.append("측정값·후보 목록이다 — L1 점수의 예측력은 약하다 (docs/02 §7.1)")
+        L.append(str(f.get("honesty") or "측정값·후보 목록이다 — L1 점수의 예측력은 약하다"))
         body = "\n".join(L)
     elif a.kind is AlertKind.MONTHLY_SUMMARY:
         head = f"[월간 요약] {f.get('asof')}"
@@ -224,8 +237,14 @@ def deliver(
     cfg: TelegramConfig | None = None,
     use_env: bool = True,
     notifier: SyncNotifier | None = None,
+    send: bool = True,
 ) -> DeliveryResult:
-    """항상 `alerts.json` 을 쓴다. 텔레그램은 설정이 둘 다 있을 때만 — 한 루프로 전부 보낸다."""
+    """항상 `alerts.json` 을 쓴다. 텔레그램은 설정이 둘 다 있을 때만 — 한 루프로 전부 보낸다.
+
+    `send=False` 면 **어떤 채널로도 보내지 않는다** (`--no-send` · `--send` 없는 실행). 설정이
+    있었는지 없었는지와 무관하므로 `not_configured` 가 아니라 `suppressed` 로 보고한다 — 안 보낸
+    이유를 뭉개지 않는다 (`CLAUDE.md` §2). 파일(`alerts.json`)은 어느 경우든 쓴다.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     for a in alerts:
         if not a.text:
@@ -237,6 +256,8 @@ def deliver(
     )
     if not alerts:
         return DeliveryResult(path, DeliveryStatus.NOTHING_TO_SEND, 0, 0)
+    if not send:
+        return DeliveryResult(path, DeliveryStatus.SUPPRESSED, 0, 0)
     if cfg is None and use_env:
         cfg = telegram_config()
     if cfg is None:

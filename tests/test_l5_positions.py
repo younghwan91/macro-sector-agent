@@ -32,8 +32,13 @@ from msa.l5.positions import (
     write_positions_proposal,
 )
 from msa.l5.run import PortfolioResult, build_portfolio, run_portfolio
-from msa.ops.check import DictPriceSource, run_check
-from msa.ops.state_files import StateFileError, load_positions, save_positions
+from msa.ops.check import DictPriceSource, check_position, run_check
+from msa.ops.state_files import (
+    PositionsFile,
+    StateFileError,
+    load_positions,
+    save_positions,
+)
 from msa.themes import load_themes
 from test_l5_portfolio import ASOF, REPO, _synthetic_daily_ew, _thesis, _write_inputs
 
@@ -329,6 +334,49 @@ def test_cli_emit_positions_option() -> None:
         app, ["portfolio", "--inputs", "/nonexistent", "--no-write", "--emit-positions"]
     )
     assert r.exit_code != 0 and "--no-write" in r.output
+
+
+def test_tier2_capital_rule_reaches_positions_yaml_and_check(tmp_path: Path) -> None:
+    """`docs/07` §4 의 "둘 중 먼저 오는 쪽" 이 `positions.yaml` 과 `msa check` 까지 흐른다.
+
+    두 케이스 모두 잰다 — 규칙이 어느 쪽이든 `tier2_basis` 라벨과 `tier2_stop_price` 가
+    같은 규칙에서 나와야 하고, `msa check` 가 사람을 오지목하면 안 된다.
+    """
+    from conftest import make_thesis
+
+    # (1) 평단 규칙: 1단 비중 = 0.16 × 0.5 = 0.08 → 자본 규칙은 −100% 라 없다
+    avg_pos = position_from_plan(_plan("CCJ", c=0.65, w=0.16), asof=ASOF)
+    assert avg_pos.tier2_basis == "avg_minus_35"
+    assert avg_pos.tier2_stop_price == pytest.approx(65.0)
+
+    # (2) 자본 규칙: 1단 비중 = 0.60 × 0.5 = 0.30 → 평단 −26.7% 가 −35% 보다 먼저
+    cap_pos = position_from_plan(_plan("UEC", role="torque", c=0.65, w=0.60), asof=ASOF)
+    assert cap_pos.tier2_basis == "capital_8pct"
+    assert cap_pos.tier2_stop_price == pytest.approx(100.0 * (1 - 0.08 / 0.30))
+    assert "규칙 capital 8%" in cap_pos.note  # 완납 시 값도 자본 규칙
+
+    # YAML 왕복 — 새 basis 가 스키마를 통과한다
+    pf = PositionsFile(asof=ASOF, positions=[avg_pos, cap_pos])
+    save_positions(tmp_path / "positions.yaml", pf)
+    back = {p.ticker: p for p in load_positions(tmp_path / "positions.yaml").positions}
+    assert back["UEC"].tier2_basis == "capital_8pct"
+
+    # `msa check` 는 두 행 모두를 정상으로 본다 — 옛 코드는 (2) 를 "평단 −35% 와 다르다" 로
+    # 오지목했다. 1단만 체결로 올려(open) 놓고 점검한다.
+    prices = DictPriceSource({"CCJ": series([90.0] * 60), "UEC": series([90.0] * 60)})
+    for p in (avg_pos, cap_pos):
+        p.status = "open"
+        p.thesis_snapshot = "journal/x.thesis.yaml"
+        p.journal_entry = "journal/x.md"
+        p.ladder[0].filled_date, p.ladder[0].filled_price = ASOF, 100.0
+    for p in (avg_pos, cap_pos):
+        pc = check_position(p, make_thesis(), {}, prices, ASOF)
+        assert not [x for x in pc.problems if "tier2_stop_price" in x], pc.problems
+
+    # 반대 방향도 잰다 — 자본 규칙 행에 평단 −35% 값을 적어 두면 오지목이 아니라 **지목**이다
+    cap_pos.tier2_stop_price = 65.0
+    pc = check_position(cap_pos, make_thesis(), {}, prices, ASOF)
+    assert any("유효 Tier-2" in x and "capital 8%" in x for x in pc.problems)
 
 
 def test_replace_keeps_proposal_pure() -> None:

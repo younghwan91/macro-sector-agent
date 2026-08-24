@@ -1,7 +1,8 @@
 """`msa` CLI.
 
 도는 것: `data status`·`data audit`·`data fred-lag`·`data fred-fetch`(M1) · `scan`(M3) ·
-`backtest l1`(M3.5) · `backtest l4`(docs/14) · `picks`(M5) · `portfolio`(M6) · `research`(M7) ·
+`backtest l1`(M3.5) · `backtest l4`(docs/14) · `backtest l4-structures`(docs/15) ·
+`picks`(M5) · `portfolio`(M6) · `research`(M7) ·
 `check`·`journal *`·`ops *`(M8) · `portfolio-inputs`·`run *`(배선 W1·W4).
 남은 스텁은 없다. 새 스텁을 두게 되면 `--help` 에는 나오되 호출 시 `NotImplementedError` 를
 던지게 한다 — 있는 척하는 스텁이 조용히 빈 결과를 내는 것보다 낫다 (`CLAUDE.md` §2).
@@ -441,6 +442,43 @@ def backtest_l4(
     _echo_saved(res.out_dir)
 
 
+@backtest_app.command("l4-structures")
+@cli_guard
+def backtest_l4_structures(
+    force: bool = typer.Option(
+        False, "--force", help="테마별 특성 패널 parquet 캐시를 무시하고 다시 만든다"
+    ),
+    jobs: int = typer.Option(0, "--jobs", help="테마 단위 병렬 프로세스 수 (0 = min(14, cpu-2))"),
+    themes: str = typer.Option(
+        "", "--themes", help="스모크 전용 — 이 테마들만 (쉼표). 주면 산출물이 -smoke 로 갈린다"
+    ),
+    max_months: int = typer.Option(
+        0, "--max-months", help="스모크 전용 — 격자 마지막 N 개월만. 주면 판정하지 않는다"
+    ),
+    no_write: bool = _no_write_option("state/backtests/"),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """L4 선정 구조 비교 (docs/15 사전 등록의 집행) — B0~B4 후보 규칙의 테마 EW 초과 · 사망률 ·
+    회전율 · PBO.
+
+    산출물: state/backtests/l4-structures/<store_end>/ · 판정 docs/15. 특성 패널 캐시는
+    `msa backtest l4` 의 것(state/backtests/l4/<store_end>/cache/)을 그대로 재사용한다.
+    결과로 축 가중치·하드 임계를 바꾸지 않는다 (CLAUDE.md §1).
+    """
+    from msa.l4.structures import render_report, run_structures
+
+    _setup_logging(verbose)
+    res = run_structures(
+        write=not no_write,
+        force=force,
+        jobs=jobs or None,
+        themes_filter=[t.strip() for t in themes.split(",") if t.strip()] or None,
+        max_months=max_months or None,
+    )
+    typer.echo(render_report(res))
+    _echo_saved(res.out_dir)
+
+
 @app.command()
 @cli_guard
 def research(
@@ -765,7 +803,10 @@ def run_daily_cmd(
         False, "--no-write", help="state/daily/ 에 쓰지 않는다 (화면 출력만; --send 도 무효)"
     ),
     send: bool = typer.Option(
-        False, "--send", help="텔레그램 요약 전송 (MSA_TELEGRAM_* 둘 다 있을 때만)"
+        False,
+        "--send",
+        help="이 실행의 발신 허용 — 다이제스트 요약 + 보유 점검 알림 "
+        "(MSA_TELEGRAM_* 둘 다 있을 때만). 없으면 아무것도 보내지 않는다",
     ),
     verbose: bool = OPT_VERBOSE,
 ) -> None:
@@ -775,6 +816,7 @@ def run_daily_cmd(
     산출물: state/daily/<date>/digest.json · digest.md · report.txt. 읽기 전용 후보 뷰다 —
     측정값·후보 목록이지 투자 조언이 아니다 (L1 점수 예측력 약함, docs/02 §7.1).
     결정 케이던스는 월간 그대로 (msa run monthly).
+    --send 없이는 아무것도 발신하지 않는다 — 다이제스트도, 보유 점검 알림도 (파일에만 남는다).
     """
     from msa.pipeline.daily import run_daily
     from msa.pipeline.run import RunError
@@ -865,7 +907,7 @@ def check(
         )
     typer.echo(report.render())
     if report.out_dir is not None:
-        res = deliver(report.alerts, report.out_dir, use_env=not no_send)
+        res = deliver(report.alerts, report.out_dir, use_env=not no_send, send=not no_send)
         typer.echo("")
         typer.echo(f"저장: {report.out_dir}  ·  알림 {len(report.alerts)}건 → {res.json_path.name}")
         typer.echo(
@@ -873,6 +915,8 @@ def check(
             + (
                 " (MSA_TELEGRAM_TOKEN / MSA_TELEGRAM_CHAT_ID 둘 다 있어야 보낸다)"
                 if res.status == "not_configured"
+                else " (--no-send — 파일만 썼다)"
+                if res.status == "suppressed"
                 else f" 전송 {res.sent} 실패 {res.failed}"
             )
         )

@@ -134,6 +134,16 @@ class Pick:
         """
         return self.role in ("anchor", "royalty", "midstream")
 
+    @property
+    def barbell_labeled(self) -> bool:
+        """이 행이 **바벨 라벨을 갖고 있는가** — `is_anchor` 가 False 인 두 가지를 가른다.
+
+        `role='torque'` 는 "앵커가 아니다" 라는 **판정**이고, `role='eligible'` 은 L4 가
+        판정을 **하지 않았다**는 뜻이다 (2026-08-24 개정). 앵커:토크 비율은 후자에서
+        의미가 없으므로 계획서가 0:100 이라고 단언하면 안 된다 (`run.anchor_share`).
+        """
+        return self.role != "eligible"
+
 
 def _opt_float(raw: str | None, *, field_name: str, where: str) -> float | None:
     """빈 값·NA 토큰은 None, 숫자가 아니면 예외 (`msa.coerce` 는 "모르면 None" — 여기서 거른다)."""

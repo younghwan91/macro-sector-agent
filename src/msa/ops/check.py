@@ -48,12 +48,14 @@ import pandas as pd
 
 from msa.fmt import pct
 from msa.io import dump_yaml, to_plain, write_snapshot
+from msa.l5.ladders import TIER2_FROM_AVG, tier2_rules
 from msa.ops.alerts import Alert, AlertKind, format_alert
 from msa.ops.journal import load_entries, load_snapshot
 from msa.ops.state_files import Position, PositionsFile, load_positions
 
 TIME_STOP_WARN_DAYS = 30
-TIER2_PCT = 0.35
+#: Tier-2 임계는 `l5.ladders` 가 단일 출처다 — 여기서 다시 선언하지 않는다.
+TIER2_PCT = TIER2_FROM_AVG
 
 # ---------------------------------------------------------------------------
 # 가격 소스 계약 — Store 든 합성이든 같은 모양
@@ -388,12 +390,23 @@ def check_position(
     stop = pos.tier2_stop_price
     if pos.tp1_filled and avg is not None:
         basis, stop = "breakeven", avg  # 07 §5 전환 규칙
-    expected = None if avg is None else avg * (1 - TIER2_PCT)
-    if expected is not None and basis == "avg_minus_35" and abs(stop / expected - 1) > 0.01:
+    # `docs/07` §4 는 Tier-2 를 "평단 −35%, 또는 포지션 손실이 총자본의 8% — 둘 중 먼저 오는 쪽"
+    # 으로 선언했다. 평단 −35% 한 쪽만 대조하면 자본 규칙이 이긴 행에서 **사람을 오지목한다.**
+    # L5 와 같은 함수(`ladders.tier2_rules`) 로 유효 스탑을 다시 세워 대조한다.
+    expected = None
+    exp_rule = None
+    if avg is not None:
+        filled_w = sum(s.weight for s in pos.ladder if s.filled) * pos.target_weight
+        rules = tier2_rules(avg, filled_w)
+        expected, exp_rule = rules.effective, rules.rule
+    if (
+        expected is not None
+        and basis in ("avg_minus_35", "capital_8pct")
+        and abs(stop / expected - 1) > 0.01
+    ):
         problems.append(
-            f"{pos.ticker}: tier2_stop_price {stop:.2f} 가 평단 −35% 계산값 {expected:.2f} 와 "
-            "1% 이상 다르다 — "
-            "positions.yaml 갱신 누락인지 확인"
+            f"{pos.ticker}: tier2_stop_price {stop:.2f} 가 유효 Tier-2 계산값 {expected:.2f} "
+            f"({exp_rule}, 체결 평단 기준) 와 1% 이상 다르다 — positions.yaml 갱신 누락인지 확인"
         )
     tier2_hit = close is not None and close <= stop
 

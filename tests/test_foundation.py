@@ -202,6 +202,7 @@ def test_status_values_are_the_existing_strings() -> None:
         "failed",
         "not_configured",
         "nothing_to_send",
+        "suppressed",  # 호출자가 발신을 끔 (--no-send · --send 없음) — 파일은 썼다
     ]
     # StrEnum — 평문 비교·직렬화가 문자열과 같다
     assert SeriesStatus.OK == "ok" and f"{Axis1Status.NOT_DECLARED}" == "not_declared"

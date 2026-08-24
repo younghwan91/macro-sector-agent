@@ -239,7 +239,7 @@ check: {kind: drawdown_from_high, ticker: CCJ, pct: 0.30, lookback_days: 252}
 | `rejected` | 저널 **기각 항목** `journal/<asof>-<theme>-reject.md` + `.thesis.yaml` 스냅샷 (§2 "기각 항목이 담는 것" — 경로 enum · 5축 판정 · `cycle_confidence` 또는 null · 스코어보드 순위 · 스캔 경로; `override_reason` 은 비운다 — 기계가 기각한 것이라 "사람이 편입하지 않은 이유" 가 성립하지 않는다) → `rejections.yaml` 행 (`journal` 열 = 그 항목) | 없음. 기계 통과를 사람이 뒤집어 기각하는 경우(`path: human`)만 사람이 `msa journal template reject` 로 직접 쓴다 |
 | `contested` | `watchlist.yaml` 행 `reason: contested` — `waiting_condition` = referee 판정 + `key_uncertainties`, `thesis_snapshot`, `scoreboard_rank` | 없음 (재연구가 해소한다) |
 | `passed` · `portfolio_eligible: false` | `watchlist.yaml` 행 — 축 1 불가(`axis1_available: false`)가 원인이면 `axis1_unavailable`, 아니면 `awaiting_condition` + 게이트가 적은 사유 | 없음 |
-| `passed` · `portfolio_eligible: true` | **진입 항목 초안** `state/theses/<date>/journal-draft-<theme>.yaml` — `msa journal new --from` 이 받는 entry 모양. thesis 전문 · 5축 · `scan` · L1 블록 6개(`scoreboard.csv`) · `l2_tailwind`(`state/macro/latest.json`, 없으면 thesis 의 `inputs.macro_tailwind`) · `confidence_provenance: referee` 까지 채운다 | `stocks`(종목·비중·사다리·Tier-2·시간스탑·TP — L5 매매계획서에서) · `deviated_from_machine`/`deviation_reason`. 초안에 없는 값(블록·tailwind 를 못 읽은 경우)은 **0 이 아니라 비워** 두므로 `EntryRecord` 가 채울 때까지 거부한다 |
+| `passed` · `portfolio_eligible: true` | **진입 항목 초안** `state/theses/<date>/journal-draft-<theme>.yaml` — `msa journal new --from` 이 받는 entry 모양. thesis 전문 · 5축 · `scan` · L1 블록 6개(`scoreboard.csv`) · `confidence_provenance: referee` 까지 채운다 (`l2_tailwind` 는 2026-08-23 L2 제거와 함께 삭제됐다 — 옛 초안이 그 필드를 들고 오면 `msa journal new` 가 거부한다) | `stocks`(종목·비중·사다리·Tier-2·시간스탑·TP — L5 매매계획서에서) · `deviated_from_machine`/`deviation_reason`. 초안에 없는 값(블록을 못 읽은 경우)은 **0 이 아니라 비워** 두므로 `EntryRecord` 가 채울 때까지 거부한다 |
 
 저널은 여기서도 append-only 다 — 기존 파일은 건드리지 않고 같은 이름의 기각 항목이 있으면 그 경로를 대장에
 쓴다. 기각 대장은 `(theme, rejected_at)` 이 이미 있으면 건너뛰고 보고한다 (재실행 멱등). 관찰 목록은 테마별
@@ -286,17 +286,25 @@ upsert (기존 `added_at` 유지). 스코어보드 순위는 `--scan` 의 `score
 순서: `run_scan`(캐시 덕에 ~12초, 스냅샷은 쓰지 않는다) → `select_themes`(월간과 같은 규칙 — S2 자격
 상위 K, 기본 8 = `05` §1 의 K, `--themes` 지정 추가) → 테마별 `run_picks`(테마별 격리, ~2초/테마,
 스냅샷 미기록) → **직전 다이제스트와의 diff**(`state/daily/<직전 날짜>/digest.json` — 상위 K 진입/이탈,
-순위 이동, 테마별 상위 N 신규·신규 하드 제외·신규 통과; 첫 실행이면 "기준일 없음, 전부 신규") →
+순위 이동, 테마별 상위 N 신규·신규 하드 제외·신규 통과; 첫 실행이면 "기준일 없음, 전부 신규";
+직전 기준을 **읽지 못하면** 첫 실행으로 둔갑시키지 않고 `baseline_broken` 으로 남겨 diff 를 내지 않는다 —
+`digest.md`·알림·`diff` 단계(`failed`)가 손상 사실을 적는다) →
 positions.yaml 이 있으면 `run_cadence_check(mode="daily")`(= `msa check --daily` 경로 재사용) →
 `state/daily/<asof>/digest.json`(기계) + `digest.md` = `report.txt`(사람).
 
 새 임계값은 없다 — `--top-k`(기본 8)와 `--per-theme`(기본 5)뿐이고 **5 는 표시 개수이지 선정 규칙이
 아니다** (랭킹 전체는 `msa picks`). LLM 도 부르지 않는다 — 전 단계 결정론 (`CLAUDE.md` §4). 다이제스트
 머리에는 정직성 한 줄이 붙는다: "측정값·후보 목록 — 투자 조언 아님; L1 점수 예측력 약함(docs/02 §7.1)"
-(`docs/backtest-l1.md` §12). `--send` 는 "오늘 새로 올라온 것" + 상위 3테마 한 줄씩을 `daily_digest`
-알림으로 기존 `deliver` 에 태운다 (≤4000자, 넘치면 자른 개수를 명시 — 조용한 절단 금지 `CLAUDE.md` §2;
-문구 규약은 `assert_wording_ok`). `--no-write` 는 파일을 쓰지 않고(`--send` 도 무효 — `deliver` 는
-`alerts.json` 을 쓰는 계약이다) 화면 출력만 한다. 스캔 실패만 exit 1, 테마별 실패·점검 실패는 격리·보고.
+(`docs/backtest-l1.md` §12) — 같은 고지가 `daily_digest` 알림 본문의 머리와 꼬리에도 붙는다(알림만 보는
+사람이 종합·순위를 선정 규칙으로 읽지 않게). 소표본이라 뒤로 밀려 상위 K 에서 빠진 테마는 파일과 알림
+양쪽에 이름·순위와 함께 남는다 (`CLAUDE.md` §2 — 재정렬 규칙 자체는 그대로다).
+
+**`--send` 가 그 실행의 모든 발신을 지배한다** — 다이제스트 요약뿐 아니라 보유 점검이 만든
+무효화·사다리·TP·시간스탑·Tier-2 알림까지다. `--send` 없이는 어느 채널로도 나가지 않고 `alerts.json`
+만 남는다(배달 상태 `suppressed`, `msa check --no-send` 와 같은 규약). `--send` 는 "오늘 새로 올라온
+것" + 테마 요약을 `daily_digest` 알림으로 기존 `deliver` 에 태운다 (≤4000자, 넘치면 자른 개수를 명시 —
+조용한 절단 금지 `CLAUDE.md` §2; 문구 규약은 `assert_wording_ok`). `--no-write` 는 파일을 쓰지 않고
+(`--send` 도 무효 — `deliver` 는 `alerts.json` 을 쓰는 계약이다) 화면 출력만 한다. 스캔 실패만 exit 1, 테마별 실패·점검 실패는 격리·보고.
 `state/daily/` 는 `.gitignore`.
 
 ## 5. 실패 시 동작

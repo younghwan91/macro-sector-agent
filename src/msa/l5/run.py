@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import csv
+import json
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
@@ -28,7 +29,12 @@ from msa.config import paths
 from msa.dates import asof_or_today
 from msa.io import write_snapshot
 from msa.l5.inputs import Pick, PortfolioInputs, ThesisInput, load_inputs
-from msa.l5.ladders import PositionPlan, build_position_plan
+from msa.l5.ladders import (
+    THEME_CAP_FOR_LOSS,
+    TIER2_FROM_AVG,
+    PositionPlan,
+    build_position_plan,
+)
 from msa.l5.optimize import (
     LAMBDA_COMPRESS,
     MDD_BUDGET,
@@ -45,6 +51,7 @@ from msa.l5.risk import (
     ENBResult,
     ScenarioLoss,
     effective_number_of_bets,
+    filled_gap_days,
     load_theme_ew_returns,
     map_theme_cov_to_stocks,
     monthly_returns,
@@ -192,10 +199,15 @@ def _covariance(
     cov = map_theme_cov_to_stocks(
         tcov, [p.theme for p in picks], [p.idio_vol_ann for p in picks], tickers
     )
-    if not any(p.idio_vol_ann for p in picks):
+    # 부분 결측도 경고한다 — 한 종목이라도 있으면 넘어가면, 나머지는 σ_idio=0(테마 내 상관 1)
+    # 으로 들어가는데 그 사실이 계획서에 안 뜬다 (`CLAUDE.md` §2 "센 것만 말한다").
+    no_idio = [p.ticker for p in picks if not p.idio_vol_ann]
+    if no_idio:
+        scope = "전 종목" if len(no_idio) == len(picks) else f"{len(no_idio)}/{len(picks)}종목"
         warnings.append(
-            "공분산: 종목 수익률 없음 → 테마 EW 지수 사상(β=1) · 고유분산 0 — "
-            "같은 테마의 종목은 상관 1 로 들어간다 (ENB 가 테마 수를 넘지 않는다)"
+            f"공분산: 종목 수익률 없음 → 테마 EW 지수 사상(β=1) · 고유분산 0 인 것이 {scope} "
+            f"{no_idio} — 그 종목들은 같은 테마 안에서 상관 1 로 들어간다 "
+            "(ENB 가 테마 수를 넘지 않는다)"
         )
     return cov
 
@@ -234,7 +246,11 @@ def _solve_and_report(
     if solution.status != "optimal":
         warnings.append(f"솔버 상태 {solution.status} — 해의 정밀도를 의심하라")
     if inputs.capital_usd is None:
-        warnings.append("C4 유동성: 자본(--capital) 미지정 → 적용 안 됨")
+        warnings.append(
+            "C4 유동성 미적용 — 자본(--capital) 미지정 → `w·Capital ≤ 10%·ADV20` 을 한 번도 "
+            "걸지 않았다. docs/07 §2.4 가 핵심 제약으로 세운 것이 이 산출물에는 없다 — "
+            "비중이 하루 거래대금을 넘을 수 있다"
+        )
     elif solution.c4_skipped:
         warnings.append(f"C4 유동성: ADV 없어 적용 못 한 종목 {list(solution.c4_skipped)}")
     wv = np.array([solution.weights[p.ticker] for p in picks], dtype=np.float64)
@@ -317,6 +333,18 @@ def build_portfolio(
     # --- L_i (전 후보 테마에 대해 — 제외된 테마도 표기는 한다)
     clusters = {t: by_id[t].correlation_cluster for t in cand_themes}
     ts_asof = pd.Timestamp(asof)
+    # 월간 복리·누적 지수가 **수익률 0 으로 메운 일수** — 동작은 그대로 두고 센다 (risk 머리말).
+    gaps: dict[str, int] = {}
+    if daily_ew is not None:
+        cols = [t for t in cand_themes if t in daily_ew.columns]
+        gaps = {k: v for k, v in filled_gap_days(daily_ew[cols]).items() if v > 0}
+        if gaps:
+            top = ", ".join(f"{k} {v}일" for k, v in sorted(gaps.items(), key=lambda kv: -kv[1]))
+            warnings.append(
+                f"테마 EW 수익률에 결측일이 있다 — 수익률 0 으로 메우고 계산했다 ({top}). "
+                "이 지수가 L_i 의 '과거 유사 국면' 낙폭과 월간 공분산을 만든다 — "
+                "메운 날은 무변동으로 들어가 변동성·낙폭을 낮춘다"
+            )
     losses = scenario_losses_for_themes(
         cand_themes, clusters=clusters, daily_ew=daily_ew, cases=inputs.cases, asof=ts_asof
     )
@@ -361,9 +389,19 @@ def build_portfolio(
         for p in picks
     )
     gross = sum(weights.values())
+    # 앵커 비중은 **라벨이 있을 때만** 낸다. L4 가 `eligible` 만 내는 오늘, 라벨이 하나도 없으면
+    # 0.0 은 "앵커에 0 을 배분했다" 가 아니라 "L4 가 라벨을 안 붙였다" 다 — 계획서가 그 둘을
+    # 섞어 `앵커 : 토크 = 0 : 100` 으로 단언하면 바벨 붕괴로 읽힌다.
+    held = [p for p in picks if weights.get(p.ticker, 0.0) > 0]
+    anchor_labeled = any(p.barbell_labeled for p in held)
     anchor_share: float | None = None
-    if gross > 0:
+    if gross > 0 and anchor_labeled:
         anchor_share = sum(weights.get(p.ticker, 0.0) for p in picks if p.is_anchor) / gross
+    if gross > 0 and not anchor_labeled:
+        warnings.append(
+            "앵커:토크 비율 없음 — L4 가 바벨 라벨을 붙이지 않는다 (role 이 전부 `eligible`, "
+            "docs/06 §8.4). 앵커 비중을 0 으로 **정한** 것이 아니라 **재지 못한** 것이다"
+        )
 
     # --- 테마 행
     rows = _theme_rows(
@@ -393,7 +431,20 @@ def build_portfolio(
         anchor_share=anchor_share,
         warnings=tuple(warnings),
         axis1_universe=(n_axis1, len(themes)),
-        extra={"cluster_caps": dict(inputs.cluster_caps), "capital_usd": inputs.capital_usd},
+        extra={
+            "cluster_caps": dict(inputs.cluster_caps),
+            "capital_usd": inputs.capital_usd,
+            "c4_applied": inputs.capital_usd is not None,
+            "anchor_labeled": anchor_labeled,
+            "filled_gap_days": gaps,
+            "tier2_budget": {
+                "theme_cap": THEME_CAP_FOR_LOSS,
+                "tier2_from_avg": TIER2_FROM_AVG,
+                "loss_contribution": THEME_CAP_FOR_LOSS * TIER2_FROM_AVG,
+                "mdd_budget": MDD_BUDGET,
+                "share_of_budget": THEME_CAP_FOR_LOSS * TIER2_FROM_AVG / MDD_BUDGET,
+            },
+        },
     )
 
 
@@ -418,8 +469,11 @@ def write_outputs(res: PortfolioResult, out_dir: Path) -> PortfolioResult:
                 "entry_price",
                 "leg2_price",
                 "leg3_price",
+                # Tier-2 는 **유효 스탑** 한 짝으로 쓴다 — 가격·하락률·규칙이 같은 규칙을
+                # 가리킨다 (`docs/07` §4 "둘 중 먼저 오는 쪽"). 진 규칙은 diagnostics 에 있다.
                 "tier2_price",
                 "tier2_vs_initial",
+                "tier2_rule",
                 "time_stop",
             ]
         )
@@ -437,7 +491,8 @@ def write_outputs(res: PortfolioResult, out_dir: Path) -> PortfolioResult:
                     "" if p.leg_prices[1] is None else f"{p.leg_prices[1]:.4f}",
                     "" if p.leg_prices[2] is None else f"{p.leg_prices[2]:.4f}",
                     "" if p.tier2_effective_price is None else f"{p.tier2_effective_price:.4f}",
-                    f"{p.tier2_vs_initial:.4f}",
+                    f"{p.tier2_effective_vs_initial:.4f}",
+                    p.tier2_rule,
                     str(p.time_stop),
                 ]
             )
@@ -462,7 +517,9 @@ def run_portfolio(
 ) -> PortfolioResult:
     """CLI 진입점. 캐시의 테마 EW 수익률을 읽고, `<inputs>/returns.csv` 가 있으면 종목 공분산에
     쓴다. `emit_positions` 면 산출 디렉터리에 `positions-proposal.yaml` 도 남긴다 (`write` 일 때만 —
-    `state/positions.yaml` 은 건드리지 않는다)."""
+    `state/positions.yaml` 은 건드리지 않는다). 제안 행의 `thesis_snapshot` 은 묶음이 적어 둔
+    `<inputs>/assemble_report.json` 의 `sources[테마].thesis` 로 채운다 — 기계가 아는 값을 사람
+    몫으로 넘기지 않는다. `journal_entry` 는 진입 저널 항목이라 사람 몫으로 남는다."""
     p = paths()
     out_root = replace(p, state=Path(state_dir)).portfolio if state_dir is not None else p.portfolio
     d = Path(inputs_dir)
@@ -490,12 +547,36 @@ def run_portfolio(
             from msa.l5.positions import emit_positions_proposal
 
             assert res.out_dir is not None
-            emit_positions_proposal(res, res.out_dir)
+            emit_positions_proposal(res, res.out_dir, thesis_snapshots=_thesis_paths(d))
     elif emit_positions:
         raise ValueError(
             "emit_positions 는 write=True 일 때만 — 제안은 파일로만 낸다 (--no-write 와 양립 불가)"
         )
     return res
+
+
+def _thesis_paths(inputs_dir: Path) -> dict[str, str]:
+    """`<inputs>/assemble_report.json` 의 `sources[<theme>].thesis` → 테마별 thesis 경로.
+
+    묶음(`pipeline/assemble`)은 어느 thesis 로 이 입력을 만들었는지 이미 안다 — 제안 행의
+    `thesis_snapshot` 을 "사람이 채울 것" 으로 남기지 않고 그 값을 넣는다. 파일이 없거나 모양이
+    다르면 빈 dict 를 돌려준다(옛 묶음·수동 입력) — 그때는 종전대로 사람이 채운다.
+    """
+    f = Path(inputs_dir) / "assemble_report.json"
+    if not f.exists():
+        return {}
+    try:
+        rep = json.loads(f.read_text(encoding="utf-8"))
+        src = rep.get("sources") or {}
+    except (OSError, ValueError) as e:
+        log.warning("l5: %s 를 읽지 못해 thesis_snapshot 을 채우지 못했다 — %s", f, e)
+        return {}
+    out: dict[str, str] = {}
+    for theme, meta in src.items():
+        path = (meta or {}).get("thesis") if isinstance(meta, dict) else None
+        if path:
+            out[str(theme)] = str(path)
+    return out
 
 
 def cluster_caps_from_args(raw: Sequence[str]) -> dict[str, float]:

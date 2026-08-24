@@ -112,14 +112,39 @@ def load_theme_ew_returns(
 
 
 def monthly_returns(daily: pd.DataFrame) -> pd.DataFrame:
-    """일별 → 월말 복리 월간 수익률. 한 달 전부 NaN 이면 NaN 으로 남긴다 (0 으로 채우지 않는다)."""
+    """일별 → 월말 복리 월간 수익률. 한 달 전부 NaN 이면 NaN 으로 남긴다 (0 으로 채우지 않는다).
+
+    **월 중 결측일은 수익률 0 으로 곱한다.** 메운 일수는 `filled_gap_days` 가 센다.
+    """
     has = daily.notna().resample("ME").sum() > 0
     comp = (1.0 + daily.fillna(0.0)).resample("ME").prod() - 1.0
     return comp.where(has)
 
 
+def filled_gap_days(daily: pd.DataFrame) -> dict[str, int]:
+    """`monthly_returns`·`index_level` 이 **수익률 0 으로 메운 일수**를 테마별로 센다.
+
+    두 함수 모두 `fillna(0.0)` 으로 곱한다 — 월 전부가 NaN 인 달만 NaN 으로 남고, 월 중
+    결측일은 "그날 안 움직였다" 로 들어간다. **동작은 그대로 둔다** (바꾸는 것은 새 결정이다,
+    `CLAUDE.md` §1). 대신 몇 일을 메웠는지 세어 진단·계획서에 싣는다 (§2 "센 것만 말한다").
+
+    첫 관측일 **이후**의 NaN 만 센다 — 그 앞은 `index_level` 이 NaN 으로 남기고
+    `monthly_returns` 도 관측 0 인 달로 떨어뜨리므로 메운 것이 아니다.
+    """
+    out: dict[str, int] = {}
+    for col in daily.columns:
+        s = daily[col]
+        started = s.notna().cummax()
+        out[str(col)] = int((started & s.isna()).sum())
+    return out
+
+
 def index_level(daily: pd.Series) -> pd.Series:
-    """수익률 누적 지수 (시작 1.0). 첫 관측 전은 NaN."""
+    """수익률 누적 지수 (시작 1.0). 첫 관측 전은 NaN.
+
+    첫 관측 **뒤**의 결측일은 수익률 0 으로 메운다 — 이 지수가 `L_i` 의 "과거 유사 국면"
+    낙폭을 만들므로, 메운 일수를 `filled_gap_days` 로 세어 계획서에 함께 적는다.
+    """
     lvl: pd.Series = (1.0 + daily.fillna(0.0)).cumprod()
     mask: pd.Series = daily.notna().cummax()
     return lvl.where(mask)

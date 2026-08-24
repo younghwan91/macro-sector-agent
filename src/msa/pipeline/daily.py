@@ -25,10 +25,12 @@
 모든 단계가 `write=False` 로 돌 수 있어 샌드박스가 필요 없다. diff 의 기준(직전
 다이제스트)은 어느 경우든 실제 `state/daily/` 에서 읽는다 (읽기는 부작용이 아니다).
 
-텔레그램(`send=True` + `write=True`): "오늘 새로 올라온 것" + 상위 3테마 한 줄씩을
-`AlertKind.DAILY_DIGEST` 로 기존 `deliver` 에 태운다 — 환경변수 둘 다 없으면
-"not configured" (기존 규약 그대로). `write=False` 면 보내지 않는다 — `deliver` 는
-`alerts.json` 을 쓰는 계약이라서다 (그 사실을 리포트에 적는다).
+텔레그램: **`send` 가 이 실행의 모든 발신을 지배한다** — 다이제스트 요약뿐 아니라 보유 점검이
+만든 알림(무효화·사다리·TP·시간스탑·Tier-2)까지다. `send=False`(CLI 기본 = `--send` 없음)면
+어느 채널로도 나가지 않고 `alerts.json` 만 남는다(`suppressed`). `send=True` + `write=True` 일
+때만 "오늘 새로 올라온 것" + 테마 요약을 `AlertKind.DAILY_DIGEST` 로 `deliver` 에 태운다 —
+환경변수 둘 다 없으면 "not configured" (기존 규약 그대로). `write=False` 면 보내지 않는다 —
+`deliver` 는 `alerts.json` 을 쓰는 계약이라서다 (그 사실을 리포트에 적는다).
 """
 
 from __future__ import annotations
@@ -139,13 +141,33 @@ def _theme_names(themes: list[dict[str, Any]], *, scoreboard_only: bool) -> list
 
 
 def diff_digests(
-    cur_themes: list[dict[str, Any]], prev: tuple[str, dict[str, Any]] | None
+    cur_themes: list[dict[str, Any]],
+    prev: tuple[str, dict[str, Any]] | None,
+    *,
+    baseline_error: str | None = None,
 ) -> dict[str, Any]:
     """직전 다이제스트와의 변화 — 테마의 진입/이탈/순위 이동 + 테마별 종목의 신규 상위 N ·
-    신규 하드 제외 · 신규 통과. 첫 실행이면 `first_run: true` ("기준일 없음, 전부 신규")."""
+    신규 하드 제외 · 신규 통과. 첫 실행이면 `first_run: true` ("기준일 없음, 전부 신규").
+
+    `baseline_error` 는 **직전 기준이 있었는데 읽지 못한 경우**다 (`previous_digest` 가 던진
+    사유). 이때는 첫 실행이 아니다 — `first_run: false` · `baseline_broken: <사유>` 로 두고
+    diff 를 내지 않는다. "첫 실행 — 전부 신규" 로 둔갑시키면 그날 diff 전체가 거짓이 된다
+    (`CLAUDE.md` §2)."""
+    if baseline_error is not None:
+        return {
+            "first_run": False,
+            "baseline_broken": baseline_error,
+            "prev_asof": None,
+            "themes_entered": [],
+            "themes_left": [],
+            "rank_moves": {},
+            "stocks": {},
+            "note": f"직전 기준 다이제스트 손상 — 오늘 diff 를 내지 않았다: {baseline_error}",
+        }
     if prev is None:
         return {
             "first_run": True,
+            "baseline_broken": None,
             "prev_asof": None,
             "themes_entered": _theme_names(cur_themes, scoreboard_only=True),
             "themes_left": [],
@@ -193,6 +215,7 @@ def diff_digests(
             stocks[name] = row
     return {
         "first_run": False,
+        "baseline_broken": None,
         "prev_asof": prev_asof,
         "themes_entered": entered,
         "themes_left": left,
@@ -309,6 +332,11 @@ def _pick_line(p: dict[str, Any], new_top: set[str]) -> str:
 
 def new_item_lines(diff: dict[str, Any]) -> list[str]:
     """ "오늘 새로 올라온 것" — md 섹션과 텔레그램이 같은 줄을 쓴다. 사실의 나열이다."""
+    if diff.get("baseline_broken"):
+        return [
+            "직전 기준 다이제스트 손상 — 오늘 변화(diff)를 내지 않았다 "
+            f"({diff['baseline_broken']}). 첫 실행이 아니다"
+        ]
     if diff.get("first_run"):
         return ["기준일 없음, 전부 신규 (첫 다이제스트)"]
     L: list[str] = []
@@ -339,7 +367,12 @@ def render_digest_md(digest: dict[str, Any]) -> str:
         HONESTY_HEADER,
         "",
         f"스캔 기준일 {digest['scan'].get('asof')} (스토어 {digest['scan'].get('store_end')}) · "
-        f"기준 다이제스트 {diff.get('prev_asof') or '없음 (첫 실행 — 전부 신규)'}",
+        "기준 다이제스트 "
+        + (
+            f"손상 — 읽지 못했다 ({diff['baseline_broken']}). 오늘 diff 없음 (첫 실행이 아니다)"
+            if diff.get("baseline_broken")
+            else (diff.get("prev_asof") or "없음 (첫 실행 — 전부 신규)")
+        ),
         "",
         f"## 상위 K={digest['params']['top_k']} 테마",
         "",
@@ -352,6 +385,19 @@ def render_digest_md(digest: dict[str, Any]) -> str:
             f"| {rank} | {t['theme']} | {_f2(t['score'])} | {_f2(t['pool'])} | "
             f"{', '.join(t['flags']) or '—'} | {_arrow(t['theme'], diff)} |"
         )
+    dem = digest.get("demoted") or []
+    if dem:
+        who = ", ".join(
+            f"{d['theme']}(스코어보드 #{d['rank']})" if d.get("rank") is not None else d["theme"]
+            for d in dem
+        )
+        L += [
+            "",
+            f"위 표에 없는 테마 {len(dem)} — **소표본이라 뒤로 밀려 상위 K 에서 빠졌다**: {who}. "
+            "소표본을 뒤로 미는 것은 선언된 동작이고(구성원이 `min_constituents` 미만이면 중앙값 "
+            "통계를 믿을 수 없다), 스코어보드 `rank` 는 순수 점수 순이라 위 표의 순위가 1 부터 "
+            "시작하지 않을 수 있다.",
+        ]
     n = digest["params"]["picks_per_theme"]
     L += [
         "",
@@ -454,8 +500,10 @@ def _alert_pick_line(p: dict[str, Any]) -> str:
 def build_digest_alert(digest: dict[str, Any], asof_d: date, *, picks_per_theme: int = 3) -> Alert:
     """다이제스트 → `AlertKind.DAILY_DIGEST` 알림.
 
-    담는 것: 오늘 새로 올라온 것 · **상위 K 테마 전부**(점수·pool·플래그) · **테마별 종목**
-    (그룹·종합·S/T/M·가격·거래대금·레드플래그) · 쓰인 플래그의 뜻 · 보유 점검 요약.
+    담는 것: **`HONESTY_HEADER` 와 같은 고지**(파일이 두 번 적는 것을 텔레그램도 적는다 —
+    본문이 종합·순위를 나열하므로 알림만 보는 사람이 그것을 선정 규칙으로 읽으면 안 된다) ·
+    오늘 새로 올라온 것 · **상위 K 테마 전부**(점수·pool·플래그) · 소표본 강등 ·
+    **테마별 종목**(그룹·종합·S/T/M·가격·거래대금·레드플래그) · 쓰인 플래그의 뜻 · 보유 점검 요약.
     본문 ≤ `TELEGRAM_MAX_CHARS`(4000). 넘치면 **종목 → 테마 → 새 항목** 순으로 줄이고
     **줄인 개수를 본문에 적는다** (`CLAUDE.md` §2 조용한 절단 금지). 문구 규약은
     `format_alert` 안의 `assert_wording_ok` 가 강제한다."""
@@ -497,6 +545,8 @@ def build_digest_alert(digest: dict[str, Any], asof_d: date, *, picks_per_theme:
                 "picks_per_theme": n_picks,
                 "legend": legend_for(blocks),
                 "check": pc,
+                "demoted": list(digest.get("demoted") or []),
+                "honesty": HONESTY_HEADER,
                 "path": path,
             },
         )
@@ -582,12 +632,16 @@ def run_daily(
     t = _Timer()
     sel = select_themes(sb, top_k=top_k, extra_themes=extra_themes)
     result.selection = sel
+    for n in sel.notes:
+        report.notes.append(f"select: {n}")
     report.add(
         StepResult(
             "select",
             "ok",
             f"선정 {len(sel.selected)} (자격 {sel.n_eligible}/{sel.n_total}, "
-            f"지정 {len(sel.extra)})",
+            f"지정 {len(sel.extra)}"
+            + (f", 소표본 강등 {len(sel.demoted)}" if sel.demoted else "")
+            + ")",
             seconds=t.seconds,
         )
     )
@@ -618,19 +672,24 @@ def run_daily(
 
     # 4) diff — 직전 다이제스트는 실제 state/daily/ 에서 읽는다 (no-write 여도)
     t = _Timer()
+    baseline_error: str | None = None
+    prev: tuple[str, dict[str, Any]] | None = None
     try:
         prev = previous_digest(p.daily, asof_s)
     except RunError as e:
-        report.notes.append(str(e))
-        prev = None
-    diff = diff_digests(themes, prev)
+        # 삼키되 "첫 실행" 으로 둔갑시키지 않는다 — 산출물·알림에 손상 사실이 남는다
+        baseline_error = str(e)
+        report.notes.append(baseline_error)
+    diff = diff_digests(themes, prev, baseline_error=baseline_error)
     for te in themes:
         te["new_since_prev"] = bool(diff["first_run"]) or te["theme"] in diff["themes_entered"]
     report.add(
         StepResult(
             "diff",
-            "ok",
-            "첫 실행 — 기준일 없음, 전부 신규"
+            "failed" if baseline_error else "ok",
+            f"직전 기준 손상 — diff 없음: {baseline_error}"
+            if baseline_error
+            else "첫 실행 — 기준일 없음, 전부 신규"
             if diff["first_run"]
             else f"기준 {diff['prev_asof']} · 새 항목 {len(new_item_lines(diff))}",
             seconds=t.seconds,
@@ -642,7 +701,7 @@ def run_daily(
     if p.positions.exists():
         t = _Timer()
         try:
-            chk, info = run_cadence_check(asof_s, mode="daily", write=write)
+            chk, info = run_cadence_check(asof_s, mode="daily", write=write, send=send)
         except Exception as e:
             log.warning("run daily: check 실패 — %s", _err(e))
             report.add(StepResult("check", "failed", _err(e), seconds=t.seconds))
@@ -681,6 +740,7 @@ def run_daily(
             "bucket": scan.meta.get("bucket"),
         },
         "themes": themes,
+        "demoted": [{"theme": th, "rank": rk} for th, rk in sel.demoted],
         "diff": diff,
         "positions_check": pc,
         "note": HONESTY_HEADER,

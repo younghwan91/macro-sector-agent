@@ -252,7 +252,8 @@ def test_monthly_step_order_and_report_files(fakes: dict[str, Any], tmp_path: Pa
         "scan": "ok",
         "select": "ok",
         "research": "ok",
-        "ingest": "skipped",  # provider none — 새 라운드 없음
+        # provider none 이어도 찾은 thesis 로 게이트 판정 산출물(관찰 목록·초안)을 낸다 (2번)
+        "ingest": "ok",
         "picks": "ok",
         "assemble": "ok",
         "portfolio": "ok",
@@ -560,6 +561,155 @@ def test_cli_run_commands(fakes: dict[str, Any]) -> None:
     # 점검은 진짜 스토어를 열려 한다 — 여기서는 실패로 보고되고 종료 코드는 0 (스캔은 가짜로 성공)
     assert r.exit_code == 0, r.output
     assert "check" in r.output
+
+
+# ---------------------------------------------------------------- 소표본 강등 · ingest · assemble
+
+
+def test_select_themes_counts_small_sample_demotion() -> None:
+    """재정렬 규칙은 그대로 두되, 점수 순 상위 K 였다가 소표본으로 빠진 테마를 세어 남긴다."""
+    sel = R.select_themes(_scoreboard(), top_k=3)
+    # t_small 은 점수 1등(rank 1)이지만 소표본이라 K=3 밖으로 밀린다
+    assert "t_small" not in sel.selected
+    assert sel.demoted == (("t_small", 1),)
+    assert any("소표본 강등" in n and "t_small" in n for n in sel.notes)
+    assert "강등" in sel.render()
+    assert sel.as_dict()["demoted_small_sample"] == [{"theme": "t_small", "rank": 1}]
+    # 소표본이 K 안에 들어오면 강등은 0
+    assert R.select_themes(_scoreboard(), top_k=8).demoted == ()
+
+
+def test_monthly_provider_none_ingests_located_theses_at_their_round_date(
+    fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """새 L3 라운드가 없어도 찾은 thesis 로 적재를 돌린다 — 관찰 목록이 나오는 경로다 (2번).
+
+    기준일은 **그 thesis 가 나온 라운드 날짜**여야 한다 (오늘로 적재하면 이미 적재된 기각이
+    매달 새 저널 항목으로 복제된다).
+    """
+    seen: list[dict[str, Any]] = []
+
+    def ingest(d: Path, **kw: Any) -> IngestReport:
+        seen.append({"dir": Path(d), **kw})
+        rep = IngestReport(kw["asof"], str(d), None, kw["write"])
+        rep.rows.append(Ingested("t_b", "contested", "watchlist_added", "reason=contested"))
+        return rep
+
+    monkeypatch.setattr(R, "ingest_round", ingest)
+    prior = fakes["state"] / "theses" / "2026-08-01"
+    ta = make_thesis(theme_id="t_a")
+    ta["gate_result"] = {"status": "passed", "portfolio_eligible": True, "rule": "x"}
+    tb = make_thesis(theme_id="t_b")
+    tb["gate_result"] = {"status": "contested", "portfolio_eligible": False, "rule": "x"}
+    dump_thesis_yaml(prior / thesis_filename("t_a"), ta)
+    dump_thesis_yaml(prior / thesis_filename("t_b"), tb)
+
+    res = R.run_monthly(asof=ASOF, top_k=2, provider="none")
+    step = res.report.step("ingest")
+    assert step is not None and step.status == "ok"
+    assert len(seen) == 1
+    call = seen[0]
+    assert call["dir"] == prior
+    assert call["asof"].isoformat() == "2026-08-01"  # 오늘(ASOF)이 아니라 그 라운드의 날짜
+    assert sorted(Path(x).name for x in call["thesis_paths"]) == [
+        thesis_filename("t_a"),
+        thesis_filename("t_b"),
+    ]
+    assert "관찰 upsert 1" in step.reason
+    assert any("t_b" in x and "관찰 목록" in x for x in res.report.human_todo)
+
+
+def test_monthly_provider_none_without_thesis_skips_ingest_with_reason(
+    fakes: dict[str, Any],
+) -> None:
+    res = R.run_monthly(asof=ASOF, top_k=2, provider="none")
+    step = res.report.step("ingest")
+    assert step is not None and step.status == "skipped" and "찾은 thesis 0" in step.reason
+
+
+def test_monthly_assemble_contract_violation_is_failed_not_skipped(
+    fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """`AssembleError` 중 계약 위반은 "묶을 테마 0" 으로 위장하지 않는다 (3번, CLAUDE.md §2)."""
+    from msa.pipeline.assemble import AssembleError
+
+    hdir = tmp_path / "human"
+    hdir.mkdir()
+    dump_thesis_yaml(hdir / "t_a.yaml", make_thesis(theme_id="t_a"))
+
+    def boom(**kw: Any) -> Any:
+        raise AssembleError("t_a: ranking 에 열이 없다 ['group'] — L4 산출물이 아니다")
+
+    monkeypatch.setattr(R, "assemble_inputs", boom)
+    res = R.run_monthly(asof=ASOF, top_k=2, provider="none", human_theses_dir=hdir)
+    st = res.report.statuses()
+    assert st["assemble"] == "failed" and st["portfolio"] == "skipped"
+    assert res.exit_code == 1 and res.report.stopped
+    assert "L4 산출물이 아니다" in res.report.stopped_reason
+
+
+def test_monthly_assemble_empty_is_still_skipped(
+    fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """정상적인 "0건" 은 그대로 skipped · 종료 코드 0."""
+    from msa.pipeline.assemble import AssembleError
+
+    hdir = tmp_path / "human"
+    hdir.mkdir()
+    dump_thesis_yaml(hdir / "t_a.yaml", make_thesis(theme_id="t_a"))
+
+    def empty(**kw: Any) -> Any:
+        raise AssembleError(
+            f"asof {ASOF}: {R.ASSEMBLE_EMPTY_MARKER} — 전부 건너뜀:\n  t_a: picks 0건"
+        )
+
+    monkeypatch.setattr(R, "assemble_inputs", empty)
+    res = R.run_monthly(asof=ASOF, top_k=2, provider="none", human_theses_dir=hdir)
+    st = res.report.statuses()
+    assert st["assemble"] == "skipped" and st["portfolio"] == "skipped"
+    assert res.exit_code == 0 and not res.report.stopped
+
+
+def test_cli_backtest_l4_structures_is_registered(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`docs/15` 의 근거를 만든 모듈이 CLI 로 다시 돌 수 있어야 한다 (8번)."""
+    import msa.l4.structures as S
+    from msa.cli import app
+
+    seen: dict[str, Any] = {}
+
+    @dataclass
+    class _Res:
+        out_dir: Path | None = None
+
+    def fake(**kw: Any) -> Any:
+        seen.update(kw)
+        return _Res()
+
+    monkeypatch.setattr(S, "run_structures", fake)
+    monkeypatch.setattr(S, "render_report", lambda res: "(구조 비교 리포트)")
+    r = CliRunner().invoke(
+        app,
+        [
+            "backtest",
+            "l4-structures",
+            "--no-write",
+            "--jobs",
+            "2",
+            "--themes",
+            "t_a,t_b",
+            "--max-months",
+            "6",
+        ],
+    )
+    assert r.exit_code == 0, r.output
+    assert "(구조 비교 리포트)" in r.output
+    assert seen == {
+        "write": False,
+        "force": False,
+        "jobs": 2,
+        "themes_filter": ["t_a", "t_b"],
+        "max_months": 6,
+    }
 
 
 # ---------------------------------------------------------------- data 스모크

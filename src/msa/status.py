@@ -46,3 +46,4 @@ class DeliveryStatus(StrEnum):
     FAILED = "failed"
     NOT_CONFIGURED = "not_configured"
     NOTHING_TO_SEND = "nothing_to_send"
+    SUPPRESSED = "suppressed"  # 호출자가 발신을 끔 (`--no-send` · `--send` 없음) — 파일은 썼다

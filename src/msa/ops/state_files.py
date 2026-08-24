@@ -36,7 +36,9 @@ Role = Literal["anchor", "torque"]
 #: 사람이 체결을 반영하고 `open` 으로 올릴 때 `thesis_snapshot`·`journal_entry` 가 필수가 된다.
 PositionStatus = Literal["proposed", "open", "closed"]
 TpLevelName = Literal["tp1", "tp2", "runner"]
-Tier2Basis = Literal["avg_minus_35", "breakeven"]
+#: Tier-2 유효 스탑의 근거. `docs/07` §4 는 두 규칙 중 **먼저 오는 쪽**이라 선언했으므로
+#: 자본 8% 규칙이 이긴 행도 표현할 수 있어야 한다 (`capital_8pct`). `breakeven` 은 TP1 뒤 전환.
+Tier2Basis = Literal["avg_minus_35", "capital_8pct", "breakeven"]
 WatchReason = Literal["contested", "axis1_unavailable", "awaiting_condition", "human"]
 ROLES: tuple[str, ...] = get_args(Role)
 POSITION_STATUSES: tuple[str, ...] = get_args(PositionStatus)

@@ -29,8 +29,11 @@ ASOF2 = "2026-08-22"
 # ---------------------------------------------------------------- 합성 입력
 
 
-def _sb(rows: list[tuple[str, float, bool]]) -> pd.DataFrame:
-    """(theme, score, eligible) → S2 스코어보드 꼴 (pool·블록 백분위 포함)."""
+def _sb(rows: list[tuple[str, float, bool]], small: set[str] | None = None) -> pd.DataFrame:
+    """(theme, score, eligible) → S2 스코어보드 꼴 (pool·블록 백분위 포함).
+
+    `small` 에 든 테마는 소표본이다."""
+    small = small or set()
     df = pd.DataFrame(
         [
             {
@@ -38,7 +41,7 @@ def _sb(rows: list[tuple[str, float, bool]]) -> pd.DataFrame:
                 "score": sc,
                 "pool": 0.5 if np.isnan(sc) else sc - 0.05,
                 "eligible": el,
-                "small_sample": False,
+                "small_sample": _t in small,
                 "secular": False,
                 "flags": "",
                 **{f"{b}_pct": 0.5 for b in "ABCDEF"},
@@ -108,13 +111,15 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
         "rank": {"t_a": ["AAA", "BBB", "CCC"], "t_b": ["DDD", "EEE"], "t_c": ["FFF"]},
         "hard": {"t_a": ["XXX"], "t_b": [], "t_c": []},
         "boom": {},  # theme → Exception
+        "small": set(),  # 소표본 테마
     }
     calls: dict[str, list[Any]] = {"scan": [], "picks": [], "check": []}
 
     def scan(**kw: Any) -> _Scan:
         calls["scan"].append(kw)
         return _Scan(
-            _SBox(_sb(data["sb"])), {"asof": data["asof"], "store_end": data["asof"], "bucket": "x"}
+            _SBox(_sb(data["sb"], data.get("small"))),
+            {"asof": data["asof"], "store_end": data["asof"], "bucket": "x"},
         )
 
     def picks(theme: str, **kw: Any) -> _Picks:
@@ -253,7 +258,8 @@ def test_daily_scan_failure_stops_with_exit_1(
 def test_daily_check_runs_only_when_positions_exist(env: dict[str, Any]) -> None:
     paths().positions.write_text("positions: []", encoding="utf-8")
     res = D.run_daily(asof=ASOF1, top_k=2)
-    assert env["calls"]["check"] == [(ASOF1, {"mode": "daily", "write": True})]
+    # --send 없이 돌았으므로 점검 알림도 발신 금지로 내려간다 (발신은 --send 가 지배한다)
+    assert env["calls"]["check"] == [(ASOF1, {"mode": "daily", "write": True, "send": False})]
     assert res.report.statuses()["check"] == "ok"
     pc = res.digest["positions_check"]
     assert pc["positions"] == 0 and pc["problems"] == ["CCJ: thesis 스냅샷 없음"]
@@ -305,8 +311,54 @@ def test_digest_alert_passes_wording_rule_and_caps_length(env: dict[str, Any]) -
     # 테마·종목·플래그 뜻이 다 실린다 (사람이 알림만 보고 판단할 수 있어야 한다)
     assert "종합" in a.text and "전문:" in a.text
     assert "투자 조언이 아니다" in a.text and "docs/02 §7.1" in a.text
-    if "외 " in a.text:  # 잘랐다면 자른 개수를 적는다 — 조용한 절단 금지
-        assert "건" in a.text
+    if "… 외 " in a.text:  # 잘랐다면 자른 개수를 적는다 — 조용한 절단 금지
+        assert "건" in a.text or "개" in a.text
+    # 파일과 같은 L4 폐기 고지가 알림에도 있다 (7번)
+    assert D.HONESTY_HEADER in a.text
+
+
+def test_daily_broken_baseline_is_not_reported_as_first_run(env: dict[str, Any]) -> None:
+    """깨진 직전 다이제스트는 "첫 실행" 이 아니다 — 산출물·알림에 손상 사실이 남는다 (4번)."""
+    D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2)
+    (paths().daily / ASOF1 / "digest.json").write_text("{ 깨짐", encoding="utf-8")
+    res = D.run_daily(asof=ASOF2, top_k=2, picks_per_theme=2)
+    diff = res.digest["diff"]
+    assert not diff["first_run"] and diff["baseline_broken"]
+    assert diff["themes_entered"] == [] and diff["rank_moves"] == {}
+    assert not any(t["new_since_prev"] for t in res.digest["themes"])
+    md = res.digest_md
+    assert "첫 실행 — 전부 신규" not in md and "기준일 없음, 전부 신규" not in md
+    assert "손상" in md and "직전 기준" in D.new_item_lines(diff)[0]
+    step = res.report.step("diff")
+    assert step is not None and step.status == "failed" and "손상" in step.reason
+    a = D.build_digest_alert(res.digest, _d.fromisoformat(ASOF2))
+    assert "손상" in a.text
+    assert res.exit_code == 0  # 후보 뷰 자체는 낸다
+
+
+def test_daily_small_sample_demotion_is_named_in_digest_and_alert(env: dict[str, Any]) -> None:
+    """스코어보드 1위가 소표본으로 빠지면 그 사실이 파일·알림에 남는다 (5번)."""
+    env["data"]["sb"] = [("t_a", 0.9, True), ("t_b", 0.8, True), ("t_c", 0.7, True)]
+    env["data"]["small"] = {"t_a"}
+    res = D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2)
+    assert res.digest["demoted"] == [{"theme": "t_a", "rank": 1}]
+    assert [t["theme"] for t in res.digest["themes"]] == ["t_b", "t_c"]
+    assert "소표본이라 뒤로 밀려" in res.digest_md and "t_a" in res.digest_md
+    a = D.build_digest_alert(res.digest, _d.fromisoformat(ASOF1))
+    assert "소표본이라 뒤로 밀려 상위 K 에서 빠진 테마" in a.text and "t_a" in a.text
+
+
+def test_daily_without_send_delivers_nothing_at_all(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`--send` 없이는 다이제스트도 보유 점검 알림도 나가지 않는다 (1번)."""
+    monkeypatch.setenv("MSA_TELEGRAM_TOKEN", "t")
+    monkeypatch.setenv("MSA_TELEGRAM_CHAT_ID", "42")
+    paths().positions.write_text("positions: []", encoding="utf-8")
+    res = D.run_daily(asof=ASOF1, top_k=2)
+    assert res.telegram is None  # 다이제스트를 만들지도 않았다
+    assert env["calls"]["check"][0][1]["send"] is False
+    assert not (env["state"] / "daily" / ASOF1 / "alerts.json").exists()
 
 
 def test_run_daily_rejects_bad_args(env: dict[str, Any]) -> None:

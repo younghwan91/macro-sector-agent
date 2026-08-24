@@ -84,7 +84,7 @@ def test_tier2_consistency_warning_when_stop_not_avg_minus_35() -> None:
     pc = check_position(
         _pos(tier2_stop_price=40.0), make_thesis(), {}, _prices([50.0] * 60, [30.0] * 60), ASOF
     )
-    assert any("평단 −35%" in p for p in pc.problems)
+    assert any("유효 Tier-2" in p and "avg−35%" in p for p in pc.problems)
 
 
 def test_time_stop_warning_30_days_before_only_when_no_trigger_met() -> None:

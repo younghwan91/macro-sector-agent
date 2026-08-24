@@ -161,6 +161,23 @@ def test_neutral_wording_passes() -> None:
     assert_wording_ok("사다리 추가 매수 금지 조건 (무효화 1건)")
 
 
+def test_deliver_send_false_is_suppressed_and_never_touches_channel(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`send=False` — 설정이 **있어도** 보내지 않는다. 파일은 쓰고 상태는 not_configured 가
+    아니라 suppressed (안 보낸 이유를 뭉개지 않는다, CLAUDE.md §2)."""
+
+    class Boom:
+        def send_many_sync(self, chat_id: str, texts: Sequence[str]) -> list[bool]:
+            raise AssertionError("send=False 인데 채널을 건드렸다")
+
+    monkeypatch.setenv("MSA_TELEGRAM_TOKEN", "t")
+    monkeypatch.setenv("MSA_TELEGRAM_CHAT_ID", "42")
+    res = deliver(_all_alerts()[:2], tmp_path, notifier=Boom(), send=False)
+    assert res.status == "suppressed" and res.sent == 0 and res.failed == 0
+    assert len(json.loads((tmp_path / "alerts.json").read_text())) == 2
+
+
 def test_deliver_not_configured_still_writes_json(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

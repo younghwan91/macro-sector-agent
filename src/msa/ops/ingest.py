@@ -28,6 +28,7 @@ upsert (기존 `added_at` 유지). 저널은 append-only — 기존 파일은 �
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date
 from pathlib import Path
@@ -402,11 +403,16 @@ def ingest_round(
     rejections_path: Path,
     watchlist_path: Path,
     write: bool = True,
+    thesis_paths: Sequence[Path] | None = None,
 ) -> IngestReport:
     """`state/theses/<date>/` 한 라운드를 저널·기각 대장·관찰 목록·진입 초안으로 적재한다.
 
     `write=False` 면 같은 판단을 하되 파일을 쓰지 않는다 (레코드 검증은 돌린다 — 쓰기 직전에
     거부될 것을 미리 보고한다).
+
+    `thesis_paths` 를 주면 디렉터리를 훑는 대신 **그 파일들만** 적재한다 — 새 L3 라운드 없이
+    이미 있는 thesis(사람 논지·직전 라운드)로 게이트 판정만 하는 경로(`msa run monthly
+    --provider none`)가 쓴다. 판정 규칙은 같다; 진입 초안은 `theses_dir` 에 쓴다.
     """
     report = IngestReport(
         asof=asof,
@@ -414,9 +420,13 @@ def ingest_round(
         scan_dir=rel(scan_dir) if scan_dir is not None else None,
         write=write,
     )
-    files = theses_in(theses_dir)
+    files = theses_in(theses_dir) if thesis_paths is None else [Path(f) for f in thesis_paths]
     if not files:
-        report.notes.append(f"{theses_dir} 에 *.thesis.yaml 이 없다")
+        report.notes.append(
+            f"{theses_dir} 에 *.thesis.yaml 이 없다"
+            if thesis_paths is None
+            else "적재할 thesis 파일이 0개다"
+        )
         return report
 
     ledger = load_rejections(rejections_path)

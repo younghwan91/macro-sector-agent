@@ -11,7 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from msa import fmt
-from msa.l5.ladders import RUNNER_MA_WEEKS, PositionPlan
+from msa.l5.ladders import RUNNER_MA_WEEKS, TIER2_RULE_CAPITAL, PositionPlan
 from msa.l5.risk import ScenarioLoss
 
 if TYPE_CHECKING:
@@ -59,6 +59,54 @@ def _loss_line(sl: ScenarioLoss) -> str:
     )
 
 
+def _tier2_budget_text(res: PortfolioResult) -> str:
+    """`docs/07` §4 의 예산 역산 — 진단에만 있던 것을 계획서에도 싣는다.
+
+    Tier-2 −35% 가 **탐색값이 아니라 예산에서 역산한 값**이라는 사실이 계획서에서 읽혀야 한다.
+    """
+    b = res.extra.get("tier2_budget")
+    if not isinstance(b, dict):
+        return "—"
+    return (
+        f"테마 상한 {float(b['theme_cap']):.0%} × Tier2 {float(b['tier2_from_avg']):.0%} = "
+        f"총자본 {float(b['loss_contribution']) * 100:.2f}% = MDD 예산 "
+        f"{float(b['mdd_budget']):.0%} 의 {float(b['share_of_budget']) * 100:.1f}% (docs/07 §4)"
+    )
+
+
+def _c4_text(res: PortfolioResult) -> str:
+    """C4 유동성 — **걸렸는지 아닌지**를 계획서 본문에 적는다 (`docs/07` §2.4 C4).
+
+    자본(`--capital`) 이 없으면 `w·Capital ≤ 0.10·ADV20` 은 식을 세울 수 없어 **한 번도 걸리지
+    않는다.** 문서가 "핵심 제약" 이라 부른 것이 무효인 채로 계획서가 나가면 안 되므로, 경고란
+    뿐 아니라 머리에도 그 사실을 적는다. 여기서 자본 기본값을 **정하지 않는다** (`CLAUDE.md` §1).
+    """
+    cap = res.extra.get("capital_usd")
+    if not isinstance(cap, int | float):
+        return "미적용 — 자본(--capital) 미지정 → w·Capital ≤ 10%·ADV20 을 걸지 않았다"
+    skipped = res.solution.c4_skipped if res.solution is not None else ()
+    txt = f"적용 — 자본 ${float(cap):,.0f} · w·Capital ≤ 10%·ADV20"
+    if skipped:
+        txt += f" (ADV 없어 제외한 종목 {list(skipped)})"
+    return txt
+
+
+def _tier2_text(p: PositionPlan) -> str:
+    """Tier-2 한 줄 — **적용된 규칙**의 가격과 하락률을 짝으로 찍는다 (`docs/07` §4).
+
+    두 규칙 중 먼저 오는 쪽이 유효 스탑이므로, 진 규칙은 뒤에 참고로만 남긴다.
+    가격과 % 가 서로 다른 규칙을 가리키는 일이 없어야 한다 — 스탑은 틀리면 안 되는 자리다.
+    """
+    eff_pct = f"초기가 −{abs(p.tier2_effective_vs_initial) * 100:.1f}%"
+    if p.tier2_rule == TIER2_RULE_CAPITAL:
+        other = (
+            f"평단 −35% 는 {_px(p.tier2_price)} = 초기가 "
+            f"−{abs(p.tier2_vs_initial) * 100:.1f}% 로 더 멀다"
+        )
+        return f"{_px(p.tier2_effective_price)} (자본 8% 규칙이 먼저 = {eff_pct}; {other})"
+    return f"{_px(p.tier2_effective_price)} (평단 −35% = {eff_pct})"
+
+
 def _position_block(p: PositionPlan) -> list[str]:
     role = {
         "eligible": "적격",
@@ -84,17 +132,8 @@ def _position_block(p: PositionPlan) -> list[str]:
     )
     inv = " / ".join(p.tier1_invalidations) if p.tier1_invalidations else "(없음 — 불가)"
     lines.append(f"         Tier1  {inv}")
-    t2 = (
-        f"{_px(p.tier2_effective_price)} (평단 −35% = 초기가 −{abs(p.tier2_vs_initial) * 100:.1f}%"
-        + (
-            f"; 자본 8% 규칙 {_px(p.tier2_capital_rule_price)} 이 더 가까움"
-            if p.tier2_rule == "capital 8%"
-            else ""
-        )
-        + ")"
-    )
     lines.append(
-        f"         Tier2  {t2}   시간스탑  {p.time_stop} "
+        f"         Tier2  {_tier2_text(p)}   시간스탑  {p.time_stop} "
         f"(horizon {p.horizon_months[1]}M, 트리거 0건일 때)"
     )
     tp1 = f"TP1 {_px(p.tp1_price)} (+2R)"
@@ -152,8 +191,9 @@ def render_plan(res: PortfolioResult) -> str:
             f"  → {bind}"
         )
         leg1 = sum(p.leg_weights[0] for p in res.positions)
+        # 라벨 부재와 배분 결정은 다르다 — L4 가 role 을 안 붙이면 비율을 단언하지 않는다.
         anc = (
-            "—"
+            "라벨 없음 (L4 미지정)"
             if res.anchor_share is None
             else f"{res.anchor_share * 100:.0f} : {(1 - res.anchor_share) * 100:.0f}"
         )
@@ -161,6 +201,8 @@ def render_plan(res: PortfolioResult) -> str:
             f"  앵커 : 토크 = {anc:<16}        현금 {_pct(s.cash, 0)}  "
             f"(총투자 {_pct(s.gross, 0)}, 1단 실투입 {_pct(leg1, 0)})"
         )
+        out.append(f"  C4 유동성: {_c4_text(res)}")
+        out.append(f"  Tier-2 예산 역산: {_tier2_budget_text(res)}")
         out.append(f"  μ 방식: {res.mu_method:<16}        확신도 압축 λ = {res.lam}")
         relax = "없음" if not s.relaxed else ", ".join(s.relaxed)
         out.append(f"  솔버: {s.solver} ({s.status}) · 완화: {relax}")

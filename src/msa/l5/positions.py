@@ -17,9 +17,12 @@
 | `entry_price` | `entry_price` (= `picks.csv`). **없으면 거부** — 기본값을 넣지 않는다 |
 | `ladder[]` | `weight` ← `ladder.fractions` · `trigger_pct` ← `(0, ADD2, ADD3)` · |
 |  | `trigger_price` ← `leg_prices`. 체결 필드는 전부 비움 |
-| `tier2_stop_price` | `entry_price × (1 − TIER2_FROM_AVG)` — 1단만 체결된 시점의 **평단 = |
-|  | 진입가** 기준 (`msa check` 의 "평단 −35%" 대조와 일치). 완납 시 값은 `note` 에 |
-| `tier2_basis` | `avg_minus_35` |
+| `tier2_stop_price` | **두 규칙 중 먼저 오는 쪽** (`ladders.tier2_rules`) 을 1단만 체결된 |
+|  | 시점에서 평가한 값 — 평단 = 진입가, 포지션 비중 = 목표비중 × 1단 비율. |
+|  | 대개 평단 −35% 이고, 1단 비중이 0.2286 을 넘을 때만 자본 8% 규칙이 앞선다. |
+|  | 완납 시 값(§4 표)은 `note` 에 남고 사다리가 채워질 때 사람이 갱신한다 |
+| `tier2_basis` | 적용된 규칙 — `avg_minus_35` 또는 `capital_8pct` (`msa check` 가 같은 |
+|  | 함수로 대조하므로 라벨과 가격이 어긋나지 않는다) |
 | `time_stop_date`·`horizon_months` | `time_stop`·`horizon_months` (asof + 상한 개월, 07 §4) |
 | `tp[]` | TP1 `min(+2R, P50)` · TP2 `min(P75, 고점 50% 회복)` · 러너(가격 없음) — |
 |  | "또는" 조건이라 먼저 오는(낮은) 가격이 기계 조건. 둘 다 없으면 manual |
@@ -46,10 +49,12 @@ from msa.l5.ladders import (
     ADD3_DRAWDOWN,
     RUNNER_MA_WEEKS,
     RUNNER_TRAIL,
-    TIER2_FROM_AVG,
+    TIER2_RULE_AVG,
+    TIER2_RULE_CAPITAL,
     PositionPlan,
+    tier2_rules,
 )
-from msa.ops.state_files import LadderStep, Position, PositionsFile, Role, TpLevel
+from msa.ops.state_files import LadderStep, Position, PositionsFile, Role, Tier2Basis, TpLevel
 
 if TYPE_CHECKING:
     from msa.l5.run import PortfolioResult
@@ -58,6 +63,11 @@ PROPOSAL_YAML = "positions-proposal.yaml"
 PROPOSAL_MD = "positions-proposal.md"
 #: TP 3단 물량 — `docs/07` §5 "1/3 씩" (`state_files._tp_from` 의 기본값과 같다).
 TP_FRACTION = 1.0 / 3.0
+#: Tier-2 규칙 이름 → `positions.yaml` 의 `tier2_basis` 값. 라벨이 실제 적용 규칙을 가리킨다.
+_BASIS: dict[str, Tier2Basis] = {
+    TIER2_RULE_AVG: "avg_minus_35",
+    TIER2_RULE_CAPITAL: "capital_8pct",
+}
 #: `PositionPlan.role` → `Position.role` (anchor | torque). `Pick.is_anchor` 와 같은 묶음이다.
 _ANCHOR_ROLES: frozenset[str] = frozenset({"anchor", "royalty", "midstream"})
 
@@ -116,8 +126,9 @@ def _note(p: PositionPlan, *, has_snapshot: bool, has_journal: bool) -> str:
     if p.tier2_effective_price is not None:
         parts.append(
             f"완납 시 Tier-2 = {p.tier2_effective_price:.2f} "
-            f"(초기가 {p.tier2_vs_initial:+.1%}, 규칙 {p.tier2_rule}) — 사다리가 채워질 때마다 "
-            "tier2_stop_price 를 평단 −35% 로 갱신한다"
+            f"(초기가 {p.tier2_effective_vs_initial:+.1%}, 규칙 {p.tier2_rule}) — 사다리가 "
+            "채워질 때마다 tier2_stop_price 를 두 규칙(평단 −35% · 포지션 손실 = 총자본 8%) 중 "
+            "먼저 오는 쪽으로 갱신한다"
         )
     if _role(p.role) != p.role:
         parts.append(
@@ -145,6 +156,7 @@ def position_from_plan(
             "사다리·Tier-2·TP 가격 전부가 이 값에서 나오므로 기본값을 넣지 않는다"
         )
     f = p.ladder.fractions
+    leg1_rules = tier2_rules(e, p.target_weight * f[0])
     ladder = [
         LadderStep(step=1, weight=f[0], trigger_pct=0.0, trigger_price=e),
         LadderStep(step=2, weight=f[1], trigger_pct=ADD2_DRAWDOWN, trigger_price=p.leg_prices[1]),
@@ -158,9 +170,12 @@ def position_from_plan(
         opened_at=asof,
         entry_price=e,
         ladder=ladder,
-        # 1단만 체결된 시점의 평단 = 진입가. `msa check` 가 "평단 −35%" 와 1% 이내인지 대조한다.
-        tier2_stop_price=e * (1.0 - TIER2_FROM_AVG),
-        tier2_basis="avg_minus_35",
+        # 1단만 체결된 시점의 평단 = 진입가, 그 시점 포지션 비중 = 목표비중 × 1단 비율.
+        # 두 규칙 중 **먼저 오는 쪽**을 그대로 옮긴다 (docs/07 §4) — `msa check` 는 같은 함수로
+        # 대조한다. 자본 8% 규칙이 이기면 basis 가 `capital_8pct` 로 나가고, 사람이 오지목되지
+        # 않는다.
+        tier2_stop_price=leg1_rules.effective,
+        tier2_basis=_BASIS[leg1_rules.rule],
         time_stop_date=p.time_stop,
         horizon_months=p.horizon_months,
         tp=_tp_levels(p),

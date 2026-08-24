@@ -149,14 +149,22 @@ msa run daily         # 일간: 후보 다이제스트 (스캔→상위 K→테�
                       #   --asof --top-k 8 --themes a,b --per-theme 5 --no-write --send
                       #   산출물 state/daily/<date>/ (digest.json·digest.md·report.txt) — 읽기 전용 후보 뷰,
                       #   측정값·후보 목록이지 투자 조언이 아니다. 결정 케이던스는 월간 그대로
+                      #   --send 가 그 실행의 모든 발신(다이제스트 + 보유 점검 알림)을 지배한다 —
+                      #   없으면 아무것도 나가지 않고 alerts.json 만 남는다 (suppressed)
 msa run quarterly     # 분기 명령 목록 (ops calibration · ops rejections-update) — 나열만
 msa backtest l1       # L1 백테스트 관문 0 (M3.5) — rank-IC·스프레드·breadth_lead·DSR/PBO.
                       #   산출물 state/backtests/l1/<date>/ · 판정 docs/backtest-l1.md. 튜닝 루프가 아니다
 msa backtest l1-structures  # M3.6 — A 집계 구조 검정 S0/S1/S2 (docs/12 §4 사전 등록). 결과 docs/backtest-l1.md §12
 msa backtest l4       # L4 종목 선정 백테스트 (docs/14 사전 등록의 집행) — 테마 내 rank-IC·축 단독·하드 필터.
                       #   산출물 state/backtests/l4/<date>/ · --jobs 병렬 · 테마별 parquet 캐시라 중단해도 이어서 돈다
+msa backtest l4-structures  # L4 선정 구조 비교 (docs/15 사전 등록의 집행) — B0~B4 후보 규칙의 테마 EW 초과·
+                      #   사망률·회전율·PBO. 산출물 state/backtests/l4-structures/<date>/ · 판정 docs/15.
+                      #   --force --jobs --themes/--max-months(스모크, 판정 아님) --no-write.
+                      #   특성 패널 캐시는 `msa backtest l4` 의 것을 그대로 재사용한다
 ```
 
 텔레그램 배달은 `MSA_TELEGRAM_TOKEN` · `MSA_TELEGRAM_CHAT_ID` 가 둘 다 있을 때만 — 없으면 "not configured".
+보낼지 말지는 명령의 플래그가 정한다 (`msa check --no-send` · `msa run daily --send`) — 껐으면 "suppressed" 이고
+어느 경우든 `alerts.json` 은 쓴다.
 
 패키지 관리는 **uv**. `pip install` 하지 않는다.

@@ -41,6 +41,9 @@ ADD2_DRAWDOWN = 0.13
 ADD3_DRAWDOWN = 0.23
 TIER2_FROM_AVG = 0.35
 TIER2_CAPITAL_LOSS = 0.08
+#: Tier-2 규칙 이름 — 계획서·CSV·`positions.yaml`·`msa check` 가 같은 문자열을 쓴다.
+TIER2_RULE_AVG = "avg−35%"
+TIER2_RULE_CAPITAL = "capital 8%"
 THEME_CAP_FOR_LOSS = 0.35  # C3 테마 상한 — 손실 기여 계산용
 TP1_R_MULTIPLE = 2.0
 TP2_PEAK_RECOVERY = 0.50
@@ -95,6 +98,44 @@ def ladder_math(c: float) -> LadderMath:
     )
 
 
+@dataclass(frozen=True)
+class Tier2Rules:
+    """Tier-2 두 규칙의 발동 수준과 **먼저 오는(= 높은) 쪽**. `docs/07` §4 "둘 중 먼저 오는 쪽".
+
+    전부 **기준가 배수**다 — 기준가에 곱하면 가격이 된다. 기준가를 무엇으로 놓느냐가
+    호출자의 몫이고, 그 자리에 따라 세 곳에서 같은 함수를 쓴다:
+
+    | 호출자 | `basis` (기준가) | `weight` (그 시점 포지션 비중) |
+    |---|---|---|
+    | `build_position_plan` (완납 투영) | 초기가 1.0 → `avg_cost` | 목표비중 |
+    | `l5/positions.py` (1단만 체결) | 초기가 1.0 (= 그 시점 평단) | 목표비중 × 1단 비율 |
+    | `ops/check.py` (현재 체결 상태) | 실제 평단 | 목표비중 × 체결된 단 비율 |
+
+    비중이 `TIER2_CAPITAL_LOSS` 이하면 자본 규칙은 −100% 보다 멀어 **없다** (`None`).
+    """
+
+    avg_rule: float  # 평단 × (1 − 0.35)
+    capital_rule: float | None  # 평단 × (1 − 0.08/w) — w ≤ 0.08 이면 없음
+    effective: float  # 둘 중 높은(먼저 오는) 쪽
+    rule: str  # TIER2_RULE_AVG | TIER2_RULE_CAPITAL
+
+
+def tier2_rules(avg_basis: float, weight: float) -> Tier2Rules:
+    """평단(배수 또는 가격)과 그 시점 포지션 비중 → Tier-2 두 규칙과 유효 스탑.
+
+    **선언된 두 값만 쓴다** — `TIER2_FROM_AVG` 0.35 · `TIER2_CAPITAL_LOSS` 0.08 (`docs/07` §4).
+    """
+    avg_rule = avg_basis * (1.0 - TIER2_FROM_AVG)
+    cap_rule: float | None = None
+    if weight > 0:
+        loss_frac = TIER2_CAPITAL_LOSS / weight
+        if loss_frac < 1.0:
+            cap_rule = avg_basis * (1.0 - loss_frac)
+    if cap_rule is not None and cap_rule > avg_rule:
+        return Tier2Rules(avg_rule, cap_rule, cap_rule, TIER2_RULE_CAPITAL)
+    return Tier2Rules(avg_rule, cap_rule, avg_rule, TIER2_RULE_AVG)
+
+
 def add_months(d: date, months: int) -> date:
     ts = pd.Timestamp(d) + pd.DateOffset(months=months)
     return ts.date()
@@ -115,10 +156,14 @@ class PositionPlan:
     entry_price: float | None
     leg_prices: tuple[float | None, float | None, float | None]
     tier1_invalidations: tuple[str, ...]
-    tier2_price: float | None
+    tier2_price: float | None  # 평단 −35% 규칙의 가격 (규칙이 져도 참고로 남긴다)
     tier2_capital_rule_price: float | None  # 포지션 손실 = 총자본 8% 가 되는 가격 (평단 기준)
     tier2_effective_price: float | None  # 둘 중 먼저 오는(높은) 쪽
-    tier2_rule: str  # "avg−35%" | "capital 8%"
+    tier2_rule: str  # TIER2_RULE_AVG | TIER2_RULE_CAPITAL
+    #: **유효** 스탑의 초기가 대비 하락률 — 가격이 없어도 배수로 계산된다.
+    #: 계획서·CSV 는 반드시 `tier2_effective_price` 와 **이 값**을 짝으로 찍는다.
+    tier2_effective_vs_initial: float
+    tier2_capital_rule_vs_initial: float | None
     time_stop: date
     horizon_months: tuple[int, int]
     r_unit: float | None  # 초기가 − Tier2 유효가
@@ -130,7 +175,11 @@ class PositionPlan:
 
     @property
     def tier2_vs_initial(self) -> float:
-        """Tier-2 스탑 / 초기가 − 1 — 사다리 산술에서 나온다 (가격이 없어도 비율은 있다)."""
+        """**평단 −35% 규칙**의 초기가 대비 하락률 (`docs/07` §4 표의 −39.4/−40.5/−42.4%).
+
+        자본 8% 규칙이 이기면 유효 스탑은 이 값이 **아니다** — 표시용 짝은
+        `tier2_effective_vs_initial` 이다.
+        """
         return self.ladder.tier2_vs_initial
 
     @property
@@ -154,7 +203,9 @@ class PositionPlan:
             "tier2_price": self.tier2_price,
             "tier2_vs_initial": self.tier2_vs_initial,
             "tier2_capital_rule_price": self.tier2_capital_rule_price,
+            "tier2_capital_rule_vs_initial": self.tier2_capital_rule_vs_initial,
             "tier2_effective_price": self.tier2_effective_price,
+            "tier2_effective_vs_initial": self.tier2_effective_vs_initial,
             "tier2_rule": self.tier2_rule,
             "time_stop": str(self.time_stop),
             "horizon_months": list(self.horizon_months),
@@ -177,28 +228,22 @@ def build_position_plan(
     f = lm.fractions
     leg_w = (target_weight * f[0], target_weight * f[1], target_weight * f[2])
     e = pick.entry_price
+    # 두 규칙은 **완납 평단**(초기가 = 1.0 기준) 과 목표비중에서 배수로 먼저 나온다 —
+    # 가격이 없어도 "초기가 대비 몇 %" 는 계산되므로 계획서의 짝이 어긋나지 않는다.
+    rules = tier2_rules(lm.avg_cost, target_weight)
+    rule = rules.rule
     leg_px: tuple[float | None, float | None, float | None]
     t2_px: float | None
     cap_px: float | None
     eff_px: float | None
-    rule = "avg−35%"
     r_unit: float | None = None
     tp1_px: float | None = None
     tp2_px: float | None = None
     if e is not None and e > 0:
         leg_px = (e, e * lm.leg_prices[1], e * lm.leg_prices[2])
-        avg = e * lm.avg_cost
-        t2_px = e * lm.tier2_price
-        # 포지션 손실이 총자본 8% 가 되는 평단 대비 손실률 = 0.08 / w (w ≤ 0.15 면 −35% 보다 멀다)
-        cap_px = None
-        if target_weight > 0:
-            loss_frac = TIER2_CAPITAL_LOSS / target_weight
-            if loss_frac < 1.0:
-                cap_px = avg * (1.0 - loss_frac)
-        eff_px = t2_px
-        if cap_px is not None and cap_px > t2_px:
-            eff_px = cap_px
-            rule = "capital 8%"
+        t2_px = e * rules.avg_rule
+        cap_px = None if rules.capital_rule is None else e * rules.capital_rule
+        eff_px = e * rules.effective
         r_unit = e - eff_px
         tp1_px = e + TP1_R_MULTIPLE * r_unit
         if pick.prev_cycle_peak_price is not None and pick.prev_cycle_peak_price > e:
@@ -222,6 +267,10 @@ def build_position_plan(
         tier2_capital_rule_price=cap_px,
         tier2_effective_price=eff_px,
         tier2_rule=rule,
+        tier2_effective_vs_initial=rules.effective - 1.0,
+        tier2_capital_rule_vs_initial=(
+            None if rules.capital_rule is None else rules.capital_rule - 1.0
+        ),
         time_stop=add_months(asof, thesis.horizon_months[1]),
         horizon_months=thesis.horizon_months,
         r_unit=r_unit,

@@ -16,9 +16,11 @@
 | | | (`docs/02` §7.1 풀 미달 = 관찰) |
 | `research` | `none` → 사람 논지/직전 thesis 를 **찾기만** | 테마별 격리 — 스키마 기각은 제외 |
 | | `mock`·`fixture`·`anthropic` → 테마별 L3 | 제공자 오류는 보고. 라운드는 계속 |
-| `ingest` | `ingest_round` (L3 라운드가 있을 때) | 보고 |
+| `ingest` | `ingest_round` — 새 L3 라운드, 또는 `none`·`--skip-research` 면 | 보고 |
+| | 찾은 thesis 를 그 라운드 날짜로 (관찰 목록·기각·초안은 게이트 판정의 산출물이다) | |
 | `picks` | 게이트 편입 가능 테마만 `run_picks` | 테마별 격리 |
-| `assemble`·`portfolio` | `assemble_inputs` → `run_portfolio(emit_positions=True)` | 0 → skipped |
+| `assemble`·`portfolio` | `assemble_inputs` → `run_portfolio(emit_positions=True)` | 0 → skipped; |
+| | | **입력 계약 위반은 `failed` + 중단**(exit 1) |
 | `report` | `state/runs/<asof>/monthly-report.md` · `run.json` | |
 
 **끝은 제안과 초안이다.** 진입 초안(`journal-draft-*.yaml`)·미체결 제안(`positions-proposal.yaml`)·
@@ -51,6 +53,7 @@ from typing import Any
 
 import pandas as pd
 
+from msa.coerce import opt_int
 from msa.config import REPO_ROOT, paths, rel
 from msa.dates import parse_date
 from msa.errors import ProviderError
@@ -97,6 +100,11 @@ QUARTERLY_COMMANDS: tuple[tuple[str, str], ...] = (
     ("msa ops calibration", "cycle_confidence 캘리브레이션 — N<20 이면 결론 없음 (docs/10 §4)"),
     ("msa ops rejections-update", "기각 대장 r_12m/r_24m 갱신 + 세 질문 (docs/10 §5)"),
 )
+
+#: `assemble_inputs` 가 내는 **정상적인 "0건"** 의 표지 (`pipeline/assemble.py` 의 마지막 raise).
+#: 같은 `AssembleError` 가 계약 위반(ranking 열 없음 · 사람 논지 디렉터리 없음 · top_per_theme)
+#: 에서도 나므로, 이 문구가 없으면 `skipped` 가 아니라 `failed` 다 (`CLAUDE.md` §2).
+ASSEMBLE_EMPTY_MARKER = "묶을 테마가 0개다"
 
 #: 리포트 꼬리 — 모든 리포트가 같은 문장으로 끝난다.
 TRAILER = (
@@ -240,6 +248,9 @@ class ThemeSelection:
     ranks: dict[str, int | None]
     flags: dict[str, tuple[str, ...]]  # 테마 → (SECULAR, 소표본, 풀 미달, 스코어보드에 없음 …)
     notes: tuple[str, ...]
+    #: 점수 순으로는 상위 K 였으나 **소표본이라 뒤로 밀려** 선정에서 빠진 테마 → 스코어보드 순위.
+    #: 재정렬 자체는 선언된 동작이다 — 사라지는 것을 말없이 두지 않으려고 센다 (`CLAUDE.md` §2).
+    demoted: tuple[tuple[str, int | None], ...] = ()
 
     @property
     def short_of_k(self) -> bool:
@@ -257,6 +268,7 @@ class ThemeSelection:
             "ranks": dict(self.ranks),
             "flags": {t: list(f) for t, f in self.flags.items()},
             "notes": list(self.notes),
+            "demoted_small_sample": [{"theme": t, "rank": r} for t, r in self.demoted],
         }
 
     def render(self) -> str:
@@ -271,6 +283,11 @@ class ThemeSelection:
             fl = ", ".join(self.flags.get(t, ())) or "—"
             src = "지정" if t in self.extra else "스코어보드"
             L.append(f"  {'—' if rk is None else f'#{rk}':>4}  {t:<28} {src:<8} [{fl}]")
+        for t, rk in self.demoted:
+            L.append(
+                f"  {'—' if rk is None else f'#{rk}':>4}  {t:<28} {'강등':<8} "
+                "[소표본 — 점수 순 상위 K 였으나 뒤로 밀려 빠짐]"
+            )
         L += [f"  · {n}" for n in self.notes]
         return "\n".join(L)
 
@@ -302,6 +319,10 @@ def select_themes(
     적는다 — 풀 미달 테마로 채우지 않는다. `extra_themes` 는 자격·순위와 무관하게 붙인다(사용자
     지정) — SECULAR·소표본·풀 미달·스코어보드에 없음 플래그를 같이 적는다. SECULAR 테마는 L3 의
     게이트(`docs/04`)가 다룬다 — 여기서 빼지 않는다. 거시 오버레이는 없다 (L2 제거, 2026-08-23).
+
+    소표본을 뒤로 미는 재정렬 때문에 **스코어보드 순위 상위가 선정에서 빠질 수 있다** (rank 열은
+    순수 점수 순이다). 규칙은 그대로 두되 빠진 테마와 사유를 `demoted` 와 `notes` 에 남긴다 —
+    말없이 사라지지 않게 (`CLAUDE.md` §2).
     """
     if top_k < 0:
         raise RunError(f"top_k 는 0 이상: {top_k}")
@@ -317,8 +338,11 @@ def select_themes(
         elig["_penal"] = elig["small_sample"].fillna(False).astype(int)
     else:
         elig["_penal"] = 0
+    by_score = elig.sort_values("score", ascending=False, kind="mergesort")
     elig = elig.sort_values(["_penal", "score"], ascending=[True, False], kind="mergesort")
     from_sb = tuple(str(t) for t in elig.index[:top_k])
+    # 점수만 봤으면 상위 K 였는데 소표본 재정렬로 빠진 테마 — 규칙은 그대로 두고 세어서 남긴다
+    demoted_names = [str(t) for t in by_score.index[:top_k] if str(t) not in from_sb]
 
     extra: list[str] = []
     for t in extra_themes:
@@ -354,6 +378,18 @@ def select_themes(
     for t in extra:
         if t not in sb.index:
             notes.append(f"{t}: 스코어보드에 없는 지정 테마 — L3 입력 조립이 거부할 수 있다")
+
+    demoted: list[tuple[str, int | None]] = []
+    for t in demoted_names:
+        rk_val = opt_int(sb.loc[t, "rank"]) if t in sb.index and "rank" in sb.columns else None
+        demoted.append((t, rk_val))
+    if demoted:
+        who = ", ".join(f"{t}(#{r})" if r is not None else t for t, r in demoted)
+        notes.append(
+            f"소표본 강등 {len(demoted)} — 점수 순 상위 K 였으나 뒤로 밀려 선정에서 빠졌다: {who}. "
+            "소표본을 뒤로 미는 것은 선언된 동작이다 (Scoreboard.top_k 와 같은 순서) — "
+            "스코어보드 `rank` 는 순수 점수 순이라 선정 표의 순위가 1 부터 시작하지 않을 수 있다"
+        )
     return ThemeSelection(
         top_k=top_k,
         selected=selected,
@@ -364,6 +400,7 @@ def select_themes(
         ranks=ranks,
         flags=flags,
         notes=tuple(notes),
+        demoted=tuple(demoted),
     )
 
 
@@ -580,7 +617,8 @@ def run_monthly(
       격리된다.
     - `write=False` — `state/` 에 아무것도 쓰지 않는다. 중간 산출물은 `sandbox_dir`(기본 임시
       디렉터리, 끝나면 삭제)에 쓰고, 저널·대장·관찰 목록은 dry-run 판정만 한다.
-    - 반환의 `report.exit_code` 는 스캔이 중단됐을 때만 1 이다. 부분 가용은 0 + 리포트.
+    - 반환의 `report.exit_code` 는 스캔 중단 또는 묶음 입력 **계약 위반**일 때 1 이다.
+      부분 가용(테마별 실패·정상적인 0건)은 0 + 리포트.
     """
     if provider not in PROVIDERS:
         raise RunError(f"provider ∈ {PROVIDERS}: {provider!r}")
@@ -692,11 +730,15 @@ def _monthly_steps(
             "ok",
             f"선정 {len(sel.selected)} (자격 {sel.n_eligible}/{sel.n_total}"
             + (f", K={top_k} 미만" if sel.short_of_k else "")
-            + f", 지정 {len(sel.extra)})",
+            + f", 지정 {len(sel.extra)}"
+            + (f", 소표본 강등 {len(sel.demoted)}" if sel.demoted else "")
+            + ")",
             seconds=t.seconds,
             details={"selection": sel.as_dict(), "text": sel.render()},
         )
     )
+    for n in sel.notes:
+        report.notes.append(f"select: {n}")
     if not sel.selected:
         report.notes.append("선정 테마 0 — research 이하를 건너뛴다")
         _skip_rest(report, MONTHLY_STEPS[:-1], "선정 테마 0")
@@ -705,9 +747,15 @@ def _monthly_steps(
     # 3) research (+ 4 ingest)
     if skip_research:
         report.add(StepResult("research", "skipped", "--skip-research"))
-        report.add(StepResult("ingest", "skipped", "--skip-research"))
         # 논지는 그래도 찾는다 — picks·portfolio 가 쓸 수 있게 (provider none 과 같은 경로)
         result.theses = _locate_theses(sel.selected, roots, asof_s, hdir)
+        _ingest_step(
+            result,
+            roots,
+            scan_dir,
+            _located_jobs(result, asof_s),
+            empty_reason="--skip-research · 찾은 thesis 0 — 적재할 것이 없다",
+        )
     elif provider == "none":
         t = _Timer()
         result.theses = _locate_theses(sel.selected, roots, asof_s, hdir)
@@ -732,10 +780,23 @@ def _monthly_steps(
             report.human_todo.append(
                 f"{th}: thesis 없음 → 관찰. 사람 논지(<dir>/{th}.yaml)를 쓰거나 `msa research {th}`"
             )
-        report.add(StepResult("ingest", "skipped", "provider none — 새 L3 라운드가 없다"))
+        # 새 L3 라운드는 없지만 **게이트 판정의 산출물(관찰 목록·기각 항목·초안)은 나와야 한다**
+        _ingest_step(
+            result,
+            roots,
+            scan_dir,
+            _located_jobs(result, asof_s),
+            empty_reason="provider none — 찾은 thesis 0 (적재할 것이 없다)",
+        )
     else:
         _research_step(result, roots, asof_s, sel.selected, provider, hdir)
-        _ingest_step(result, roots, asof_s, scan_dir)
+        _ingest_step(
+            result,
+            roots,
+            scan_dir,
+            _round_jobs(result),
+            empty_reason="이번 실행이 쓴 L3 라운드가 없다",
+        )
 
     # 5) picks
     eligible = [
@@ -892,54 +953,143 @@ def _research_step(
             report.human_todo.append(f"{r.theme}: referee contested → 관찰 목록 · 재연구 대상")
 
 
+@dataclass(frozen=True)
+class _IngestJob:
+    """적재 한 묶음 — 어느 디렉터리를, 어느 기준일로, (선택) 어느 파일들만."""
+
+    theses_dir: Path
+    asof: str
+    paths: tuple[Path, ...] | None = None  # None = 디렉터리 전체 (새 L3 라운드)
+
+
+def _round_jobs(result: MonthlyRunResult) -> list[_IngestJob]:
+    """이번 실행이 쓴 L3 라운드 → 적재 묶음 (기존 동작)."""
+    round_dirs = {r.out_dir for r in result.research.values() if r.out_dir is not None}
+    if not round_dirs:
+        return []
+    if len(round_dirs) > 1:
+        result.report.notes.append(
+            f"ingest: 라운드 디렉터리가 {len(round_dirs)} 개 — 첫 번째만 적재한다"
+        )
+    d = sorted(round_dirs)[0]
+    return [_IngestJob(d, result.report.asof)]
+
+
+def _located_jobs(result: MonthlyRunResult, asof_s: str) -> list[_IngestJob]:
+    """`_locate_theses` 가 찾은 thesis → 적재 묶음.
+
+    새 L3 라운드가 없어도(`--provider none`·`--skip-research`) **게이트 판정의 산출물인 관찰
+    목록·기각 항목·진입 초안은 나와야 한다** — 그러지 않으면 리포트는 "관찰" 이라 적는데 파일이
+    없다. 판정 자체는 `ingest_round` 가 하던 그대로다 (LLM 호출 없음).
+
+    기준일은 **그 thesis 가 나온 라운드의 날짜**다 (디렉터리 이름). 오늘 날짜로 적재하면 이미
+    적재된 기각이 매달 새 저널 항목으로 복제된다 — 대장의 멱등 키가 `(theme, rejected_at)` 라서다.
+    날짜를 읽을 수 없는 사람 논지 디렉터리만 이번 실행의 `asof` 를 쓴다.
+    """
+    by_dir: dict[Path, list[Path]] = {}
+    for rec in result.theses.values():
+        if rec.path is None or rec.status not in ("found", "researched"):
+            continue
+        f = Path(rec.path)
+        if not f.is_absolute():
+            f = REPO_ROOT / f
+        if not f.exists():
+            continue
+        by_dir.setdefault(f.parent, []).append(f)
+    jobs: list[_IngestJob] = []
+    for d, files in sorted(by_dir.items()):
+        try:
+            round_asof = parse_date(d.name).isoformat()
+        except ValueError:
+            round_asof = asof_s  # 사람 논지 디렉터리 등 — 날짜가 아니다
+        jobs.append(_IngestJob(d, round_asof, tuple(sorted(files))))
+    return jobs
+
+
 def _ingest_step(
-    result: MonthlyRunResult, roots: _Roots, asof_s: str, scan_dir: Path | None
+    result: MonthlyRunResult,
+    roots: _Roots,
+    scan_dir: Path | None,
+    jobs: Sequence[_IngestJob],
+    *,
+    empty_reason: str,
 ) -> None:
+    """`jobs` 를 차례로 적재하고 **한 줄로 합산**해 보고한다. 묶음이 0 이면 사유와 함께 skipped."""
     report = result.report
     p = paths()
     t = _Timer()
-    round_dirs = {r.out_dir for r in result.research.values() if r.out_dir is not None}
-    if not round_dirs:
-        report.add(StepResult("ingest", "skipped", "이번 실행이 쓴 L3 라운드가 없다"))
+    if not jobs:
+        report.add(StepResult("ingest", "skipped", empty_reason))
         return
-    if len(round_dirs) > 1:
-        report.notes.append(f"ingest: 라운드 디렉터리가 {len(round_dirs)} 개 — 첫 번째만 적재한다")
-    round_dir = sorted(round_dirs)[0]
-    try:
-        ing = ingest_round(
-            round_dir,
-            asof=parse_date(asof_s),
-            scan_dir=scan_dir,
-            journal_dir=journal_dir(REPO_ROOT),
-            rejections_path=p.rejections,
-            watchlist_path=p.watchlist,
-            write=not roots.sandbox,
+    reps: list[IngestReport] = []
+    fails: list[str] = []
+    for job in jobs:
+        try:
+            reps.append(
+                ingest_round(
+                    job.theses_dir,
+                    asof=parse_date(job.asof),
+                    scan_dir=scan_dir,
+                    journal_dir=journal_dir(REPO_ROOT),
+                    rejections_path=p.rejections,
+                    watchlist_path=p.watchlist,
+                    write=not roots.sandbox,
+                    thesis_paths=list(job.paths) if job.paths is not None else None,
+                )
+            )
+        except Exception as e:
+            log.warning("run monthly: ingest %s 실패 — %s", job.theses_dir, _err(e))
+            fails.append(f"{rel(job.theses_dir)}: {_err(e)}")
+    if not reps:
+        report.add(StepResult("ingest", "failed", "; ".join(fails), seconds=t.seconds))
+        return
+    result.ingest = reps[0]
+    rows = [r for rep in reps for r in rep.rows]
+    outs = sorted({x for r in rows for x in r.paths})
+    n = {
+        k: sum(rep.count(k) for rep in reps)
+        for k in (
+            "reject_ingested",
+            "reject_skipped",
+            "reject_blocked",
+            "watchlist_added",
+            "watchlist_updated",
+            "draft_written",
+            "unknown_status",
         )
-    except Exception as e:
-        log.warning("run monthly: ingest 실패 — %s", _err(e))
-        report.add(StepResult("ingest", "failed", _err(e), seconds=t.seconds))
-        return
-    result.ingest = ing
-    outs = sorted({x for r in ing.rows for x in r.paths})
-    status = "ok" if not (ing.n_rejected_blocked or ing.count("unknown_status")) else "failed"
+    }
+    status = "ok" if not (n["reject_blocked"] or n["unknown_status"] or fails) else "failed"
     report.add(
         StepResult(
             "ingest",
             status,
-            f"thesis {ing.n_theses} · 기각→저널+대장 {ing.n_rejected_ingested} (건너뜀 "
-            f"{ing.n_rejected_skipped}, 불가 {ing.n_rejected_blocked}) · 관찰 upsert "
-            f"{ing.n_watchlist_upserts} · 진입 초안 {ing.n_drafts}"
-            + ("" if not roots.sandbox else " · dry-run"),
+            f"thesis {len(rows)} · 기각→저널+대장 {n['reject_ingested']} (건너뜀 "
+            f"{n['reject_skipped']}, 불가 {n['reject_blocked']}) · 관찰 upsert "
+            f"{n['watchlist_added'] + n['watchlist_updated']} · 진입 초안 {n['draft_written']}"
+            + ("" if not roots.sandbox else " · dry-run")
+            + (f" · 묶음 실패 {len(fails)}: " + "; ".join(fails) if fails else ""),
             outs,
             t.seconds,
-            {"text": ing.render()},
+            {
+                "text": "\n".join(rep.render() for rep in reps),
+                "jobs": [
+                    {
+                        "theses_dir": rel(j.theses_dir),
+                        "asof": j.asof,
+                        "n_paths": None if j.paths is None else len(j.paths),
+                    }
+                    for j in jobs
+                ],
+                "failed": fails,
+            },
         )
     )
-    for theme, todo in ing.human_todo.items():
-        report.human_todo.append(
-            f"{theme}: 진입 초안 채우기 → `msa journal new --from` — " + " / ".join(todo)
-        )
-    for r in ing.rows:
+    for rep in reps:
+        for theme, todo in rep.human_todo.items():
+            report.human_todo.append(
+                f"{theme}: 진입 초안 채우기 → `msa journal new --from` — " + " / ".join(todo)
+            )
+    for r in rows:
         if r.action in ("watchlist_added", "watchlist_updated"):
             report.human_todo.append(f"{r.theme}: 관찰 목록 행 ({r.status}) — {r.detail}")
         elif r.action == "reject_blocked":
@@ -995,8 +1145,21 @@ def _portfolio_step(
             write=True,
         )
     except AssembleError as e:
-        report.add(StepResult("assemble", "skipped", f"묶을 테마 0 — {e}", seconds=t.seconds))
-        report.add(StepResult("portfolio", "skipped", "묶음이 없다"))
+        if ASSEMBLE_EMPTY_MARKER in str(e):  # 정상적인 "0건" — 오류가 아니다
+            report.add(StepResult("assemble", "skipped", f"묶을 테마 0 — {e}", seconds=t.seconds))
+            report.add(StepResult("portfolio", "skipped", "묶음이 없다"))
+            return
+        # 계약 위반 (ranking.csv 가 L4 산출물이 아니다 · 사람 논지 디렉터리 없음 · top_per_theme)
+        # — "0건" 으로 위장하지 않는다 (CLAUDE.md §2)
+        log.error("run monthly: assemble 계약 위반 — %s", _err(e))
+        report.add(
+            StepResult("assemble", "failed", f"입력 계약 위반 — {_err(e)}", seconds=t.seconds)
+        )
+        report.add(StepResult("portfolio", "skipped", "묶음 계약 위반"))
+        report.stopped = True
+        report.stopped_reason = (
+            f"assemble 입력 계약 위반 — {_err(e)} (CLAUDE.md §2: 정상적인 0건이 아니다)"
+        )
         return
     except Exception as e:
         log.warning("run monthly: assemble 실패 — %s", _err(e))
@@ -1058,10 +1221,16 @@ def _portfolio_step(
 # ---------------------------------------------------------------- 주간
 
 
-def run_cadence_check(asof_s: str, *, mode: str, write: bool) -> tuple[CheckReport, dict[str, Any]]:
+def run_cadence_check(
+    asof_s: str, *, mode: str, write: bool, send: bool = True
+) -> tuple[CheckReport, dict[str, Any]]:
     """`msa check --daily|--weekly` 와 같은 경로 — 스토어 가격으로 점검하고, `write` 면 알림
-    파일·텔레그램·마지막 성공 시각까지 남긴다. (실패·제공자 오류는 호출자가 받는다.)
-    주간(`run_weekly`)과 일간(`run_daily`)이 공유한다 — 점검 논리는 여기 한 벌뿐이다."""
+    파일·마지막 성공 시각까지 남긴다. (실패·제공자 오류는 호출자가 받는다.)
+    주간(`run_weekly`)과 일간(`run_daily`)이 공유한다 — 점검 논리는 여기 한 벌뿐이다.
+
+    `send` 는 **이 점검이 만든 알림(무효화·사다리·TP·시간스탑·Tier-2)의 발신**을 지배한다.
+    `False` 면 `alerts.json` 만 쓰고 텔레그램은 보지 않는다 (`msa check --no-send` 와 같은 규약).
+    `msa run daily` 는 `--send` 를 그대로 넘긴다 — 한 실행의 발신은 그 플래그 하나가 정한다."""
     from msa.data.store import Store
     from msa.vendor.scheduler import LastRunStore, RunTracker
 
@@ -1080,7 +1249,7 @@ def run_cadence_check(asof_s: str, *, mode: str, write: bool) -> tuple[CheckRepo
             out_root=p.checks if write else None,
         )
     if rep.out_dir is not None:
-        dres = deliver(rep.alerts, rep.out_dir, use_env=True)
+        dres = deliver(rep.alerts, rep.out_dir, use_env=send, send=send)
         info["alerts_json"] = rel(dres.json_path)
         info["telegram"] = str(dres.status)
         if write:
@@ -1212,6 +1381,7 @@ def _write_report(report: RunReport, roots: _Roots, name: str) -> None:
 
 
 __all__ = [
+    "ASSEMBLE_EMPTY_MARKER",
     "MONTHLY_STEPS",
     "PROVIDERS",
     "QUARTERLY_COMMANDS",
