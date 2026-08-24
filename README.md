@@ -844,7 +844,7 @@ msa data audit               # 커버리지 감사 (데이터 부분)
 |---|---|---|
 | `SHARADAR_API_KEY` | **아무것도 못 한다** | L0 적재 자체가 불가. 스토어가 이미 있으면 스캔·백테스트는 돈다 |
 | `ANTHROPIC_API_KEY` | **더는 블로커가 아니다** | `--provider claude_code`(기본값)가 로컬 `claude` CLI 로 돈다 — 크레딧을 쓰지 않는다. 이 변수는 오히려 **켜져 있으면 하위 프로세스가 구독 대신 크레딧으로 청구**되므로 provider 가 지운다 (`docs/05` §7.1) |
-| `FRED_API_KEY` | L1 축 1 실물 참조·CPI 가 `data_missing` | **중단하지 않는다.** `dd_real`(실질 낙폭) 미계산, L4 `price_beta_hist` NaN. 2026-08-25 키 투입 후: 축 1 선언 45 중 데이터 있음 **25** / 없음 20 (폐기된 FRED 시리즈 2건 포함) |
+| `FRED_API_KEY` | L1 축 1 실물 참조·CPI 가 `data_missing` | **중단하지 않는다.** `dd_real`(실질 낙폭) 미계산, L4 `price_beta_hist` NaN. 2026-08-25 키 투입 + 발표시차 수정 후: 축 1 선언 45 · 데이터 있음 27 · **실제 판정 23**(cycle 12 · warning 11) |
 | `MSA_TELEGRAM_TOKEN` + `MSA_TELEGRAM_CHAT_ID` | 배달 "not configured" | 둘 다 있을 때만 보낸다. 리포트는 파일로 남는다 |
 
 > **크레딧을 쓰는 경로는 haiku 만 허용한다** (2026-08-25 지시, `docs/05` §7.0).
