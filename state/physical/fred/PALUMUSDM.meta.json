@@ -1,0 +1,9 @@
+{
+ "series_id": "PALUMUSDM",
+ "title": "Global price of Aluminum",
+ "frequency": "M",
+ "units": "U.S. $ per Metric Ton",
+ "last_updated": "2026-08-17 13:51:18-05",
+ "fetched_at": "2026-08-25T00:40:52",
+ "n_obs": 415
+}

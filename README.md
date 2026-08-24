@@ -285,7 +285,9 @@ flowchart TD
 
 (`src/msa/thesis.py` 의 `NO_THESIS_NOTE` — 빈 줄을 두지 않는다, `CLAUDE.md` §2.)
 
-**현재 `ANTHROPIC_API_KEY` 가 없어서 `--provider none` 이 월간의 기본값이다** (§5).
+**`--provider none` 이 월간의 기본값이다** — 이제는 키가 없어서가 아니라, 월간이 상위 K 테마를
+한꺼번에 돌리는 자리라 명시적 선택을 받게 두었기 때문이다. 크레딧 없이 판정까지 가려면
+`--provider claude_code` 를 준다 (§5, `docs/05` §7.1).
 키가 생겨도 L3 는 **상위 K=8 테마에만** 돈다 (비용 통제, `docs/05` §5) — 134 개 전부를 판정하는
 경로는 설계상 존재하지 않는다. **"판정받지 않은 테마" 는 버그가 아니라 이 시스템의 상시
 상태이고, 명단을 읽는 사람이 그것을 알고 읽어야 한다.**
@@ -821,6 +823,10 @@ B0·B1·B2 중 **아무도 B3(동일가중)를 이기지 못했다** (셋 다 CI
 
 ## 5. 쓰는 법
 
+> **처음이거나, 매일 어떤 순서로 돌리는지만 알고 싶다면 → [`docs/18-daily-run.md`](docs/18-daily-run.md).**
+> 명령 세 개(`scan` → `research` → `picks`), 나온 판정을 읽는 법, 어느 경로가 크레딧을 쓰는지,
+> 여러 테마 병렬 실행, 그리고 현재 한계까지 한 장에 있다. 아래 §5 는 전체 명령 사전이다.
+
 ### 준비
 
 ```bash
@@ -837,11 +843,15 @@ msa data audit               # 커버리지 감사 (데이터 부분)
 | 변수 | 없으면 | 영향 |
 |---|---|---|
 | `SHARADAR_API_KEY` | **아무것도 못 한다** | L0 적재 자체가 불가. 스토어가 이미 있으면 스캔·백테스트는 돈다 |
-| `ANTHROPIC_API_KEY` | `msa research` 실제 실행 불가 | `--dry-run`(Mock) · `--provider fixture` 로 배관은 돈다. `msa run monthly` 기본값이 `--provider none` 인 이유가 이것이다 — L3 를 부르지 않고 사람 논지/직전 thesis 만 찾는다 |
-| `FRED_API_KEY` | L1 축 1 실물 참조·CPI 가 `data_missing` | **중단하지 않는다.** `dd_real`(실질 낙폭) 미계산, 축 1 선언 45 테마 중 데이터 있음 7 / 없음 38, L4 `price_beta_hist` NaN |
+| `ANTHROPIC_API_KEY` | **더는 블로커가 아니다** | `--provider claude_code`(기본값)가 로컬 `claude` CLI 로 돈다 — 크레딧을 쓰지 않는다. 이 변수는 오히려 **켜져 있으면 하위 프로세스가 구독 대신 크레딧으로 청구**되므로 provider 가 지운다 (`docs/05` §7.1) |
+| `FRED_API_KEY` | L1 축 1 실물 참조·CPI 가 `data_missing` | **중단하지 않는다.** `dd_real`(실질 낙폭) 미계산, L4 `price_beta_hist` NaN. 2026-08-25 키 투입 후: 축 1 선언 45 중 데이터 있음 **25** / 없음 20 (폐기된 FRED 시리즈 2건 포함) |
 | `MSA_TELEGRAM_TOKEN` + `MSA_TELEGRAM_CHAT_ID` | 배달 "not configured" | 둘 다 있을 때만 보낸다. 리포트는 파일로 남는다 |
 
-> 현재 실측 블로커는 `FRED_API_KEY` 와 `ANTHROPIC_API_KEY` 둘이다.
+> **크레딧을 쓰는 경로는 haiku 만 허용한다** (2026-08-25 지시, `docs/05` §7.0).
+> 상위 모델이 필요하면 크레딧을 쓰지 않는 `--provider claude_code` 로 돌린다.
+>
+> 2026-08-25 기준 남은 블로커는 `SHARADAR_API_KEY`(스토어가 있으면 무관)와 텔레그램 둘뿐이다.
+> `FRED_API_KEY` 는 투입됐고, L3 는 `--provider claude_code` 로 크레딧 없이 돈다.
 
 ### 계층별로 하나씩
 
@@ -851,6 +861,8 @@ msa scan                     # L1 — 134 테마 스코어보드
                              #   → state/scans/<date>/ (scoreboard.csv·indicators.csv·coverage.csv·report.txt·meta.json)
 
 msa research <theme>         # L3 — 4역할(supply·catalyst·bear·referee) → thesis 객체
+                             #   --provider claude_code (기본) — 로컬 claude CLI, 크레딧 0
+                             #   --record state/fixtures 로 녹화하면 이후 --provider fixture 로 $0 재현
                              #   --dry-run (Mock) · --provider fixture|anthropic
                              #   → state/theses/<date>/ (<theme>.thesis.yaml·<theme>.report.md
                              #      ·rejections-pending.yaml·contested.json)
@@ -876,7 +888,7 @@ msa portfolio --inputs <dir> # L5 — SOCP + 사다리·스탑·TP + 매매계�
 
 ```bash
 msa run monthly              # 월간 (의사결정 주기): scan → 상위 K → research → ingest → picks → assemble → portfolio(제안)
-                             #   --asof --top-k 8 --themes a,b --provider none|mock|fixture|anthropic
+                             #   --asof --top-k 8 --themes a,b --provider none|claude_code|mock|fixture|anthropic
                              #   --human-theses DIR --capital N --skip-research/-picks/-portfolio --no-write
                              #   → state/runs/<date>/ (monthly-report.md·run.json)
                              #   단계별 ok|skipped|unavailable|failed 와 사유를 남긴다. 끝은 제안·초안
@@ -1007,6 +1019,7 @@ msa backtest l4              # docs/14 사전 등록의 집행 — 테마 내 ra
 | [14-l4-backtest-preregistration](docs/14-l4-backtest-preregistration.md) | **L4 백테스트 사전 등록** — Q1~Q4 · 합격 기준 숫자 · 결과별 조치 · 시도 수. **적은 뒤에 돌린다** |
 | [15-l4-selection-structure-preregistration](docs/15-l4-selection-structure-preregistration.md) | **L4 선정 구조 사전 등록** — B0~B3 후보 · §4 판정(아무도 B3 를 못 이김) · §5 미리 고정한 조치 · §6 못 재는 것 여덟 |
 | [16-module-audit-2026-08-24](docs/16-module-audit-2026-08-24.md) | 계층별 모듈 감사 — 결함 목록(심각 2 · 높음 8 · 중간 37) · §7 수정 우선순위(**제안이지 결정이 아니다**). `vcp_base` 결함(#P2)이 여기 있다 |
+| [18-daily-run](docs/18-daily-run.md) | **실전 운영** — 명령 세 개와 순서 · 판정·종료코드 읽는 법 · provider 별 비용(크레딧 경로는 haiku 만) · 테마 병렬 실행과 라운드 파일 잠금 · §5 현재 한계 · §6 하지 말 것 |
 | [17-l1-score-structure-preregistration](docs/17-l1-score-structure-preregistration.md) | **설계 질문 3** — 테마 선정 점수를 `C 단독` 으로 바꿀 것인가. §1.1 역할 변경 · §1.2 사후 선택 위험 · §5 결과별 조치 · §7 해석 경계 |
 | [backtest-l4](docs/backtest-l4.md) | L4 백테스트 판정문 — Q1 FAIL · 축 단독 IC · 하드 필터 · §8 DSR · §10 한계 14개 |
 | [backtest-l1](docs/backtest-l1.md) | L1 백테스트 판정문. §0~§11 은 구 복합(S0), **§12 가 M3.6 구조 검정(S0/S1/S2)**, §13 은 S2 채택 이후 읽는 법, **§14 가 M3.7(S3 `C 단독`·S2ʹ `C·E`) — 아무도 S2 를 못 이겼다** |

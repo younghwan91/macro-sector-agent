@@ -150,8 +150,7 @@ LIMITATIONS: tuple[str, ...] = (
     "적는다 (§6 #4).",
     "B1 은 '대장주'의 한 가지 조작적 정의(시총 상위 3)일 뿐이다. B1 이 져도 '대장주가 안 "
     "된다'가 아니라 **'시총 상위 3 은 안 됐다'** 이다 (§6 #7).",
-    "docs/06 §1 의 '우량주가 가장 덜 오른다'를 직접 검정하지 않는다 — 우량주 ≠ 시총 상위 "
-    "(§6 #8).",
+    "docs/06 §1 의 '우량주가 가장 덜 오른다'를 직접 검정하지 않는다 — 우량주 ≠ 시총 상위 (§6 #8).",
     "표본이 사실상 하나라 '틀렸다'를 말할 힘은 있어도 '맞았다'를 말할 힘이 애초에 약하다. "
     "B3 를 이기지 못한 것은 상대적으로 강한 진술이고, 이긴 것은 약한 진술이다 (§6 #6).",
 )
@@ -213,9 +212,7 @@ def count_trials() -> dict[str, int]:
 # ---------------------------------------------------------------- PIT 시총 (§2.2 — B1 만 쓴다)
 
 
-def monthly_mcap(
-    store: Store, tickers: list[str], dates: pd.DatetimeIndex
-) -> pd.DataFrame:
+def monthly_mcap(store: Store, tickers: list[str], dates: pd.DatetimeIndex) -> pd.DataFrame:
     """월말 **PIT** 시총 (date × ticker, 달러) — `asof` 이하 마지막 non-null (`docs/15` §2.2).
 
     달마다 그 달의 마지막 non-null `prices.mcap` 을 집고, 격자에 맞춘 뒤 **앞으로 채운다**(ffill).
@@ -410,9 +407,7 @@ def theme_month_selection(
                                 "date": d,
                                 "theme": theme,
                                 "candidate": c,
-                                "turnover": 1.0 - len(now & prev[c]) / den
-                                if den
-                                else float("nan"),
+                                "turnover": 1.0 - len(now & prev[c]) / den if den else float("nan"),
                             }
                         )
                     prev[c] = now
@@ -1028,9 +1023,7 @@ def _secondary_table(res: L4StructureResult) -> list[str]:
             f" · K 미달 {int((cp['n_selected'] < K).sum()):,}"
             f" · 빈자리 합계 {int(cp['n_empty_slots'].sum()):,}"
         )
-        out.append(
-            "  docs/06 §5 '비율을 보이게 한다' 의 소급판이다 — 기술통계이지 판정이 아니다."
-        )
+        out.append("  docs/06 §5 '비율을 보이게 한다' 의 소급판이다 — 기술통계이지 판정이 아니다.")
     return out
 
 
@@ -1099,9 +1092,7 @@ def _exclusion_lines(res: L4StructureResult) -> list[str]:
             "  후보별 0개 테마-월: "
             + " · ".join(f"{c} {t[f'{c}_theme_months_empty']:,}" for c in CANDIDATES)
         )
-        out.append(
-            "  사유별: " + " · ".join(f"{r} {t[f'short_{r}']:,}" for r in SHORTFALL_REASONS)
-        )
+        out.append("  사유별: " + " · ".join(f"{r} {t[f'short_{r}']:,}" for r in SHORTFALL_REASONS))
     for k, val in res.exclusions.get("forward", {}).items():
         if k.startswith("h"):
             out.append(

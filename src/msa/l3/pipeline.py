@@ -31,7 +31,7 @@ from typing import Any
 
 import yaml
 
-from msa.io import dump_yaml, write_snapshot
+from msa.io import dir_lock, dump_yaml, write_snapshot
 from msa.l3.contracts import Axis1Inputs, ResearchInputs
 from msa.l3.gates import (
     CONF_BASE,
@@ -568,6 +568,16 @@ def write_outputs(
     out_dir = theses_root / res.asof
     tp = dump_thesis_yaml(out_dir / thesis_filename(res.theme_id), res.thesis)
     cc = res.contested
+    # 라운드 디렉터리는 테마마다 프로세스가 따로 붙을 수 있다 (`msa research` 를 여러 테마로
+    # 동시에 돌리는 경우). `rejections-pending.yaml` 은 읽고→고쳐→쓰기라 잠금이 없으면
+    # 늦게 끝난 테마가 먼저 끝난 테마의 기각 행을 지운다. `contested.json` 은 라운드 집계라
+    # 마지막에 쓴 프로세스의 관점이 남는다 — 찢어지지는 않지만 최신이 아닐 수 있다.
+    with dir_lock(out_dir):
+        _write_round_files(out_dir, inputs, res, cc)
+    return out_dir, tp
+
+
+def _write_round_files(out_dir: Path, inputs: ResearchInputs, res: ResearchResult, cc: Any) -> None:
     write_snapshot(
         out_dir,
         texts={f"{res.theme_id}.report.md": res.report_md},
@@ -598,7 +608,6 @@ def write_outputs(
             )
         )
         dump_yaml(rp, rows)
-    return out_dir, tp
 
 
 # ---------------------------------------------------------------- 진입점

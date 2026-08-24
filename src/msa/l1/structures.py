@@ -466,7 +466,7 @@ def render_structure_report(res: StructureResult) -> str:
         f" + {v['n_trials_added_m37']}) — M3.7 이 붙으면서 DSR 정산의 분모가 같이 늘었다",
         "",
         f"{'후보':<4} {'판정':<5} {'IC(12M,주창)':>14} {'95% CI':>22} {'N':>4} {'N_eff':>6} "
-        f"{'빠진달':>6} {'평균n':>6} {f'DSR({v['n_trials']})':>9} {'spread12M':>10}",
+        f"{'빠진달':>6} {'평균n':>6} {f'DSR({v["n_trials"]})':>9} {'spread12M':>10}",
     ]
     for s in STRUCTURES:
         r = v.get(s, {})

@@ -1,0 +1,9 @@
+{
+ "series_id": "PIORECRUSDM",
+ "title": "Global price of Iron Ore",
+ "frequency": "M",
+ "units": "U.S. $ per Metric Ton",
+ "last_updated": "2026-08-17 13:51:20-05",
+ "fetched_at": "2026-08-25T00:40:53",
+ "n_obs": 415
+}

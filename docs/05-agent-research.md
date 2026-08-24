@@ -233,16 +233,74 @@ evidence:                         # 비면 스키마 검증 실패 (CLAUDE.md §
 구현 셋 — `AnthropicProvider`(공식 `anthropic` SDK, 구조화 출력 `output_config.format`, adaptive thinking,
 `bear`·`referee` = `claude-opus-5`, `supply`·`catalyst` = `claude-sonnet-5`; 환경변수
 `MSA_L3_MODEL_TOP` / `MSA_L3_MODEL_STANDARD` 로 덮어쓴다), `MockProvider`(결정론적 합성 산출, 테스트·`--dry-run`),
-`FixtureProvider`(`tests/fixtures/l3/<theme>/<role>.json` 녹화 형식). 웹 검색은 `SearchTool` 프로토콜 —
+`FixtureProvider`(`tests/fixtures/l3/<theme>/<role>.json` 녹화 형식), `ClaudeCodeProvider`(아래 §7.1).
+웹 검색은 `SearchTool` 프로토콜 —
 기본 `StubSearchTool` 은 호출 시 `NotConfigured` 를 던지고, `AnthropicWebSearch` 는 서버 도구
 (`web_search_20260209`, `max_uses` = 남은 예산)를 싣는다. 역할당 예산 15 는 `SearchBudget` 이 강제하고
 사용량은 `CostLedger` 가 역할별 호출·토큰·검색 수로 세어 리포트에 싣는다 (§5).
 
-**이 런타임에서 막힌 것.** `ANTHROPIC_API_KEY` 가 없고 검색 도구가 없어 **실제 모델 호출은 한 번도 돌리지
-않았다.** 4역할 프롬프트·JSON 스키마·게이트·검증·저장 경로는 Mock/Fixture 로 전부 돌렸고 테스트가 있다.
-실제 실행은 `ANTHROPIC_API_KEY=... msa research <theme>` — 첫 실행에서 확인할 것: (1) 구조화 출력이 역할
-스키마를 실제로 만족하는가, (2) 서버 검색 쿼리 수가 `usage.server_tool_use.web_search_requests` 로 잡히는가,
-(3) `referee` 가 `axis1_contested` 에서 `referee_ruling` + 증거를 내는가 (못 내면 기각으로 닫힌다).
+**첫 실제 실행에서 드러난 것 (2026-08-24~25).** 위 세 가지를 실제로 확인했다.
+(1) 구조화 출력은 역할 스키마를 만족했다 — 단 `minItems: 2` 는 API 가 받지 않아(400) 제약을 빼고
+`schema.py` 의 `R_HORIZON` 이 검증하게 했다. (2) 검색 쿼리 수는 잡혔다 — 다만 `make_provider` 가
+`search=` 를 넘기지 않아 **검색 도구가 아예 붙지 않은 채로 돌고 있었다**. 고쳤다.
+(3) `referee` 는 축1 판정을 냈다. 함께 드러난 것: 저장된 `cycle_confidence` 가 손으로 적힐 수 있었다
+(`commodity_chem` 0.70 → 재도출 0.45). `_check_recompute` 가 이제 저장 전에 재도출·대조한다.
+
+### 7.0 크레딧 경로는 haiku 만 쓴다 (2026-08-25 지시)
+
+`AnthropicProvider`, 그리고 `ClaudeCodeProvider(use_api_key=True)` 는 API 크레딧을 소모한다.
+그 경로에서 허용되는 모델은 `providers.API_CREDIT_ALLOWED_MODELS` = `claude-haiku-4-5` 하나다.
+다른 모델을 주면 `enforce_api_credit_models()` 가 **거부한다** — 조용히 haiku 로 낮추지 않는다.
+요청한 모델과 실제로 돈 모델이 다르면 그것은 §2 가 금지하는 조용한 절단이고, 게다가 값이 나가는
+쪽으로 틀리면 사고다. 환경변수 `MSA_L3_MODEL_TOP`/`MSA_L3_MODEL_STANDARD` 덮어쓰기도 같은 문에서
+걸린다.
+
+따라서 §5 의 모델 배치(`bear`·`referee` = 상위, `supply`·`catalyst` = 표준)는 이제
+**크레딧을 쓰지 않는 경로에만** 적용된다. 상위 모델로 판별하고 싶으면 `--provider claude_code`
+(기본값)로 돌리면 된다 — 거기서는 제한이 없다.
+
+부수 사항: haiku 는 `thinking: {"type": "adaptive"}` 를 받지 않는다(실측 400,
+"adaptive thinking is not supported"). `AnthropicProvider` 는 모델이 haiku 면 그 필드를 싣지 않는다.
+
+### 7.1 `ClaudeCodeProvider` — 크레딧을 쓰지 않는 실행 경로
+
+코드: `src/msa/l3/claude_code.py`. CLI `--provider claude_code` (기본값).
+`claude -p <prompt> --output-format json` 하위 프로세스로 같은 `LLMProvider` 계약을 만족한다.
+
+**왜 만들었나.** `AnthropicProvider` 는 호출마다 크레딧을 쓴다. 테마 하나에 4역할 + 검색이면
+반복 실행이 비싸고, 그래서 "일단 돌려보고 고친다" 가 불가능하다. 로컬 CLI 는 구독 인증으로 돌기
+때문에 크레딧이 0 이다.
+
+**반드시 지켜야 하는 것 — 키를 지운다.** `ANTHROPIC_API_KEY` 가 환경에 있으면 `claude` CLI 는
+그것을 구독 로그인보다 **우선**한다:
+
+```
+⚠ claude.ai connectors are disabled because ANTHROPIC_API_KEY ... takes precedence
+```
+
+이때 호출은 크레딧으로 청구된다. Claude Code 는 매 호출에 시스템 프롬프트 ~35k 토큰을 붙이므로
+사소한 질문 하나가 $0.09 였다(2026-08-25 실측). 그래서 `_child_env()` 가 하위 프로세스 환경에서
+`ANTHROPIC_API_KEY`·`ANTHROPIC_AUTH_TOKEN` 을 **지운다**. 크레딧으로 돌리려면 `use_api_key=True` 를
+명시해야 한다. 이 조건은 `test_l3_claude_code.py` 가 검사한다 — 회귀하면 조용히 돈이 나간다.
+
+`--bare` 는 쓰지 않는다. CLAUDE.md 자동 탐색을 끄지만 인증이 `ANTHROPIC_API_KEY` 전용으로 고정되어
+목적과 정면으로 충돌한다. CLAUDE.md 오염은 중립 임시 디렉터리를 `cwd` 로 주어 막는다.
+
+**차이점 세 가지.**
+
+| | `AnthropicProvider` | `ClaudeCodeProvider` |
+|---|---|---|
+| 구조화 출력 | `output_config.format` (API 강제) | **없다** — 스키마를 프롬프트로 주고 최상위 `required` 를 확인, 실패 시 오류를 적어 1회 재시도 |
+| 검색 상한 | 서버 도구 `max_uses` (강제) | **강제 못 한다** — 프롬프트로 알리고 실제 사용량을 세어 초과 시 경고 (§2, 조용히 넘기지 않는다) |
+| 비용 | 실제 청구액 | 봉투의 `total_cost_usd` 는 **명목값**. 구독으로 돌아도 계산되어 나온다 — 크레딧이 나갔다는 뜻이 아니라 `notional_usd` 로 따로 들고 다닌다 |
+
+도구는 `WebSearch`·`WebFetch` 만 연다. `Bash`·`Edit`·`Write`·`Task` 는 금지 목록에 둔다 —
+리서치 역할이 저장소를 고칠 이유는 설계상 없다. 권한 거부는 경고로 남긴다: 검색이 막힌 채
+"근거 없음" 이 나오면 그것은 모델의 판단이 아니라 설정 사고다.
+
+**녹화.** `--record <dir>` 를 주면 성공한 역할 산출을 `<dir>/<theme>/<role>.json` 으로 남긴다.
+이후 `--provider fixture --fixtures <dir>` 로 같은 라운드를 오프라인·$0 로 재현한다 — 게이트나
+스키마를 고칠 때 역할을 다시 부르지 않고 판정만 다시 계산할 수 있다.
 
 **입력 계약.** L4·L5 모듈을 임포트하지 않는다. 스코어카드는 `state/scans/<date>/` 파일, 구성원 PIT 재무
 요약은 DuckDB 에서 직접(시총 상위 12), (거시 상태 입력은 2026-08-23 L2 제거로 없다 — `docs/13` §9),

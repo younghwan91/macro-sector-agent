@@ -260,8 +260,7 @@ def _check_claim(
         if hit:
             r.warn(
                 "W_CLAIM_NAMES_STOCK",
-                f"{f} 에 종목명/티커 등장: {sorted(set(hit))} "
-                f"(CLAUDE.md §4 — 에이전트는 테마만)",
+                f"{f} 에 종목명/티커 등장: {sorted(set(hit))} (CLAUDE.md §4 — 에이전트는 테마만)",
             )
 
     mech = str(thesis["mechanism"])

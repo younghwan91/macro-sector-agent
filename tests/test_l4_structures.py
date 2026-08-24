@@ -74,9 +74,7 @@ def _panel(
             rec["composite_partial"] = False
             for ind in INDICATORS:
                 rec[ind] = np.nan if excluded else float(rng.random())
-            rec["tp_marginal_producer"] = (
-                np.nan if excluded else float(int(rng.random() < 0.2))
-            )
+            rec["tp_marginal_producer"] = np.nan if excluded else float(int(rng.random() < 0.2))
             rows.append(rec)
     df = pd.DataFrame(rows)[list(PANEL_COLUMNS)]
     df["theme"] = theme
@@ -220,9 +218,7 @@ def test_all_candidates_start_from_the_same_eligible_pool() -> None:
     panel = _panel("th", DATES, tickers, rng=rng, n_excl=5)  # T00~T04 가 E1 제외
     close = _close(DATES, tickers, rng)
     fwd = _forward(close)
-    mcap = pd.DataFrame(
-        rng.random((len(DATES), len(tickers))) * 1e9, index=DATES, columns=tickers
-    )
+    mcap = pd.DataFrame(rng.random((len(DATES), len(tickers))) * 1e9, index=DATES, columns=tickers)
     res = theme_month_selection(panel, fwd, mcap)
     assert not res.excess.empty
     # 풀 크기 n 은 후보와 무관하게 같다
@@ -274,9 +270,7 @@ def test_excess_is_against_theme_ew_index() -> None:
     panel = _panel("th", DATES, tickers, rng=rng)
     close = _close(DATES, tickers, rng)
     fwd = _forward(close)
-    mcap = pd.DataFrame(
-        rng.random((len(DATES), len(tickers))) * 1e9, index=DATES, columns=tickers
-    )
+    mcap = pd.DataFrame(rng.random((len(DATES), len(tickers))) * 1e9, index=DATES, columns=tickers)
     res = theme_month_selection(panel, fwd, mcap)
     sub = res.excess[res.excess["horizon"] == GATE_HORIZON]
     assert np.allclose(
@@ -386,9 +380,7 @@ def test_run_structures_frames_end_to_end() -> None:
     panel = pd.concat(panels, ignore_index=True)
     close = _close(DATES, tickers, rng)
     fwd = _forward(close)
-    mcap = pd.DataFrame(
-        rng.random((len(DATES), len(tickers))) * 1e9, index=DATES, columns=tickers
-    )
+    mcap = pd.DataFrame(rng.random((len(DATES), len(tickers))) * 1e9, index=DATES, columns=tickers)
     res = run_structures_frames(panel, fwd, mcap, pbo_max_splits=64)
     assert set(res.level_summary["candidate"]) == set(CANDIDATES)
     assert set(res.pair_summary["pair"]) == set(PAIR_NAMES)

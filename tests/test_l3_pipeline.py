@@ -316,8 +316,12 @@ def test_anthropic_search_spec_carries_budget() -> None:
 def test_anthropic_provider_builds_request_and_counts_search(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """가짜 클라이언트로 요청 형태(모델 배치·구조화 출력·도구)와 사용량 집계를 본다."""
-    from msa.l3.providers import AnthropicProvider, AnthropicWebSearch, ModelConfig
+    """가짜 클라이언트로 요청 형태(구조화 출력·도구)와 사용량 집계를 본다.
+
+    크레딧 경로이므로 모델은 haiku 로 고정된다 (2026-08-25 지시) — 역할별 상위/표준 배치는
+    크레딧을 쓰지 않는 경로(`ClaudeCodeProvider`)에만 남는다.
+    """
+    from msa.l3.providers import AnthropicProvider, AnthropicWebSearch
 
     captured: dict[str, Any] = {}
 
@@ -336,7 +340,7 @@ def test_anthropic_provider_builds_request_and_counts_search(
     class _Resp:
         content: ClassVar[list[Any]] = [_Block()]
         usage = _Usage()
-        model = "claude-opus-5"
+        model = "claude-haiku-4-5"
         stop_reason = "end_turn"
 
     class _Messages:
@@ -347,7 +351,7 @@ def test_anthropic_provider_builds_request_and_counts_search(
     class _Client:
         messages = _Messages()
 
-    p = AnthropicProvider(models=ModelConfig(), search=AnthropicWebSearch(), client=_Client())
+    p = AnthropicProvider(search=AnthropicWebSearch(), client=_Client())
     req = CompletionRequest(
         role="bear",
         system="s",
@@ -355,8 +359,9 @@ def test_anthropic_provider_builds_request_and_counts_search(
         json_schema={"type": "object"},
     )
     r = p.complete(req)
-    assert captured["model"] == "claude-opus-5"
-    assert captured["thinking"] == {"type": "adaptive"}
+    assert captured["model"] == "claude-haiku-4-5"
+    # haiku 는 adaptive thinking 을 받지 않는다 (실측 400, 2026-08-24)
+    assert "thinking" not in captured
     assert captured["output_config"]["format"]["type"] == "json_schema"
     assert (
         captured["tools"][0]["type"] == "web_search_20260209"
@@ -364,12 +369,26 @@ def test_anthropic_provider_builds_request_and_counts_search(
     )
     assert r.usage.search_queries == 4 and p.budget.used["bear"] == 4
     assert r.json() == {"ok": True}
-    # 표준 모델 배치
+    # 역할이 달라도 크레딧 경로는 전부 haiku 다
     req2 = CompletionRequest(
         role="supply_analyst", system="s", messages=[{"role": "user", "content": "u"}]
     )
     p.complete(req2)
-    assert captured["model"] == "claude-sonnet-5"
+    assert captured["model"] == "claude-haiku-4-5"
+
+
+def test_credit_path_refuses_models_other_than_haiku() -> None:
+    """상위 모델을 크레딧으로 부르는 길을 코드가 막는다 (2026-08-25 지시).
+
+    조용히 haiku 로 낮추지 않는다 — 요청한 모델과 실제로 돈 모델이 다르면 조용한 절단이다.
+    """
+    from msa.l3.providers import AnthropicProvider, ModelConfig, ProviderError
+
+    with pytest.raises(ProviderError, match="haiku"):
+        AnthropicProvider(models=ModelConfig(top="claude-opus-5", standard="claude-sonnet-5"))
+    # 환경변수 덮어쓰기도 같은 문에서 걸린다
+    with pytest.raises(ProviderError, match="MSA_L3_MODEL_TOP"):
+        AnthropicProvider(models=ModelConfig(top="claude-fable-5", standard="claude-haiku-4-5"))
 
 
 # ---------------------------------------------------------------- 픽스처 제공자

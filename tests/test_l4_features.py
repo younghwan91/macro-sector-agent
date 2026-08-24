@@ -450,9 +450,7 @@ def test_vcp_base_window_is_declared_252_not_60() -> None:
 
     2026-08-24 이전 코드는 `n >= 60` 이었다. 60 은 어느 문서에도 선언된 적이 없다.
     """
-    px = pd.concat(
-        [_px("SHORT", n=251, seed=1), _px("FULL", n=260, seed=2)], ignore_index=True
-    )
+    px = pd.concat([_px("SHORT", n=251, seed=1), _px("FULL", n=260, seed=2)], ignore_index=True)
     out = F.price_features(px, pd.Timestamp("2026-08-14"))
     assert out.loc["SHORT", "vcp_base"] is None
     assert out.loc["FULL", "vcp_base"] is not None

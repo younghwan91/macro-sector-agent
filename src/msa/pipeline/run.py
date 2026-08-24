@@ -93,7 +93,7 @@ WEEKLY_STEPS: tuple[str, ...] = ("scan", "check", "report")
 
 #: `msa research` 와 같은 제공자 이름 + `none`(L3 를 부르지 않는다 — 사람 논지/직전 thesis 만
 #: 찾는다).
-PROVIDERS: tuple[str, ...] = ("none", "mock", "fixture", "anthropic")
+PROVIDERS: tuple[str, ...] = ("none", "claude_code", "mock", "fixture", "anthropic")
 
 #: 분기 작업 — 실행하지 않고 나열한다 (`docs/09` §1 분기 행).
 QUARTERLY_COMMANDS: tuple[tuple[str, str], ...] = (
@@ -613,7 +613,8 @@ def run_monthly(
     - `provider="none"` — L3 를 부르지 않는다. 선정 테마마다 `human_theses_dir/<theme>.yaml` 또는
       직전 `state/theses/<date≤asof>/<theme>.thesis.yaml` 을 **찾기만** 하고, 없으면 "thesis 없음 →
       관찰" 로 적는다(오류가 아니다). 키가 없는 오늘의 기본값이다.
-    - `provider="mock"|"fixture"|"anthropic"` — 테마별로 L3 파이프라인을 돌린다. 테마별 실패는
+    - `provider="claude_code"|"mock"|"fixture"|"anthropic"` — 테마별로 L3 파이프라인을 돌린다.
+      `claude_code` 는 로컬 CLI 하위 프로세스라 API 크레딧을 쓰지 않는다. 테마별 실패는
       격리된다.
     - `write=False` — `state/` 에 아무것도 쓰지 않는다. 중간 산출물은 `sandbox_dir`(기본 임시
       디렉터리, 끝나면 삭제)에 쓰고, 저널·대장·관찰 목록은 dry-run 판정만 한다.

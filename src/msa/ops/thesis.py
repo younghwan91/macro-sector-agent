@@ -43,6 +43,7 @@ __all__ = [
     "validate_thesis",
 ]
 
+
 def _required_top() -> tuple[str, ...]:
     """필수 최상위 필드 — **스펙 파일이 단일 출처다** (`docs/specs/thesis.schema.yaml` required).
 

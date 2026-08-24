@@ -497,9 +497,13 @@ def research(
         "", help="기준일 YYYY-MM-DD — 그 이전 최신 스캔을 쓴다. 기본 = 최신 스캔"
     ),
     provider: str = typer.Option(
-        "anthropic",
+        "claude_code",
         "--provider",
-        help="anthropic | mock | fixture. anthropic 은 ANTHROPIC_API_KEY 필요",
+        help=(
+            "claude_code | anthropic | mock | fixture. "
+            "claude_code = 로컬 claude CLI 하위 프로세스 (구독 인증 — API 크레딧 0). "
+            "anthropic 은 ANTHROPIC_API_KEY 로 크레딧을 쓴다"
+        ),
     ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="MockProvider 로 경로만 검증 (저장도 한다 — 합성 표기)"
@@ -509,6 +513,14 @@ def research(
         False, "--no-store", help="DuckDB 구성원 재무 요약 생략 (경고로 표시)"
     ),
     fixtures: str = typer.Option("", help="--provider fixture 의 루트 (기본 tests/fixtures/l3)"),
+    record: str = typer.Option(
+        "",
+        "--record",
+        help=(
+            "claude_code 성공 산출을 <dir>/<theme>/<role>.json 으로 남긴다 — "
+            "이후 --provider fixture 로 같은 라운드를 오프라인·$0 재현. 예: state/fixtures"
+        ),
+    ),
     verbose: bool = OPT_VERBOSE,
 ) -> None:
     """L3 에이전트 리서치 (supply · catalyst · bear · referee) → thesis 객체 (docs/05).
@@ -534,7 +546,12 @@ def research(
     except InputsError as e:
         typer.echo(f"입력 오류: {e}", err=True)
         raise typer.Exit(code=1) from e
-    prov = make_provider(kind, theme_id=theme, fixture_root=Path(fixtures) if fixtures else None)
+    prov = make_provider(
+        kind,
+        theme_id=theme,
+        fixture_root=Path(fixtures) if fixtures else None,
+        record_dir=Path(record) if record else None,
+    )
     if kind == "anthropic" and not (
         os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
     ):
@@ -720,8 +737,9 @@ def run_monthly_cmd(
     provider: str = typer.Option(
         "none",
         "--provider",
-        help="none | mock | fixture | anthropic. "
-        "none = L3 를 부르지 않고 사람 논지/직전 thesis 만 찾는다",
+        help="none | claude_code | mock | fixture | anthropic. "
+        "none = L3 를 부르지 않고 사람 논지/직전 thesis 만 찾는다. "
+        "claude_code = 로컬 claude CLI (API 크레딧 0)",
     ),
     human_theses: str = typer.Option(
         "",

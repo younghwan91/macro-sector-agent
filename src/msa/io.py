@@ -4,12 +4,17 @@
 반복되던 `json.dumps(..., ensure_ascii=False, indent=1, default=str)` + UTF-8 `write_text` 를
 한 곳에 모았다. **직렬화 규약(들여쓰기 1·비ASCII 그대로·`default=str`)은 바꾸지 않았다** —
 `msa ops reproduce` 가 보관본과 재생성본을 바이트로 대조한다.
+
+`dir_lock` 은 **프로세스 간** 잠금이다 — 같은 라운드 디렉터리에 여러 `msa` 프로세스가
+동시에 쓰는 경우(테마별 병렬 실행)를 위해 있다.
 """
 
 from __future__ import annotations
 
+import fcntl
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import asdict, is_dataclass
 from datetime import date
 from enum import Enum
@@ -105,3 +110,24 @@ def write_snapshot(
     for name, obj in (jsons or {}).items():
         dump_json(d / name, obj)
     return d
+
+
+@contextmanager
+def dir_lock(directory: Path | str, name: str = ".lock") -> Iterator[None]:
+    """디렉터리 단위 프로세스 간 잠금 (`fcntl.flock`).
+
+    누적 파일(읽고→고쳐→쓰기)을 여러 프로세스가 동시에 갱신할 때 쓴다. 잠금이 없으면
+    늦게 쓴 쪽이 먼저 쓴 쪽의 행을 지운다 — 그리고 **아무 오류도 나지 않는다**. 조용히
+    사라지는 기록이야말로 `CLAUDE.md` §2 가 금지하는 것이다.
+
+    잠금 파일은 남겨둔다 (지우면 잠금을 든 다른 프로세스와 경합한다).
+    """
+    d = Path(directory)
+    d.mkdir(parents=True, exist_ok=True)
+    lock_path = d / name
+    with lock_path.open("a+") as fh:
+        fcntl.flock(fh.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)

@@ -4,12 +4,16 @@
 
 | 구현 | 용도 | 네트워크 |
 |---|---|---|
-| `AnthropicProvider` | 실제 실행. 공식 `anthropic` SDK, `ANTHROPIC_API_KEY` 필요 | 있음 |
+| `AnthropicProvider` | 크레딧 경로. 공식 SDK, `ANTHROPIC_API_KEY` 필요. **haiku 만 허용** | 있음 |
 | `MockProvider` | 테스트·`--dry-run`. 역할별 결정론적 산출 (요청 기록 → bear 격리 검사) | 없음 |
 | `FixtureProvider` | `tests/fixtures/l3/<theme>/<role>.json` 을 읽는다 — 오프라인 전체 파이프라인
 | 없음 |
+| `ClaudeCodeProvider` | 로컬 `claude` CLI 하위 프로세스. **구독 인증 → 크레딧 0**
+| 있음 |
 
 **모델 배치** (`docs/05` §5): `bear`·`referee` 는 상위 모델, `supply`·`catalyst` 는 표준 모델.
+이 배치는 **크레딧을 쓰지 않는 경로에만** 적용된다. 크레딧 경로(`AnthropicProvider`)는
+`API_CREDIT_ALLOWED_MODELS` = haiku 만 허용하고, 다른 모델을 주면 거부한다 (2026-08-25 지시).
 값은 `ModelConfig` 에 있고 환경변수 `MSA_L3_MODEL_TOP` / `MSA_L3_MODEL_STANDARD` 로 덮어쓴다.
 모델 ID 는 `claude-api` 스킬 기준(2026-06 캐시): 상위 `claude-opus-5`, 표준 `claude-sonnet-5`.
 
@@ -285,6 +289,37 @@ class ModelConfig:
         return self.effort_top if role in ("bear", "referee") else self.effort_standard
 
 
+#: **API 크레딧으로 부를 수 있는 모델** (사용자 지시 2026-08-25). 크레딧을 쓰는 경로는
+#: haiku 만 허용한다. 구독 인증(`ClaudeCodeProvider` 기본값)에는 적용되지 않는다 —
+#: 거기서는 크레딧이 나가지 않으므로 `bear`·`referee` 가 상위 모델을 그대로 쓴다.
+API_CREDIT_ALLOWED_MODELS: tuple[str, ...] = ("claude-haiku-4-5",)
+
+#: 크레딧 경로의 기본 배치. 역할 구분 없이 전부 haiku 다 — 상위/표준 구분은 크레딧을
+#: 쓰지 않는 경로에만 남는다.
+HAIKU_ONLY = ModelConfig(
+    top="claude-haiku-4-5",
+    standard="claude-haiku-4-5",
+    effort_top="high",
+    effort_standard="medium",
+)
+
+
+def enforce_api_credit_models(models: ModelConfig) -> None:
+    """크레딧 경로가 허용 모델만 쓰는지 확인한다. 환경변수 덮어쓰기도 여기서 걸린다.
+
+    조용히 haiku 로 낮추지 않는다 — 요청한 모델과 실제로 돈 모델이 다르면 그것은
+    `CLAUDE.md` §2 가 금지하는 조용한 절단이다. 틀렸으면 멈추고 말한다.
+    """
+    bad = sorted({m for m in (models.top, models.standard) if m not in API_CREDIT_ALLOWED_MODELS})
+    if bad:
+        raise ProviderError(
+            f"API 크레딧으로는 {list(API_CREDIT_ALLOWED_MODELS)} 만 허용된다 (2026-08-25 지시) — "
+            f"요청된 모델: {bad}. 상위 모델을 쓰려면 크레딧을 쓰지 않는 경로로 돌려라: "
+            "`--provider claude_code`. 환경변수 MSA_L3_MODEL_TOP / MSA_L3_MODEL_STANDARD 를 "
+            "확인하라."
+        )
+
+
 # ---------------------------------------------------------------- 구현 1: Anthropic
 
 
@@ -305,7 +340,9 @@ class AnthropicProvider:
         budget: SearchBudget | None = None,
         client: Any | None = None,
     ) -> None:
-        self.models = models or ModelConfig.from_env()
+        # 크레딧 경로다. 기본은 haiku, 다른 모델을 명시하면 거부한다 (§ 정책 상수).
+        self.models = models or HAIKU_ONLY
+        enforce_api_credit_models(self.models)
         self.search = search or StubSearchTool()
         self.budget = budget or SearchBudget()
         self._client = client
@@ -329,9 +366,12 @@ class AnthropicProvider:
             "max_tokens": request.max_tokens,
             "system": request.system,
             "messages": request.messages,
-            "thinking": {"type": "adaptive"},
             "output_config": {"effort": self.models.effort_for(request.role)},
         }
+        if not model.startswith("claude-haiku"):
+            # haiku 는 adaptive thinking 을 받지 않는다 — 실측 400
+            # ("adaptive thinking is not supported", 2026-08-24).
+            kwargs["thinking"] = {"type": "adaptive"}
         if request.json_schema is not None:
             kwargs["output_config"]["format"] = {
                 "type": "json_schema",
@@ -452,8 +492,18 @@ class FixtureProvider:
 
 
 def make_provider(
-    kind: str, *, theme_id: str, fixture_root: Path | None = None, search: SearchTool | None = None
+    kind: str,
+    *,
+    theme_id: str,
+    fixture_root: Path | None = None,
+    search: SearchTool | None = None,
+    record_dir: Path | None = None,
 ) -> LLMProvider:
+    if kind in ("claude_code", "claude-code", "cc"):
+        # 로컬 CLI 하위 프로세스 — 기본으로 ANTHROPIC_API_KEY 를 지워 구독으로 돈다.
+        from msa.l3.claude_code import ClaudeCodeProvider
+
+        return ClaudeCodeProvider(record_dir=record_dir, theme_id=theme_id)
     if kind == "anthropic":
         # 검색을 명시하지 않으면 서버 도구를 단다 — 검색 없이 돌리면 evidence 가
         # LLM 기억에 의존하고, 그건 `CLAUDE.md` §3 이 금지하는 출처 없는 주장이다.
@@ -467,4 +517,4 @@ def make_provider(
             else Path(__file__).resolve().parents[3] / "tests" / "fixtures" / "l3"
         )
         return FixtureProvider(root, theme_id)
-    raise ValueError(f"알 수 없는 provider: {kind} (anthropic | mock | fixture)")
+    raise ValueError(f"알 수 없는 provider: {kind} (anthropic | claude_code | mock | fixture)")

@@ -1,0 +1,9 @@
+{
+ "series_id": "IPG2211S",
+ "title": "Industrial Production: Utilities: Electric Power Generation, Transmission, and Distribution (NAICS = 2211)",
+ "frequency": "M",
+ "units": "Index 2017=100",
+ "last_updated": "2026-08-18 08:20:24-05",
+ "fetched_at": "2026-08-25T00:41:04",
+ "n_obs": 655
+}
