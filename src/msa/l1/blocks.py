@@ -198,14 +198,30 @@ class Indicators:
         return pd.DatetimeIndex(self.monthly.index.get_level_values("date").unique().sort_values())
 
     def bucket_for(self, date: pd.Timestamp) -> pd.Timestamp:
-        """`date` 가 속한 달의 버킷(월말 라벨)이 있으면 그것, 없으면 `date` 이전 마지막 월말.
+        """`date` **이하의 마지막 완결 월말** 버킷. 단 부분 버킷은 스토어 끝일 때만 허용한다.
 
-        오늘의 스캔(8/14)은 8월 부분 버킷(라벨 8/31, 데이터 8/14 까지)을 쓴다. 백테스트는 월말을
-        정확히 넘기므로 같은 함수가 그 월말을 돌려준다."""
+        오늘의 스캔(8/14)은 8월 부분 버킷(라벨 8/31, 데이터 8/14 까지)을 쓴다 — 미래가 아직
+        존재하지 않으므로 미래 참조가 아니다. 백테스트는 월말을 정확히 넘기므로 같은 함수가
+        그 월말을 돌려준다.
+
+        **2026-08-24 수정.** 예전에는 `date` 가 속한 달의 라벨이 있으면 무조건 돌려줬다.
+        과거 `--asof` (예 2020-07-03) 로도 2020-07-31 버킷 — **최대 4주 미래** — 이 나왔고,
+        그 스냅샷이 잘못 라벨된 채 L3·L4 로 흘러갔다. CLI 도움말(`msa scan --asof`)이 선언한
+        "그 이전 마지막 월말" 과 어긋난 쪽이 코드였다.
+
+        선택지는 둘이었다 — (a) 언제나 마지막 **완결** 월말, (b) 부분 버킷은 스토어 끝
+        (= 지표 격자의 마지막 라벨) 일 때만. **(b) 를 택한다.** (a) 는 CLI 도움말에는
+        맞지만 이 함수 자신의 선언("오늘의 스캔은 부분 버킷을 쓴다") 과 오늘의 스캔 동작을
+        깨뜨린다. (b) 는 두 선언을 동시에 만족한다: 과거 asof 는 도움말대로 완결 월말만,
+        오늘의 스캔(asof = store_end)은 예전 그대로.
+
+        부분 버킷은 격자의 **마지막** 라벨뿐이다 (격자는 `to_month_end(P)` 의 resample 라벨이라
+        스토어 최종일이 속한 달까지만 있다). 그래서 "마지막 라벨" 이 곧 "스토어 끝" 이다.
+        """
         date = pd.Timestamp(date)
         idx = self.dates
         label = month_end_label(date)
-        if label in idx:
+        if label in idx and (label == date or label == idx[-1]):
             return pd.Timestamp(label)
         cand = idx[idx <= date]
         if len(cand) == 0:

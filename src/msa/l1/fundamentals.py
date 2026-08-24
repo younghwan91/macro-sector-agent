@@ -49,6 +49,11 @@ log = logging.getLogger(__name__)
 
 TTM_MAX_SPAN_DAYS = 400
 STALE_MONTHS = 15  # 월말 t 에서 calendardate 가 이보다 오래된 분기는 "모른다" 로 취급
+#: `lag(4)`(YoY)·`lag(12)`(3년) 지연 열의 허용 간격 오차 (일). **새로 정한 값이 아니다** —
+#: `l4/features.py` 의 `DILUTION_TOL_DAYS = 60` 과 같은 값·같은 의미다 (거기서도 36개월 전·
+#: 12개월 전 분기를 "달력 목표 ±60일" 로 찾는다). 여기서만 다른 값을 쓰면 같은 연산이 계층별로
+#: 갈라진다. TTM 의 `TTM_MAX_SPAN_DAYS = 400` 은 3분기 span 상한이라 의미가 다르다.
+LAG_GAP_TOL_DAYS = 60
 
 FUND_COLUMNS = (
     "n_reporting",
@@ -136,16 +141,48 @@ valid as (
     select * replace (
         {ttm_valid_replace_sql(L1_TTM_FIELDS, TTM_MAX_SPAN_DAYS)}
     ) from ttm
+),
+lagged as (
+    select *,
+        lag(revenue_ttm, 4) over wt as revenue_ttm_prev,
+        lag(calendardate, 4) over wt as cd_prev4,
+        lag(assets, 4) over wt as assets_prev,
+        lag(ebitda_ttm, 4) over wt as ebitda_ttm_prev,
+        lag(sharesbas, 12) over wt as shares_prev3y,
+        lag(calendardate, 12) over wt as cd_prev12
+    from valid
+    window wt as (partition by ticker order by calendardate)
+),
+-- `q` 에는 결측 분기 행이 없으므로 `lag(4)` 가 반드시 1년 전을 가리키지는 않는다 —
+-- 분기 하나를 거른 기업은 2년 전(또는 그 이상)을 가리킨다. TTM 이 `cd_3back` + span 으로
+-- 거르는 것과 같은 방식으로 YoY·3년 지연에도 간격 조건을 건다 (2026-08-24).
+gap as (
+    select *,
+        (cd_prev4 is not null
+         and abs(datediff('day', cd_prev4, calendardate - interval 12 month))
+             <= {LAG_GAP_TOL_DAYS}) as yoy_gap_ok,
+        (cd_prev12 is not null
+         and abs(datediff('day', cd_prev12, calendardate - interval 36 month))
+             <= {LAG_GAP_TOL_DAYS}) as y3_gap_ok
+    from lagged
 )
-select *,
-    lag(revenue_ttm, 4) over wt as revenue_ttm_prev,
-    lag(calendardate, 4) over wt as cd_prev4,
-    lag(assets, 4) over wt as assets_prev,
-    lag(ebitda_ttm, 4) over wt as ebitda_ttm_prev,
-    lag(sharesbas, 12) over wt as shares_prev3y,
-    lag(calendardate, 12) over wt as cd_prev12
-from valid
-window wt as (partition by ticker order by calendardate)
+select * replace (
+    case when yoy_gap_ok then revenue_ttm_prev end as revenue_ttm_prev,
+    case when yoy_gap_ok then assets_prev end as assets_prev,
+    case when yoy_gap_ok then ebitda_ttm_prev end as ebitda_ttm_prev,
+    case when y3_gap_ok then shares_prev3y end as shares_prev3y
+) from gap
+"""
+
+#: 지연 열이 실제로 몇 건 걸러졌는지 — `CLAUDE.md` §2 (조용한 절단 금지).
+_LAG_GAP_COUNT_SQL = """
+select
+    count(*)                                                             as n_quarters,
+    count(cd_prev4)                                                      as n_yoy_lag,
+    count(case when cd_prev4 is not null and not yoy_gap_ok then 1 end)  as n_yoy_dropped,
+    count(cd_prev12)                                                     as n_y3_lag,
+    count(case when cd_prev12 is not null and not y3_gap_ok then 1 end)  as n_y3_dropped
+from q_ttm
 """
 
 _GRID_SQL = f"""
@@ -312,6 +349,15 @@ def build_fund_panel(
         with store.temp_tables(members=members, month_ends=mes):
             log.info("fund: 분기 TTM 테이블 생성")
             store.execute(_QUARTERLY_SQL)
+            lag_gaps = store.query(_LAG_GAP_COUNT_SQL).iloc[0].astype("int64").to_dict()
+            log.info(
+                "fund: 지연 간격 조건(±%d일) — YoY %s/%s 제외 · 3년 %s/%s 제외",
+                LAG_GAP_TOL_DAYS,
+                f"{lag_gaps['n_yoy_dropped']:,}",
+                f"{lag_gaps['n_yoy_lag']:,}",
+                f"{lag_gaps['n_y3_dropped']:,}",
+                f"{lag_gaps['n_y3_lag']:,}",
+            )
             log.info("fund: 월말 × 구성원 asof 그리드 생성")
             store.execute(_GRID_SQL)
             n_grid = int(store.scalar("select count(*) from grid"))
@@ -366,6 +412,8 @@ def build_fund_panel(
         "grid_rows": int(n_grid),
         "stale_months": STALE_MONTHS,
         "ttm_max_span_days": TTM_MAX_SPAN_DAYS,
+        "lag_gap_tol_days": LAG_GAP_TOL_DAYS,
+        "lag_gaps": {k: int(v) for k, v in lag_gaps.items()},
         "pit": "datekey, first-reported",
     }
     return FundPanel(frame=agg, same_store=ss, actions=actions.sort_index(), built_from=built)

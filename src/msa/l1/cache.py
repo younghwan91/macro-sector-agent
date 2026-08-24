@@ -1,7 +1,8 @@
 """L1 지문 캐시 경로 — 패널·재무·지표 parquet 과 메타 JSON 의 **파일 이름을 한 곳에** 둔다.
 
-지문(`panel._fingerprint` = 구성원 배정 + 스토어 최종일 + 위생 상수)이 같으면 세 계층의 캐시를
-전부 같은 접미어로 찾는다. 이름 규칙은 바꾸지 않았다 (`state/cache/l1_<종류>_<지문>.parquet`).
+지문(`panel._fingerprint` = 구성원 배정 + 스토어 최종일 + 위생 상수 + 집계 SQL 본문 해시)이
+같으면 세 계층의 캐시를 전부 같은 접미어로 찾는다.
+이름 규칙은 바꾸지 않았다 (`state/cache/l1_<종류>_<지문>.parquet`).
 """
 
 from __future__ import annotations

@@ -287,7 +287,11 @@ def data_fred_lag(
 @cli_guard
 def scan(
     asof: str = typer.Option(
-        "", help="기준일 YYYY-MM-DD (그 이전 마지막 월말). 기본 = 스토어 최종일"
+        "",
+        help=(
+            "기준일 YYYY-MM-DD → 그 이전 마지막 **완결** 월말 버킷. "
+            "기본 = 스토어 최종일 (이때만 진행 중인 달의 부분 버킷을 쓴다)"
+        ),
     ),
     top: int = typer.Option(0, help="표에 보일 상위 N (0 = 전부)"),
     force: bool = typer.Option(False, "--force", help="패널·재무·지표 캐시를 무시하고 다시 만든다"),
@@ -311,8 +315,11 @@ def scan(
     typer.echo("")
     m = res.meta
     typer.echo(f"구성원: {m['membership']}")
+    _u = m["unclassified_mcap"]
     typer.echo(
-        f"미분류 시총 비율: {m['unclassified_mcap']['share']:.3%} · "
+        f"미분류 시총 비율: {_u['share']:.3%} · "
+        f"시총 결측 {_u.get('n_missing_mcap', '?')}종(미배정 "
+        f"{_u.get('n_missing_mcap_unassigned', '?')}) · "
         f"소표본 {len(m['small_sample_buckets'])}개"
     )
     ph = m["physical"]

@@ -101,7 +101,13 @@ class ScanInputs:
 def unclassified_mcap_share(
     store: Store, membership: Membership, meta: pd.DataFrame
 ) -> dict[str, float]:
-    """생존 종목 최신 시총 기준 미분류 비율 (Shell 제외). `audit_themes.py` §1 과 같은 정의."""
+    """생존 종목 최신 시총 기준 미분류 비율 (Shell 제외). `audit_themes.py` §1 과 같은 정의.
+
+    **시총 결측은 0 으로 덮인다** (`fillna(0.0)`). 그 종목이 미분류면 분자에 기여하지 못하므로
+    관문은 **통과 쪽으로만** 틀린다. 동작은 그대로 두고 — 분모에서 뺄지 0 으로 둘지는 선언이
+    없어 새 결정이 된다 (`CLAUDE.md` §1) — 대신 몇 종목이 덮였는지 **센다**
+    (`docs/08` §7 "제외된 종목 수를 매번 리포트한다", `CLAUDE.md` §2). 2026-08-24.
+    """
     mcap = store.latest_mcap()
     mcap_of: dict[str, float] = dict(zip(mcap.index, mcap.to_numpy(), strict=True))
     from msa.themes import EXCLUDED_LABELS, MEMBER_CATEGORIES
@@ -109,15 +115,24 @@ def unclassified_mcap_share(
     uni = meta.loc[meta["category"].isin(MEMBER_CATEGORIES)].copy()
     uni["live"] = uni["is_delisted"].fillna("N") != "Y"
     uni["shell"] = uni["industry"].fillna("(null)").isin(EXCLUDED_LABELS)
-    uni["mcap"] = uni["ticker"].str.upper().map(mcap_of).fillna(0.0).where(uni["live"], 0.0)
+    raw_mcap = uni["ticker"].str.upper().map(mcap_of)
+    uni["mcap"] = raw_mcap.fillna(0.0).where(uni["live"], 0.0)
     assigned = set(membership.frame["ticker"])
+    uni["assigned"] = uni["ticker"].str.upper().isin(assigned)
     denom = float(uni.loc[~uni["shell"], "mcap"].sum())
-    covered = float(uni.loc[~uni["shell"] & uni["ticker"].str.upper().isin(assigned), "mcap"].sum())
+    covered = float(uni.loc[~uni["shell"] & uni["assigned"], "mcap"].sum())
     share = (denom - covered) / denom if denom > 0 else float("nan")
+    # 분모 모집단(생존·비Shell) 안에서 시총이 없어 0 으로 덮인 종목
+    pop = ~uni["shell"] & uni["live"]
+    missing = pop & raw_mcap.isna()
     return {
         "denominator_musd": denom / 1e6,
         "unclassified_musd": (denom - covered) / 1e6,
         "share": share,
+        "n_universe": int(pop.sum()),
+        "n_missing_mcap": int(missing.sum()),
+        "n_missing_mcap_assigned": int((missing & uni["assigned"]).sum()),
+        "n_missing_mcap_unassigned": int((missing & ~uni["assigned"]).sum()),
     }
 
 
@@ -365,6 +380,12 @@ def render_report(sb: Scoreboard, cov: pd.DataFrame, meta: dict[str, Any]) -> st
     lines.append(
         f"미분류 시총 비율: {u['share']:.3%} (기준 < 5%) · 분모 {u['denominator_musd']:,.0f} M USD"
     )
+    if "n_missing_mcap" in u:  # 2026-08-24 이전 스냅샷에는 없다 (`msa ops reproduce`)
+        lines.append(
+            f"  시총 결측 → 0 으로 덮인 종목: {u['n_missing_mcap']:,}/{u['n_universe']:,} "
+            f"(미배정 {u['n_missing_mcap_unassigned']:,} · 배정 {u['n_missing_mcap_assigned']:,}) "
+            "— 미배정분은 위 비율을 낮추는 쪽으로만 작용한다 (관문이 통과 쪽으로 틀린다)"
+        )
     pm = meta["panel"]
     lines.append(
         f"패널: 수익률 상·하한 적용 종목-일 {pm['n_capped_total']:,} · "

@@ -13,6 +13,7 @@ import pandas as pd
 import pytest
 
 from msa.l1.blocks import (
+    Indicators,
     _verdicts,
     axis1_verdict,
     breadth_lead_months,
@@ -299,3 +300,37 @@ def test_vcp_index_matrix_matches_loop_on_real_panel() -> None:
     got = vcp_index_matrix(P, me)
     ref = _ref_vcp_matrix(P, me)
     pd.testing.assert_frame_equal(got, ref, check_exact=True)
+
+
+# ---------------------------------------------------------------- 버킷 선택 (asof 규약)
+
+
+def _ind_for_buckets(labels: list[str]) -> Indicators:
+    """월말 라벨만 있는 최소 `Indicators` — `bucket_for` 만 본다."""
+    idx = pd.MultiIndex.from_product(
+        [pd.DatetimeIndex([pd.Timestamp(x) for x in labels]), ["t"]], names=["date", "theme"]
+    )
+    return Indicators(monthly=pd.DataFrame({"x": 0.0}, index=idx))
+
+
+def test_bucket_for_past_asof_does_not_return_future_month_end() -> None:
+    """과거 `--asof` 는 그 이전 마지막 **완결** 월말을 돌려준다 (2026-08-24 수정).
+
+    예전에는 2020-07-03 → 2020-07-31 (최대 4주 미래) 이었다.
+    """
+    ind = _ind_for_buckets(["2020-05-31", "2020-06-30", "2020-07-31", "2020-08-31"])
+    assert ind.bucket_for(pd.Timestamp("2020-07-03")) == pd.Timestamp("2020-06-30")
+    assert ind.bucket_for(pd.Timestamp("2020-07-30")) == pd.Timestamp("2020-06-30")
+    assert ind.bucket_for(pd.Timestamp("2020-07-31")) == pd.Timestamp("2020-07-31")
+
+
+def test_bucket_for_today_scan_keeps_partial_last_bucket() -> None:
+    """오늘의 스캔(asof = store_end)은 예전 그대로 부분 버킷을 쓴다 — 회귀 고정."""
+    ind = _ind_for_buckets(["2026-06-30", "2026-07-31", "2026-08-31"])
+    assert ind.bucket_for(pd.Timestamp("2026-08-14")) == pd.Timestamp("2026-08-31")
+
+
+def test_bucket_for_raises_before_first_bucket() -> None:
+    ind = _ind_for_buckets(["2020-05-31", "2020-06-30"])
+    with pytest.raises(KeyError):
+        ind.bucket_for(pd.Timestamp("2020-05-02"))

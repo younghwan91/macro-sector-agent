@@ -13,7 +13,7 @@
 | `n_ret` | 그 날 수익률 계산에 들어간 구성원 수 |
 | `n_listed` | 그 날 가격 행이 있는 구성원 수 (`count_decay` 재료) |
 | `n_cw` | 시총 가중에 들어간 구성원 수 |
-| `dv` | Σ `closeunadj × volume` — 달러 거래대금 (명목) |
+| `dv` | Σ `close × volume` — 달러 거래대금. `volume` 이 소급 분할조정이라 **조정** 종가와 곱한다 |
 | `mcap_sum` | Σ `mcap` |
 | `n_sma200` · `n_above200` | 200일 이력이 있는 구성원 수 · 그중 `close > SMA200` 인 수 |
 | `n_nh6m` · `n_nl6m` | 126일 고가 갱신 · 저가 갱신 구성원 수 (당일 포함) |
@@ -198,7 +198,10 @@ select
     count(ret)                                          as n_ret,
     count(*)                                            as n_listed,
     count(case when ret is not null and mcap_prev > 0 then 1 end) as n_cw,
-    sum(closeunadj * volume)                            as dv,
+    -- `volume` 은 소급 분할조정 값이므로 조정 종가 `close` 와 곱해야 한다. 비조정
+    -- `closeunadj` 와 곱하면 asof 이후의 분할 계수만큼 틀리고, 그것은 미래를 보는 것이다
+    -- (2026-08-24 · `l4/features.py` `adv20_usd` 가 2026-08-23 에 같은 이유로 고쳐졌다).
+    sum(close * volume)                                 as dv,
     sum(mcap)                                           as mcap_sum,
     count(case when n_hist200 >= {SMA_WINDOW} then 1 end)                      as n_sma200,
     count(case when n_hist200 >= {SMA_WINDOW} and close > sma200 then 1 end)   as n_above200,
@@ -211,9 +214,34 @@ order by theme, date
 """
 
 _SPY_SQL = """
-select date, close, closeunadj * volume as dv
+-- dv 는 조정 종가 × 소급 분할조정 거래량 (테마 패널의 `dv` 와 같은 이유 — 위 주석 참조).
+select date, close, close * volume as dv
 from prices where ticker = 'SPY' and close is not null order by date
 """
+
+
+def _panel_code_version() -> str:
+    """집계 코드 자체의 버전 — 패널·SPY·재무 SQL 본문의 해시.
+
+    지문에 상수만 넣으면 **SQL 을 고쳐도 옛 캐시를 그대로 읽는다** (2026-08-24 `dv` 수정이
+    그 사례였다). 임계값이 아니라 캐시 위생이므로 §1 의 "새 값 발명" 에 해당하지 않는다.
+
+    재무 SQL 까지 넣는 이유: 세 캐시(패널·재무·지표)가 **같은 지문 접미어**를 쓴다
+    (`l1/cache.py`). 재무 캐시는 파일 존재만 보므로 지문이 안 바뀌면 옛 parquet 을 읽는다.
+    """
+    from msa.l1 import fundamentals as f
+
+    parts = (
+        _PANEL_SQL,
+        _SPY_SQL,
+        f._QUARTERLY_SQL,
+        f._GRID_SQL,
+        f._AGG_SQL,
+        f._ACTIONS_SQL,
+        f._ss_sql(10),
+        f._ss_sql(5),
+    )
+    return hashlib.sha256("\x00".join(parts).encode()).hexdigest()[:12]
 
 
 def _fingerprint(members: pd.DataFrame, store_end: date | None) -> str:
@@ -222,6 +250,7 @@ def _fingerprint(members: pd.DataFrame, store_end: date | None) -> str:
     h.update(hashed.to_numpy().tobytes())
     h.update(str(store_end).encode())
     h.update(f"{MIN_PRICE_USD}|{RET_CAP_HI}|{RET_CAP_LO}|{SMA_WINDOW}|{NH_WINDOW}".encode())
+    h.update(_panel_code_version().encode())
     return h.hexdigest()[:16]
 
 
@@ -236,7 +265,8 @@ def build_panel(
 ) -> ThemePanel:
     """패널을 만든다. 캐시(`state/cache/`)가 있고 지문이 같으면 그것을 읽는다.
 
-    지문 = 구성원 배정 + 스토어 최종일 + 위생 상수. 셋 중 하나라도 바뀌면 다시 만든다.
+    지문 = 구성원 배정 + 스토어 최종일 + 위생 상수 + **집계 SQL 본문 해시**.
+    넷 중 하나라도 바뀌면 다시 만든다 — SQL 을 고치면 캐시가 자동으로 무효화된다.
     """
     members = membership.frame[["ticker", "theme"]].drop_duplicates()
     if members.empty:
