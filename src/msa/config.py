@@ -91,6 +91,12 @@ class Paths:
         return self.state / "backtests" / "l4"
 
     @property
+    def backtests_l4_structures(self) -> Path:
+        """L4 선정 구조 비교 (`state/backtests/l4-structures/<store_end>/`, `docs/15` ·
+        `msa backtest l4-structures`). 특성 패널 캐시는 `backtests_l4` 것을 재사용한다."""
+        return self.state / "backtests" / "l4-structures"
+
+    @property
     def calibration(self) -> Path:
         return self.state / "calibration"
 

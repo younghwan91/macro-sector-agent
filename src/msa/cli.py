@@ -441,6 +441,42 @@ def backtest_l4(
     _echo_saved(res.out_dir)
 
 
+@backtest_app.command("l4-structures")
+@cli_guard
+def backtest_l4_structures(
+    force: bool = typer.Option(
+        False, "--force", help="특성 패널 parquet 캐시를 무시하고 다시 만든다 (오래 걸린다)"
+    ),
+    jobs: int = typer.Option(0, "--jobs", help="테마 단위 병렬 프로세스 수 (0 = min(14, cpu−2))"),
+    themes: str = typer.Option(
+        "", "--themes", help="스모크 전용 — 이 테마들만 (쉼표). 주면 산출물이 -smoke 로 갈린다"
+    ),
+    max_months: int = typer.Option(
+        0, "--max-months", help="스모크 전용 — 격자 마지막 N 개월만. 주면 판정하지 않는다"
+    ),
+    no_write: bool = _no_write_option("state/backtests/"),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """L4 선정 구조 비교 — docs/15 사전 등록의 집행 (B0 바벨 · B1 대장주 · B2 토크 · B3 동일가중).
+
+    `msa backtest l4` 가 남긴 특성 패널 캐시를 재사용한다. 산출물:
+    state/backtests/l4-structures/<store_end>/. 결과로 후보·K·임계를 바꾸지 않는다
+    (CLAUDE.md §1, docs/15 §5.1). --themes/--max-months 는 스모크용이며 판정을 내지 않는다.
+    """
+    from msa.l4.structures import render_report, run_structures
+
+    _setup_logging(verbose)
+    res = run_structures(
+        write=not no_write,
+        force=force,
+        jobs=jobs or None,
+        themes_filter=[t.strip() for t in themes.split(",") if t.strip()] or None,
+        max_months=max_months or None,
+    )
+    typer.echo(render_report(res))
+    _echo_saved(res.out_dir)
+
+
 @app.command()
 @cli_guard
 def research(
