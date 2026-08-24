@@ -65,6 +65,9 @@ SELECTION_GROUP = "ELIGIBLE"
 #: 바벨 라벨 · 관찰용 순위·종합·3축 백분위 · 기준가 · 유동성 · 표기용 플래그.
 #: 이 밖의 열은 리포트 전용이다. **`rank`·`composite`·`*_pct`·`barbell_obs` 는 표기용이고
 #: 선정에 쓰이지 않는다** (모듈 docstring).
+#: 2026-08-24 추가 — `nd_basis`(그 종목의 `net_debt_ebitda` 가 EBITDA 공간인지 시총 공간인지) ·
+#: `s_partial`(S 하위 항목 결측으로 `s_raw` 가 재정규화됐다) · `m_inputs_missing`(S·T 와 같은 형식).
+#: 셋 다 **표시**이고 어떤 판정도 바꾸지 않는다.
 RANKING_EXPORT_COLUMNS: tuple[str, ...] = (
     "group",
     "barbell_obs",
@@ -78,8 +81,11 @@ RANKING_EXPORT_COLUMNS: tuple[str, ...] = (
     LIQUIDITY_FEATURE,
     "penalties",
     "red_flags",
+    "nd_basis",
+    "s_partial",
     "s_inputs_missing",
     "t_inputs_missing",
+    "m_inputs_missing",
 )
 
 
@@ -195,7 +201,15 @@ def run_picks(
             "eligible": len(ranking),
             "min_constituents": theme.min_constituents,
             "below_min_constituents": bool(len(ranking) < theme.min_constituents),
-            "etf_fallback": theme.etf_proxy,
+            # `docs/06` §5 는 min_constituents 미달 시 ETF 대체를 규정하지만 **L4·L5 경로에
+            # 구현이 없다** (`etf_proxy` 는 L1 검증용). 2026-08-24 까지 리포트가 대체를 한 것처럼
+            # 적고 있었다 — 문구를 고치고 `docs/06` §8.4 에 미구현으로 올렸다.
+            "etf_fallback_declared": theme.etf_proxy,
+            "etf_fallback_implemented": False,
+            "etf_fallback_note": (
+                "docs/06 §5 가 규정하나 미구현 (docs/06 §8.4). etf_proxy 는 L1 검증용이고 "
+                "L4/L5 경로에서 읽히지 않는다 — 미달이어도 대체하지 않는다"
+            ),
         },
         "selection": {
             "rule": "하드 제외 통과 종목 전부 · 테마 내 동일가중 (docs/06 §5.1·§6.1 · docs/15 §5)",
@@ -229,6 +243,11 @@ def run_picks(
         "inputs_unavailable": fs.inputs_unavailable,
         "inputs_unused": INPUTS_UNUSED,
         "inputs_missing_per_stock": _inputs_missing(ranking),
+        # `net_debt_ebitda` 는 EBITDA>0 이면 순부채/EBITDA, EBITDA≤0 이면 순부채/시총이다
+        # (`docs/06` §2 가 선언한 대체). **하드 제외 임계 6× 는 basis 와 무관하게 같은 값**이라
+        # 시총 공간에서는 사실상 발동하지 않는다 — 어느 종목이 어느 공간에서 평가됐는지를
+        # 산출물에 남긴다 (`docs/06` §8.2 · `docs/backtest-l4.md` §10 #12).
+        "nd_basis_counts": _nd_basis_counts(ranking),
         "theme_stats": fs.theme_stats,
         "declared": axes.declared_constants(),
         "pit": "datekey ≤ asof, first-reported per calendardate (features.py)",
@@ -253,6 +272,13 @@ def _txt(r: pd.Series, key: str) -> str:
     return str(r.get(key, "") or "")
 
 
+def _nd_basis_counts(ranking: pd.DataFrame) -> dict[str, int]:
+    """적격 종목의 `nd_basis` 분포 — `ebitda`(순부채/EBITDA) · `mcap`(EBITDA≤0 대체) · `n/a`."""
+    if ranking.empty or "nd_basis" not in ranking.columns:
+        return {}
+    return {str(k): int(v) for k, v in ranking["nd_basis"].astype(str).value_counts().items()}
+
+
 def _inputs_missing(ranking: pd.DataFrame) -> dict[str, dict[str, str]]:
     out: dict[str, dict[str, str]] = {}
     if ranking.empty:
@@ -260,7 +286,11 @@ def _inputs_missing(ranking: pd.DataFrame) -> dict[str, dict[str, str]]:
     for tk, r in ranking.iterrows():
         d = {
             axis: _txt(r, key)
-            for axis, key in (("S", "s_inputs_missing"), ("T", "t_inputs_missing"))
+            for axis, key in (
+                ("S", "s_inputs_missing"),
+                ("T", "t_inputs_missing"),
+                ("M", "m_inputs_missing"),
+            )
             if _txt(r, key)
         }
         if d:
@@ -319,6 +349,9 @@ def _stock_block(tk: str, r: pd.Series, theme: str, group: str) -> list[str]:
         f"      감점 {int(r.get('n_penalties', 0))}/{int(r.get('n_penalty_evaluable', 0))}"
         + (f" [{pen}]" if pen else "")
         + (f" · 레드플래그 [{rf}]" if rf else "")
+        # S 하위 항목이 빠지면 `s_raw` 는 남은 항목만으로 재정규화된다 — 모름이 최상으로
+        # 보일 수 있어 그 사실을 여기 적는다 (2026-08-24 · `axes.survival` docstring)
+        + (" · S 부분(하위 항목 결측 — 재정규화)" if bool(r.get("s_partial", False)) else "")
     )
     mh_txt = _signed_pct(r.get("margin_headroom"), "pp")
     lines.append(
@@ -341,7 +374,11 @@ def _stock_block(tk: str, r: pd.Series, theme: str, group: str) -> list[str]:
     )
     notes = [
         f"{axis} 입력 없음: {_txt(r, key)}"
-        for axis, key in (("S", "s_inputs_missing"), ("T", "t_inputs_missing"))
+        for axis, key in (
+            ("S", "s_inputs_missing"),
+            ("T", "t_inputs_missing"),
+            ("M", "m_inputs_missing"),
+        )
         if _txt(r, key)
     ]
     if notes:
@@ -368,7 +405,9 @@ def render_report(
         f"구성원 {u['members']} → 상장 {u['listed']} (폐지/가격없음 {u['excluded_listing']}) → "
         f"하드 제외 {u['excluded_hard_filter']} → 적격 {u['eligible']}"
         + (
-            f"   ※ min_constituents {u['min_constituents']} 미달 — ETF 대체 {u['etf_fallback']}"
+            f"   ※ min_constituents {u['min_constituents']} 미달 — "
+            f"docs/06 §5 는 ETF 대체({u['etf_fallback_declared'] or 'ETF 미선언'})를 규정하나 "
+            "**미구현**이다 (docs/06 §8.4). 이 실행은 대체하지 않았다"
             if u["below_min_constituents"]
             else ""
         ),

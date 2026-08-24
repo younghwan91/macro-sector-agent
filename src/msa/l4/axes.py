@@ -44,8 +44,12 @@
   pct(`rvol_expansion`) 의 가용 평균. 문서 §4 의 6개 지표 등가. M 은 종합 가중 0.20 으로 이미 낮다.
 - 축 최소 입력 — T·M 모두 6개 중 **3개 이상** 있어야 계산, 아니면 NaN. 소수 구성 요소의 평균은
   그 축이 아니라 다른 것을 잰다 (예: `above_50d` 하나로 M=1.0). 절반은 표본 크기에 무관한 기준.
-- 런웨이 판정 불가 — 현금흐름표가 없어 런웨이가 NaN 이면 **하드 제외** (사유 표기). 하드 필터를
-  평가할 수 없는 종목을 통과시키면 필터가 있는 척하는 것이다 — 재무 없음과 같은 처리.
+- **하드 제외 3항목의 판정 불가는 전부 하드 제외** (사유 표기) — 런웨이(E4) · 순부채/EBITDA(E6) ·
+  만기벽(E7). 하드 필터를 평가할 수 없는 종목을 통과시키면 필터가 있는 척하는 것이다 — 재무 없음
+  (E5)과 같은 처리. **2026-08-24: 이 문장은 원래 셋 다를 가리켰는데 코드는 런웨이(E4)에만
+  적용하고 있었다.** `nd`/`wall` 이 NaN 이면 `nd > 6`·`wall > 0.5` 가 `False` 라 조용히 통과했다.
+  E6·E7 은 그 누락을 메운 것이고 **임계는 하나도 옮기지 않았다** — 결측 처리만 바꿨다.
+  E4 와 같이 **데이터 절단**이며 알파 주장이 아니다 (`docs/14` §1 Q3 · §4.1 — 판정하지 않는다).
 - 축 결측 시 종합 — 가용 축 가중치를 재정규화하고 `composite_partial=True` 표시. 빈 축을 0 으로
   두면 순위가 결측에 지배된다; 표시 없이 재정규화하면 조용한 절단.
 - 순위 동률 — 종합 ↓ → S̃ ↓ → 티커 ↑. 결정론 — 같은 입력이면 같은 순위.
@@ -118,19 +122,27 @@ assert abs(sum(AXIS_WEIGHTS.values()) - 1.0) < 1e-9
 _REASON_NO_SF1 = "재무 없음 (SF1 에 행 0개 — 20-F 해외발행사 등 미수록) — 생존 필터 판정 불가"
 _REASON_STALE = "재무 없음 (asof 이전 15개월 내 분기 없음) — 생존 필터 판정 불가"
 _REASON_RUNWAY_NA = "런웨이 판정 불가 (현금흐름표 또는 현금 없음) — 하드 필터 미통과"
+_REASON_ND_NA = "순부채/EBITDA 판정 불가 (부채·현금 또는 EBITDA·시총 없음) — 하드 필터 미통과"
+_REASON_WALL_NA = "만기벽 판정 불가 (유동부채 또는 시총 없음) — 하드 필터 미통과"
 
-#: 하드 제외 **사유 코드** — `docs/14` §1 Q3 의 E1~E5. 앞 셋이 알파 주장, 뒤 둘은 데이터 사정.
-#: 한 종목이 여러 사유에 동시에 걸릴 수 있다 (코드별로 따로 센다).
-HARD_REASON_CODES: tuple[str, ...] = ("E1", "E2", "E3", "E4", "E5")
+#: 하드 제외 **사유 코드** — `docs/14` §1 Q3 의 E1~E5 + 2026-08-24 에 메운 E6·E7.
+#: E1~E3 이 알파 주장, E4~E7 은 데이터 사정(판정 불가). 한 종목이 여러 사유에 동시에 걸릴 수
+#: 있다 (코드별로 따로 센다).
+HARD_REASON_CODES: tuple[str, ...] = ("E1", "E2", "E3", "E4", "E5", "E6", "E7")
 HARD_REASON_LABELS: dict[str, str] = {
     "E1": f"cash_runway_q < {RUNWAY_MIN_Q:.0f}",
     "E2": f"net_debt_ebitda > {ND_EBITDA_EXCLUDE:.0f}x",
     "E3": f"maturity_wall_12m > {MATURITY_WALL_EXCLUDE}",
     "E4": "런웨이 판정 불가 (현금흐름표 없음)",
     "E5": "fund_status ∈ {none, stale}",
+    "E6": "순부채/EBITDA 판정 불가 (입력 없음)",
+    "E7": "만기벽 판정 불가 (입력 없음)",
 }
 #: 알파 주장인 사유 — `docs/14` §4.1 이 합격 판정을 거는 것은 이 셋뿐이다.
 HARD_REASON_ALPHA: tuple[str, ...] = ("E1", "E2", "E3")
+#: 데이터 절단인 사유 — `docs/14` §4.1 이 "판정하지 않는다. 수치만 적는다" 로 못박은 부류.
+#: E6·E7 은 E4 와 같은 등급이다 (2026-08-24 신설 · 모듈 docstring).
+HARD_REASON_DATA: tuple[str, ...] = ("E4", "E5", "E6", "E7")
 
 
 def _num(s: pd.Series) -> pd.Series:
@@ -183,6 +195,10 @@ def hard_filter_flags(frame: pd.DataFrame) -> pd.DataFrame:
     out["E3"] = (has_fund & (wall > MATURITY_WALL_EXCLUDE)).fillna(False).astype(bool)
     out["E4"] = (has_fund & runway.isna()).fillna(False).astype(bool)
     out["E5"] = (~has_fund).fillna(False).astype(bool)
+    # E6·E7 — E2·E3 의 판정 불가. `nd > 6`·`wall > 0.5` 는 NaN 에서 False 라 조용히 통과했다
+    # (2026-08-24). E4 와 같은 처리이고 임계는 옮기지 않았다.
+    out["E6"] = (has_fund & nd.isna()).fillna(False).astype(bool)
+    out["E7"] = (has_fund & wall.isna()).fillna(False).astype(bool)
     return out[list(HARD_REASON_CODES)]
 
 
@@ -190,7 +206,9 @@ def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
     """하드 제외 판정. 반환 index ticker: `excluded`(bool), `reason`(str; 복수는 ' · ' 로 연결).
 
     재무가 없는(신선도 탈락) 종목도 제외한다 — 생존 필터를 **평가할 수 없는** 종목을 통과시키면
-    필터가 있는 척하는 것이다. 사유에 그렇게 적는다. `going_concern` 은 입력이 없어 적용하지 못한다.
+    필터가 있는 척하는 것이다. 사유에 그렇게 적는다. **하드 제외 3항목 전부에 같은 규칙이 걸린다**
+    — 런웨이(E4) · 순부채/EBITDA(E6) · 만기벽(E7) (2026-08-24). `going_concern` 은 입력이 없어
+    적용하지 못한다.
     """
     _check_columns(frame)
     flags = hard_filter_flags(frame)
@@ -202,6 +220,8 @@ def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
 
     no_fund = _tagged(flags["E5"], np.where(no_sf1, _REASON_NO_SF1, _REASON_STALE))
     runway_na = _tagged(flags["E4"], _REASON_RUNWAY_NA)
+    nd_na = _tagged(flags["E6"], _REASON_ND_NA)
+    wall_na = _tagged(flags["E7"], _REASON_WALL_NA)
     runway_low = _tagged(
         flags["E1"],
         runway.map(lambda r: f"런웨이 {r:.2f}분기 < {RUNWAY_MIN_Q:.0f}"),
@@ -221,14 +241,28 @@ def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
         wall.map(lambda w: f"만기벽(12m 대용) {w:.2f} > {MATURITY_WALL_EXCLUDE}"),
     )
     out = pd.DataFrame(index=frame.index)
-    out["reason"] = _join_nonempty([no_fund, runway_na, runway_low, nd_high, wall_high], " · ")
+    out["reason"] = _join_nonempty(
+        [no_fund, runway_na, runway_low, nd_na, nd_high, wall_na, wall_high], " · "
+    )
     out["excluded"] = out["reason"].str.len() > 0
     return out
 
 
 def survival(frame: pd.DataFrame) -> pd.DataFrame:
     """S 원점수와 하위 항목. 열: s_raw, runway_score, leverage_score, penalty_score,
-    penalties(str), n_penalties, n_penalty_evaluable, s_inputs_missing(str)."""
+    penalties(str), n_penalties, n_penalty_evaluable, s_inputs_missing(str), s_partial(bool).
+
+    **`s_raw` 는 가용 하위 항목 가중치를 재정규화한 값이다** — T·M 이 `T_MIN_INPUTS` 미만에서
+    NaN 이 되는 것과 달리 S 는 하나만 있어도 값이 나온다. 그래서 `leverage_score` 가 NaN 인
+    종목의 `s_raw` 는 순현금 기업과 **동률 최상위(1.00)** 가 될 수 있다 — 모름이 최상으로 보인다.
+    `s_inputs_missing` 문자열만으로는 표·정렬에서 그 사실이 보이지 않아 2026-08-24 에
+    `s_partial` 불리언을 붙였다 (`composite_partial` 과 같은 형식·같은 이유: 표시 없는
+    재정규화는 조용한 절단이다).
+
+    **재정규화 규칙 자체는 바꾸지 않았다** — 그것은 이 모듈 docstring 이 선언한 값이고,
+    "모름을 어떤 점수로 둘 것인가" 는 새 선언이 필요하다 (`CLAUDE.md` §1). 열린 질문으로
+    남긴다 (`docs/06` §8.4).
+    """
     idx = frame.index
     runway = _num(frame["cash_runway_q"])
     runway_score = (runway / RUNWAY_CAP_Q).clip(0, 1)
@@ -281,6 +315,8 @@ def survival(frame: pd.DataFrame) -> pd.DataFrame:
     out["n_penalties"] = n_trig
     out["n_penalty_evaluable"] = n_eval
     out["s_inputs_missing"] = _join_nonempty([_tagged(~avail[c], c) for c in parts.columns], ",")
+    #: 하위 항목이 하나라도 없으면 True — `s_raw` 가 재정규화된 값이라는 표시 (2026-08-24).
+    out["s_partial"] = ~avail.all(axis=1)
     return out
 
 
@@ -319,12 +355,19 @@ def timing_components(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def timing(frame: pd.DataFrame) -> pd.DataFrame:
-    """M 원점수. 열: m_raw, m_n_inputs."""
+    """M 원점수. 열: m_raw, m_n_inputs, m_inputs_missing.
+
+    `m_inputs_missing` 은 `torque` 의 `t_inputs_missing` · `survival` 의 `s_inputs_missing` 과
+    **같은 형식**이다 (쉼표로 이은 결측 구성 요소 이름). 2026-08-24 에 추가했다 — M 만 없어서
+    "왜 이 종목의 M 이 NaN 인가" 를 산출물에서 답할 수 없었다. `m_n_inputs` 는 그 전부터
+    계산되고 있었으나 아무 로직도 읽지 않는 **관찰용**이고, 그 지위는 그대로다.
+    """
     comps = timing_components(frame)
     n = comps.notna().sum(axis=1)
     out = pd.DataFrame(index=frame.index)
     out["m_raw"] = comps.mean(axis=1).where(n >= M_MIN_INPUTS, np.nan)
     out["m_n_inputs"] = n
+    out["m_inputs_missing"] = _join_nonempty([_tagged(comps[c].isna(), c) for c in comps], ",")
     return out
 
 

@@ -304,7 +304,7 @@ def _ref_price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
             if n >= 50 and v.tail(50).mean() > 0
             else np.nan
         )
-        r["vcp_base"] = F.vcp_base(c, v) if n >= 60 else None
+        r["vcp_base"] = F.vcp_base(c, v) if n >= 252 else None
         rows[str(tk)] = r
     return pd.DataFrame.from_dict(rows, orient="index")
 
@@ -372,3 +372,87 @@ def test_price_beta_hist_window_and_sign() -> None:
     # 짧은 참조 → n/a
     _, info2 = F.price_beta_hist(qt, price.tail(10), pd.Timestamp("2026-08-14"))
     assert info2["status"] == "n/a"
+
+
+# ---------------------------------------------------------------- vcp_base 특성화
+#
+# 아래는 **고쳐야 할 동작을 고정하는 특성화 테스트**다 (`docs/06` §4·§8.2 · 2026-08-24).
+# `vcp_base` 는 폭락 중에도 True 를 낸다. 고치려면 새 임계(현재가 위치 컷·수축 최신성 창·
+# dry-up 비율)가 필요하고 그것은 `CLAUDE.md` §1 위반이라 **고치지 않았다.** 대신 현재 동작을
+# 여기에 박아, 나중에 누가 고칠 때 정확히 무엇이 바뀌는지 이 테스트가 실패로 보여 준다.
+#
+# **이 테스트가 실패하면 그것은 회귀가 아니라 결함이 고쳐졌다는 신호일 수 있다.** 그때는
+# 테스트를 지우지 말고 기대값을 뒤집고, `docs/06` §8.2 의 결함 항목을 함께 지운다.
+
+
+def _vcp_contracting_base(
+    seed: int, *, crash_bars: int = 40, crash_depth: float = 0.40, idle_bars: int = 0
+) -> tuple[pd.Series, pd.Series]:
+    """수축 베이스(20% → 12% → 6%) + 선택적 붕괴/횡보 꼬리. 종가·거래량."""
+    rng = np.random.default_rng(seed)
+    px: list[float] = [100.0]
+
+    def leg(depth: float, n: int = 30) -> None:
+        top = px[-1]
+        for i in range(n):
+            x = i / (n - 1)
+            px.append(float(top * (1 - depth * (1 - abs(2 * x - 1))) * (1 + rng.normal(0, 0.002))))
+
+    leg(0.20)
+    leg(0.12)
+    leg(0.06)
+    start = px[-1]
+    for i in range(crash_bars):
+        drop = 1 - crash_depth * (i + 1) / crash_bars
+        px.append(float(start * drop * (1 + rng.normal(0, 0.002))))
+    # 횡보 꼬리는 **단조**로 만든다 — 새 피벗을 만들지 않아 "수축이 오래됐다" 만 시험한다
+    for _ in range(idle_bars):
+        px.append(float(px[-1] * 0.9998))
+    close = pd.Series(px)
+    vol = pd.Series(rng.uniform(0.9, 1.1, len(px)) * 1e6)
+    vol.iloc[-10:] = vol.iloc[-10:] * 0.5  # dry-up
+    return close, vol
+
+
+@pytest.mark.parametrize("seed", [0, 1, 2, 3, 4])
+def test_vcp_base_characterization_true_during_crash(seed: int) -> None:
+    """**현재 동작**: 수축 베이스 뒤 40봉 −40% 붕괴가 와도 True. 5개 시드 전부.
+
+    원인 둘 (`features.vcp_base` docstring):
+    1. `build_contractions(ref_level=max, tol=0.10)` 이 고점 −10% 아래 피벗을 버려 폭락 구간이
+       수축으로 세어지지 않는다 — 남는 것은 붕괴 전의 예쁜 수축들뿐이다.
+    2. 현재가 위치를 보는 조건이 없다 (`from_52w_high` 는 계산돼 있으나 아무도 읽지 않는다).
+    """
+    close, vol = _vcp_contracting_base(seed)
+    assert float(close.iloc[-1] / close.max() - 1) < -0.35  # 고점 대비 −35% 아래
+    assert F.vcp_base(close, vol) is True
+
+
+def test_vcp_base_characterization_no_recency_requirement() -> None:
+    """**현재 동작**: 수축이 아무리 오래됐어도 True — 최신성 요구가 없다."""
+    close, vol = _vcp_contracting_base(0, crash_bars=0, crash_depth=0.0, idle_bars=120)
+    assert F.vcp_base(close, vol) is True
+
+
+def test_vcp_base_characterization_dry_up_is_bare_inequality() -> None:
+    """**현재 동작**: dry-up 이 임계 없는 순부등호 — 1% 차이도 통과한다."""
+    close, _v = _vcp_contracting_base(0, crash_bars=0, crash_depth=0.0)
+    n = len(close)
+    vol = pd.Series(np.full(n, 1_000_000.0))
+    vol.iloc[-10:] = 990_000.0  # 50일 평균보다 1% 낮을 뿐
+    assert F.vcp_base(close, vol) is True
+    vol.iloc[-10:] = 1_000_000.0  # 같으면 False — 부등호가 순부등호라는 확인
+    assert F.vcp_base(close, vol) is False
+
+
+def test_vcp_base_window_is_declared_252_not_60() -> None:
+    """창 길이는 문서 선언(`docs/06` §8.2 "252일 창") 그대로다 — 251봉이면 계산하지 않는다.
+
+    2026-08-24 이전 코드는 `n >= 60` 이었다. 60 은 어느 문서에도 선언된 적이 없다.
+    """
+    px = pd.concat(
+        [_px("SHORT", n=251, seed=1), _px("FULL", n=260, seed=2)], ignore_index=True
+    )
+    out = F.price_features(px, pd.Timestamp("2026-08-14"))
+    assert out.loc["SHORT", "vcp_base"] is None
+    assert out.loc["FULL", "vcp_base"] is not None

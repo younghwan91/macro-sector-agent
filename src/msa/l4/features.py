@@ -59,6 +59,13 @@
 - `rvol_expansion` — 20일 평균 거래량 / 50일 평균 거래량. 1 초과 = 최근 거래량 확장.
 - `vcp_base` — 최근 252일 · 피벗 좌우 5일 · 마지막 수축 ≤ 4개 중 2개 이상이고 수축폭이 단조
   감소, 10일 평균 거래량 < 50일 평균 (dry-up). L1 `vcp_index_score` 와 같은 피벗 파라미터.
+  **결함이 있다 — 폭락 중에도 True 가 나온다** (`docs/06` §4·§8.2 · `test_l4_features.py`
+  `test_vcp_base_characterization_*`). 고치려면 새 임계가 필요해 고치지 않았다. M 축은 어떤
+  결정에도 쓰이지 않으므로 실피해는 0 이다 (`docs/06` §6.1).
+- **관찰용 열 — 아무 로직도 읽지 않는다**: `from_52w_high` · `sma200_up_1m` · `m_n_inputs`.
+  `from_52w_high`·`sma200_up_1m` 은 `stage2` 안에서 **다시 계산**되어 쓰이고, 열 자체는 리포트·
+  진단용이다. 지우지 않는 이유는 `vcp_base` 결함의 재현·진단에 이 열들이 필요하기 때문이다
+  (`from_52w_high` 는 "지금 고점 대비 어디인가" 를 이미 담고 있다).
 - 상장 판정 — asof 이전 10거래일(SPY 달력) 안에 가격 행이 있음. 폐지·거래정지는 제외하고
   **수를 보고**.
 - `fund_status` — `ok`(15개월 내 분기 있음) / `stale`(분기는 있으나 오래됨) / `none`(SF1 에
@@ -610,7 +617,11 @@ def price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
         cols["rvol_expansion"].append(
             float(_nanmean(v[-20:]) / v50) if n >= 50 and v50 > 0 else np.nan
         )
-        cols["vcp_base"].append(vcp_base(pd.Series(c), pd.Series(v)) if n >= 60 else None)
+        # 창 길이는 문서 선언 그대로 252 거래일이다 (`docs/06` §8.2 "252일 창"). 2026-08-24
+        # 이전 코드는 `n >= 60` 이라 60봉만 있어도 계산했다 — 60봉은 252일 창이 아니고, 그
+        # 숫자는 어느 문서에도 선언된 적이 없다. 새 값을 정한 것이 아니라 **선언된 값으로
+        # 되돌린 것**이다 (`CLAUDE.md` §1).
+        cols["vcp_base"].append(vcp_base(pd.Series(c), pd.Series(v)) if n >= 252 else None)
     out = pd.DataFrame(index=pd.Index(tickers))
     for k in ("price", "mcap", "adv20_usd", "from_52w_low", "from_52w_high", "rvol_expansion"):
         out[k] = np.asarray(cols[k], dtype=float)
@@ -622,7 +633,28 @@ def price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
 def vcp_base(
     close: pd.Series, volume: pd.Series, *, left: int = 5, right: int = 5, max_cons: int = 4
 ) -> bool:
-    """VCP 베이스: 수축 ≥ 2 · 수축폭 단조 감소 · 거래량 dry-up (10일 < 50일)."""
+    """VCP 베이스: 수축 ≥ 2 · 수축폭 단조 감소 · 거래량 dry-up (10일 < 50일).
+
+    ## 알려진 결함 — 2026-08-24 실측. **고치지 않았다** (`docs/06` §4·§8.2)
+
+    수축 베이스(20% → 12% → 6%) 뒤에 40봉 −40% 붕괴를 이어 붙이면 **5개 시드 전부 True** 가
+    나온다. 원인 둘:
+
+    1. `build_contractions(ref_level=c.max(), tol=0.10)` 이 고점 −10% 아래의 피벗 쌍을 버린다.
+       폭락 구간의 H 는 전부 그 아래라 **수축으로 세어지지 않고**, 남는 것은 붕괴 전의 예쁜
+       수축들뿐이다.
+    2. **현재가가 어디에 있는지 보는 조건이 없다.** `from_52w_high` 는 이미 계산돼 있지만 이
+       함수도 `axes.timing` 도 읽지 않는다.
+
+    부수 결함: 수축의 최신성을 요구하지 않는다 (베이스 후 120봉이 지나도 True) · dry-up 이
+    임계 없는 순부등호라 1% 차이도 통과.
+
+    **왜 고치지 않는가**: 현재가 위치 컷·최신성 창·dry-up 비율 — 셋 다 **새 임계**이고,
+    `CLAUDE.md` §1 은 문서에 없는 값을 발명하는 것을 금지한다. 현재 동작은
+    `tests/test_l4_features.py` 의 특성화 테스트가 고정하고 있다 — 나중에 고칠 때 무엇이
+    바뀌는지 그 테스트가 보여 준다. 그 사이 실피해는 0 이다: M 축은 관찰 지표이고 선정에
+    쓰이지 않는다 (`docs/06` §6.1 · `journal/2026-08-24-l4-selection-retired.md`).
+    """
     c = close.dropna()
     piv = compress_pivots(find_pivots(c, left=left, right=right))
     cons = build_contractions(piv, ref_level=float(c.max()), tol=0.10, max_drop_from_ref=1.0)

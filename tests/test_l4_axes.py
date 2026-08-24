@@ -82,6 +82,41 @@ def test_hard_filters_each_rule_logged_with_reason() -> None:
     assert hf.loc["BOTH", "reason"].count(" · ") == 1  # 두 사유가 전부 남는다
 
 
+def test_hard_filters_unevaluable_leverage_and_wall_are_excluded() -> None:
+    """E2·E3 의 **판정 불가**도 제외한다 — E4(런웨이 판정 불가)와 같은 등급 (2026-08-24).
+
+    2026-08-24 이전에는 `nd > 6`·`wall > 0.5` 가 NaN 에서 `False` 라 **조용히 통과**했다.
+    임계(6×·0.5)는 하나도 옮기지 않았다 — 결측 처리만 바꿨다.
+    """
+    f = _frame(
+        {
+            "NOND": _base(net_debt_ebitda=np.nan, nd_basis="n/a"),
+            "NOWALL": _base(maturity_wall_12m=np.nan),
+            "OK": _base(),
+        }
+    )
+    hf = axes.hard_filters(f)
+    assert hf.loc["NOND", "excluded"] and "순부채/EBITDA 판정 불가" in hf.loc["NOND", "reason"]
+    assert hf.loc["NOWALL", "excluded"] and "만기벽 판정 불가" in hf.loc["NOWALL", "reason"]
+    assert not hf.loc["OK", "excluded"]
+    flags = axes.hard_filter_flags(f)
+    assert bool(flags.loc["NOND", "E6"]) and not bool(flags.loc["NOND", "E7"])
+    assert bool(flags.loc["NOWALL", "E7"]) and not bool(flags.loc["NOWALL", "E6"])
+    # 재무가 아예 없으면(E5) 개별 판정 불가를 따로 세지 않는다 — E5 하나로 끝난다
+    g = _frame({"NF": _base(fund_calendardate=np.nan, fund_status="none")})
+    gf = axes.hard_filter_flags(g)
+    assert bool(gf.loc["NF", "E5"])
+    assert not bool(gf.loc["NF", "E6"]) and not bool(gf.loc["NF", "E7"])
+
+
+def test_hard_reason_codes_classification() -> None:
+    """E6·E7 은 **데이터 절단**이다 — `docs/14` §4.1 이 "판정하지 않는다" 로 못박은 부류."""
+    assert axes.HARD_REASON_ALPHA == ("E1", "E2", "E3")
+    assert axes.HARD_REASON_DATA == ("E4", "E5", "E6", "E7")
+    assert set(axes.HARD_REASON_ALPHA) | set(axes.HARD_REASON_DATA) == set(axes.HARD_REASON_CODES)
+    assert set(axes.HARD_REASON_LABELS) == set(axes.HARD_REASON_CODES)
+
+
 def _ref_hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
     """벡터화 전의 행 루프 구현 (참조). 사유 문구·순서·연결이 같아야 한다."""
     reasons: dict[str, list[str]] = {str(t): [] for t in frame.index}
@@ -107,11 +142,17 @@ def _ref_hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
         elif r < axes.RUNWAY_MIN_Q:
             reasons[k].append(f"런웨이 {r:.2f}분기 < {axes.RUNWAY_MIN_Q:.0f}")
         x = nd.loc[t]
-        if pd.notna(x) and x > axes.ND_EBITDA_EXCLUDE:
+        if pd.isna(x):
+            reasons[k].append(
+                "순부채/EBITDA 판정 불가 (부채·현금 또는 EBITDA·시총 없음) — 하드 필터 미통과"
+            )
+        elif x > axes.ND_EBITDA_EXCLUDE:
             b = "EBITDA" if basis.loc[t] == "ebitda" else "시총(EBITDA≤0 대체)"
             reasons[k].append(f"순부채/{b} {x:.1f}× > {axes.ND_EBITDA_EXCLUDE:.0f}")
         w = wall.loc[t]
-        if pd.notna(w) and w > axes.MATURITY_WALL_EXCLUDE:
+        if pd.isna(w):
+            reasons[k].append("만기벽 판정 불가 (유동부채 또는 시총 없음) — 하드 필터 미통과")
+        elif w > axes.MATURITY_WALL_EXCLUDE:
             reasons[k].append(f"만기벽(12m 대용) {w:.2f} > {axes.MATURITY_WALL_EXCLUDE}")
     out = pd.DataFrame(index=frame.index)
     out["reason"] = pd.Series({k: " · ".join(v) for k, v in reasons.items()}).reindex(frame.index)
