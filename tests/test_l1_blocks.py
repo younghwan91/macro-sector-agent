@@ -334,3 +334,39 @@ def test_bucket_for_raises_before_first_bucket() -> None:
     ind = _ind_for_buckets(["2020-05-31", "2020-06-30"])
     with pytest.raises(KeyError):
         ind.bucket_for(pd.Timestamp("2020-05-02"))
+
+
+# ---------------------------------------------------------------- 축 1 발표 시차
+
+
+def test_lagged_reference_reaches_the_last_bucket() -> None:
+    """발표 시차 때문에 축 1 판정이 통째로 사라지던 결함의 회귀 테스트 (2026-08-25).
+
+    미국 월간 통계는 익월 중순에 나온다. 8월에 스캔하면 참조의 마지막 관측은 6~7월이다.
+    `reindex(me)` 만 하면 마지막 버킷이 NaN 이 되고, 축 1 이 "데이터 있음" 인데도 판정
+    불가가 된다 — 실제로 데이터가 있는 27개 테마 **전부**가 그 상태였다.
+    """
+    import pandas as pd
+
+    from msa.l1.blocks import PHYSICAL_STALE_TOL_MONTHS, _ref_lag_months, _to_panel
+
+    me = pd.date_range("2026-01-31", "2026-08-31", freq="ME")
+    # 참조는 6월까지만 있다 (= 2개월 시차)
+    ref = pd.Series(
+        range(6), index=pd.date_range("2026-01-31", "2026-06-30", freq="ME"), dtype=float
+    )
+
+    got = _to_panel(ref, me)
+    assert got.notna().all(), "시차만큼 앞으로 끌어오지 못하면 마지막 버킷이 비고 축 1 이 죽는다"
+    assert got.loc["2026-08-31"] == ref.iloc[-1]
+
+    lag = _ref_lag_months(ref, me)
+    assert lag.loc["2026-06-30"] == 0.0
+    assert 1.5 <= lag.loc["2026-08-31"] <= 2.5  # 약 2개월
+
+    # 한도를 넘으면 채우지 않는다 — 무한정 끌어오면 폐기된 시리즈가 살아 있어 보인다
+    dead = pd.Series([1.0], index=pd.DatetimeIndex(["2026-01-31"]))  # 7개월 전에서 멈춘 시리즈
+    stale = _to_panel(dead, me)
+    assert stale.loc["2026-08-31"] != stale.loc["2026-08-31"]  # NaN
+    filled = int(stale.notna().sum())
+    assert filled == PHYSICAL_STALE_TOL_MONTHS + 1  # 관측 당월 + 한도 개월

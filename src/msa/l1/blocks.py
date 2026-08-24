@@ -137,11 +137,51 @@ BLOCK_INDICATORS: dict[str, tuple[str, ...]] = {
         "ss_coverage",
         "ma_flag",
         "axis1_contested",
+        # 점수에 쓰이지 않는 진단 열 (`SCORED` 에 없다) — 축 1 판정이 몇 개월 묵은
+        # 관측으로 채워졌는지 보이게 한다.
+        "unit_ref_lag_m",
     ),
 }
 
 #: 수치가 아닌(문자열) 출력 — 긴 표에 같이 실리지만 백분위 대상이 아니다.
 TEXT_OUTPUTS = ("verdict_post_ss", "verdict_pre_ss", "unit_source", "axis1_status")
+
+#: 축 1 참조 시계열을 패널 마지막 버킷까지 **앞으로 끌어오는** 한도 (개월).
+#:
+#: 미국 월간 경제통계는 구조적으로 늦게 나온다 — Census 소매판매는 익월 중순, 연준 G.17
+#: 산업생산도 익월 중순, 주택착공은 익월 17일경이다. 그래서 8월에 스캔하면 참조의 마지막
+#: 관측은 6~7월이다. 이 값을 그대로 `reindex` 하면 마지막 버킷이 NaN 이 되고, **축 1 판정이
+#: 통째로 사라진다** (2026-08-25 발견: 데이터가 있는 27개 테마 전부 `not_applicable` 이었다.
+#: FRED 키를 넣어도 축 1 이 살아나지 않은 진짜 이유가 이것이다).
+#:
+#: 값 3 은 발표 일정에서 왔다 — 정상 시차 1~2개월에 지연 발표·정부 셧다운 한 달을 더한 것이다.
+#: 데이터에 맞춰 고른 값이 아니다 (`CLAUDE.md` §1). **한도를 넘으면 채우지 않는다** —
+#: 무한정 끌어오면 폐기된 시리즈가 살아 있는 것처럼 보이고, 그것이 이 축을 못 믿게 만든다.
+PHYSICAL_STALE_TOL_MONTHS = 3
+
+
+def _to_panel(series: pd.Series, me: pd.DatetimeIndex) -> pd.Series:
+    """참조 시계열을 패널 월말 격자에 올린다 — 발표 시차만큼 앞으로 끌어오되 한도가 있다.
+
+    `reindex(me)` 만 하면 발표 시차 때문에 마지막 버킷이 반드시 비고, 그 결과 축 1 이
+    "데이터 있음" 인데도 판정 불가가 된다. `ffill(limit=)` 로 한도 안에서만 끌어온다.
+    """
+    return series.reindex(series.index.union(me)).ffill(limit=PHYSICAL_STALE_TOL_MONTHS).reindex(me)
+
+
+def _ref_lag_months(series: pd.Series, me: pd.DatetimeIndex) -> pd.Series:
+    """각 버킷에서 참조의 마지막 실측이 몇 개월 전인지 — 오래된 값으로 판정했다는 사실을
+    숨기지 않기 위해 지표로 남긴다 (`CLAUDE.md` §2)."""
+    obs = (
+        pd.Series(series.index, index=series.index)
+        .reindex(series.index.union(me))
+        .ffill()
+        .reindex(me)
+    )
+    days = np.asarray((me - pd.DatetimeIndex(obs)).days, dtype=float)
+    return pd.Series(np.round(days / 30.44, 1), index=me)
+
+
 #: 표본·이력 플래그 (bool)
 FLAG_OUTPUTS = (
     "short_hist_D",
@@ -685,6 +725,7 @@ def _unit_block(
             "ss_coverage",
             "ma_flag",
             "axis1_contested",
+            "unit_ref_lag_m",
         )
     }
     txt = {k: pd.DataFrame(None, index=me, columns=theme_cols, dtype=object) for k in TEXT_OUTPUTS}
@@ -723,8 +764,9 @@ def _unit_block(
             else:
                 assert cpi_full is not None
                 u = ref_full / cpi_full.reindex(ref_full.index).ffill()
-            c10 = _cagr(u / u.shift(M10Y), 10.0).reindex(me)
-            c5 = _cagr(u / u.shift(60), 5.0).reindex(me)
+            c10 = _to_panel(_cagr(u / u.shift(M10Y), 10.0), me)
+            c5 = _to_panel(_cagr(u / u.shift(60), 5.0), me)
+            num["unit_ref_lag_m"][col] = _ref_lag_months(ref_full, me)
             num["unit_cagr_10y"][col] = c10
             num["unit_cagr_5y"][col] = c5
             # 외부 시리즈 — 동일 구성원 개념이 없다. pre==post.
@@ -735,8 +777,9 @@ def _unit_block(
             status[col] = Axis1Status.OK_EXTERNAL.value
             continue
         # kind == price — 폴백: 동일 구성원 매출 / 가격지수
-        pr10 = (ref_full / ref_full.shift(M10Y)).reindex(me)
-        pr5 = (ref_full / ref_full.shift(60)).reindex(me)
+        pr10 = _to_panel(ref_full / ref_full.shift(M10Y), me)
+        pr5 = _to_panel(ref_full / ref_full.shift(60), me)
+        num["unit_ref_lag_m"][col] = _ref_lag_months(ref_full, me)
         r10 = (ss["ss10_rev_t1"][col] / ss["ss10_rev_t0"][col]) / pr10
         r5 = (ss["ss5_rev_t1"][col] / ss["ss5_rev_t0"][col]) / pr5
         c10 = _cagr(r10, 10.0)

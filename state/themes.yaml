@@ -437,7 +437,10 @@ themes:
     exclude_tickers: []
     etf_proxy: CRAK
     etf_proxy_alt: [VDE]
-    physical_ref: {source: fred, symbol: WGFUPUS2, kind: price, verify: true}
+    # WGFUPUS2(휘발유 재고)는 FRED 에서 폐기됐다 (2026-08-25 확인, 400 The series does not
+    # exist). 대체는 IPG32411S — 정유 산업생산지수(월간, ~2026-07). 재고(price)가 아니라
+    # **생산 물량(volume)** 이라 축 1 의 질문("쓰는 양이 줄었나")에 더 직접 답한다.
+    physical_ref: {source: fred, symbol: IPG32411S, kind: volume, verify: true}
     correlation_cluster: fossil
     min_constituents: 5
     notes: >
@@ -1601,7 +1604,13 @@ themes:
     exclude_tickers: []
     etf_proxy: null
     etf_proxy_alt: [XRT]
-    physical_ref: {source: fred, symbol: MRTSSM4521USS, kind: nominal, verify: true}
+    # MRTSSM4521USS(백화점 소매판매)는 FRED 에서 폐기됐다 (2026-08-25 확인, 400).
+    # 정확한 대체인 RSDSELD(Advance Retail Sales: Department Stores)는 2025-03 에서 끊겼다.
+    # 살아 있는 것 중 가장 가까운 것이 MRTSSM452USS — 종합소매(General Merchandise Stores,
+    # 월간 ~2026-06). **백화점보다 넓다** (할인점·슈퍼센터 포함). 축 1 을 이 계열로 읽을 때는
+    # 백화점 고유의 쇠퇴가 종합소매 전체에 희석된다는 것을 감안해야 한다 — 즉 이 축이
+    # 'cycle' 로 나와도 백화점만의 물량 방어를 뜻하지는 않는다.
+    physical_ref: {source: fred, symbol: MRTSSM452USS, kind: nominal, verify: true}
     correlation_cluster: retail
     min_constituents: 5
     notes: >
