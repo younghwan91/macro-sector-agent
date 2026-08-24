@@ -9,7 +9,10 @@
 
 새 계산·새 임계값은 없다 (`CLAUDE.md` §1) — `top_k`(기본 8 = `docs/05` §1 의 K)와
 `picks_per_theme`(기본 5)뿐이고, **5 는 표시 개수이지 선정 규칙이 아니다**(랭킹 전체는
-`msa picks <theme>` 산출물에 있다). LLM 은 부르지 않는다 — 전 단계가 결정론이다
+`msa picks <theme>` 산출물에 있다). L4 의 선정은 2026-08-24 부터 **하드 제외 통과 종목 전부 ·
+테마 내 동일가중**이고, 다이제스트가 싣는 종합·순위·3축·바벨 라벨은 전부 **관찰 지표**다
+(`docs/06` §6.1 · `journal/2026-08-24-l4-selection-retired.md`). 표시 순서를 K 로 잘라 쓰는 것은
+이 명령이 정하는 바가 아니다. LLM 은 부르지 않는다 — 전 단계가 결정론이다
 (`CLAUDE.md` §4: 종목은 결정론 계층이 고른다).
 
 정직성: L1 점수는 약하고 겨우 검증된 신호다 — 복합 점수의 예측력은 관문에서 0 에
@@ -66,7 +69,10 @@ log = logging.getLogger(__name__)
 DAILY_STEPS: tuple[str, ...] = ("scan", "select", "picks", "diff", "check", "digest")
 
 #: 다이제스트 머리 한 줄 — 모든 산출물(md·txt·텔레그램)이 같은 사실에서 시작한다.
-HONESTY_HEADER = "측정값·후보 목록 — 투자 조언 아님; L1 점수 예측력 약함(docs/02 §7.1)."
+HONESTY_HEADER = (
+    "측정값·후보 목록 — 투자 조언 아님; L1 점수 예측력 약함(docs/02 §7.1); "
+    "L4 선정 = 하드 제외 통과 전부·동일가중, 종합·순위·바벨은 관찰 지표(docs/06 §6.1)."
+)
 
 #: 텔레그램 본문 상한 (Telegram sendMessage 한도 4096 — 여유를 둔다).
 TELEGRAM_MAX_CHARS = 4000
@@ -75,6 +81,7 @@ TELEGRAM_MAX_CHARS = 4000
 PICK_COLUMNS: tuple[str, ...] = (
     "rank",
     "group",
+    "barbell_obs",
     "composite",
     "s_pct",
     "t_pct",
@@ -215,7 +222,7 @@ def _pick_rows(ranking: pd.DataFrame, n: int) -> list[dict[str, Any]]:
         row: dict[str, Any] = {"ticker": str(tk)}
         for c in PICK_COLUMNS:
             v = r.get(c)
-            if c in ("group", "penalties", "red_flags"):
+            if c in ("group", "barbell_obs", "penalties", "red_flags"):
                 row[c] = "" if v is None or (isinstance(v, float) and pd.isna(v)) else str(v)
             elif c == "rank":
                 row[c] = None if v is None or pd.isna(v) else int(v)
@@ -291,9 +298,12 @@ def _pick_line(p: dict[str, Any], new_top: set[str]) -> str:
     if p["ticker"] in new_top:
         tail.append("NEW")
     return (
-        f"- {p['ticker']:<6} {p.get('group') or '—':<7} 종합 {_f2(p.get('composite'))}  "
-        f"S {_f2(p.get('s_pct'))} / T {_f2(p.get('t_pct'))} / M {_f2(p.get('m_pct'))}  "
-        f"{price_txt} · ADV {adv_txt}" + (("  " + " · ".join(tail)) if tail else "")
+        f"- {p['ticker']:<6} {p.get('group') or '—':<8} "
+        f"[관찰 종합 {_f2(p.get('composite'))} · "
+        f"S {_f2(p.get('s_pct'))} / T {_f2(p.get('t_pct'))} / M {_f2(p.get('m_pct'))}"
+        + (f" · 바벨 {p['barbell_obs']}" if p.get("barbell_obs") else "")
+        + f"]  {price_txt} · ADV {adv_txt}"
+        + (("  " + " · ".join(tail)) if tail else "")
     )
 
 
@@ -348,6 +358,10 @@ def render_digest_md(digest: dict[str, Any]) -> str:
         f"## 테마별 후보 상위 {n}",
         "",
         f"{n} 은 표시 개수이지 선정 규칙이 아니다 — 랭킹 전체는 `msa picks <theme>`.",
+        "",
+        "L4 의 선정은 **하드 제외를 통과한 적격 종목 전부 · 테마 내 동일가중**이다 "
+        "(`docs/06` §5.1·§6.1 · `docs/15` §5). 아래 `[관찰 …]` 안의 종합·S/T/M·바벨 라벨과 "
+        "표시 순서는 **선정에 쓰이지 않는다.**",
     ]
     for t in themes:
         blocks = t.get("blocks") or {}
@@ -421,7 +435,7 @@ FLAG_MEANING: tuple[tuple[str, str], ...] = (
 def _alert_pick_line(p: dict[str, Any]) -> str:
     """알림용 종목 한 줄 — 사실만. md 의 `_pick_line` 과 달리 NEW 표시를 항목 자체에서 읽는다."""
     grp = p.get("group") or "—"
-    bits = [f"{p['ticker']} {grp} 종합 {_f2(p.get('composite'))}"]
+    bits = [f"{p['ticker']} {grp} 관찰종합 {_f2(p.get('composite'))}"]
     stm = [p.get("s_pct"), p.get("t_pct"), p.get("m_pct")]
     if any(x is not None for x in stm):
         bits.append("S/T/M " + "/".join(_f2(x) for x in stm))

@@ -61,6 +61,7 @@ def _loss_line(sl: ScenarioLoss) -> str:
 
 def _position_block(p: PositionPlan) -> list[str]:
     role = {
+        "eligible": "적격",
         "anchor": "앵커",
         "torque": "토크",
         "royalty": "로열티",

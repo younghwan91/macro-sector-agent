@@ -1,10 +1,23 @@
-"""`msa picks <theme>` 오케스트레이션 — 특성 → 하드 필터 → 3축 → 바벨 → 파일.
+"""`msa picks <theme>` 오케스트레이션 — 특성 → 하드 필터 → (3축·바벨은 관찰) → 파일.
+
+## 선정 규칙 (2026-08-24 개정)
+
+**하드 제외를 통과한 적격 종목 전부. 테마 내 동일가중. 그것이 전부다.**
+
+동일가중은 "가중치를 정한 것" 이 아니라 **정하지 않은 것**이다 — 적격 종목 사이를 갈라 놓을
+근거가 이 경로에서 확인되지 않았으므로(`docs/15` §4 — B0·B1·B2 중 아무도 B3 를 이기지 못했다)
+가르지 않는다. 새 가중치를 만든 것이 아니다 (`CLAUDE.md` §1).
+
+`rank_score`(`composite`) · `rank` · `group` · 3축 백분위(`s_pct`·`t_pct`·`m_pct`) ·
+바벨 라벨(`barbell_obs`)은 **관찰 지표**로 계속 계산·수록되지만 **무엇을 사는지를 정하지
+않는다.** 근거·경위는 `journal/2026-08-24-l4-selection-retired.md`, 판정은 `docs/backtest-l4.md`
+와 `docs/15` §4.
 
 산출물 `state/picks/<asof>/<theme>/`:
 
 | 파일 | 내용 |
 |---|---|
-| `ranking.csv` | 적격 종목 전부의 순위·3축·종합·바벨 라벨·특성 원값 |
+| `ranking.csv` | 적격 종목 **전부**(= 선정 결과) + 관찰 지표(순위·3축·종합·바벨 라벨)·특성 원값 |
 | `excluded.csv` | 제외된 **모든** 종목과 사유 (폐지·재무 없음·하드 필터) |
 | `report.txt` | 사람이 읽는 리포트 — `docs/06` §7 형식. S 하위 항목을 접지 않는다 |
 | `meta.json` | asof·스토어 최종일·유니버스 계수·없는 입력·선언 상수·테마 통계 |
@@ -40,10 +53,21 @@ from msa.themes import load_themes, membership_from_store
 log = logging.getLogger(__name__)
 
 
-#: `ranking.csv` 에서 L5 입력으로 옮겨 가는 열 (`msa.pipeline.assemble`). 바벨 라벨 · 순위 ·
-#: 종합 · 3축 백분위 · 기준가 · 유동성 · 표기용 플래그. 이 밖의 열은 리포트 전용이다.
+#: 선정 라벨 — `ranking.csv` 의 `group` 열이 적격 종목 **전원**에게 갖는 값 (2026-08-24).
+#: 옛 값 `ANCHOR`/`TORQUE` 는 "바벨의 어느 통에 뽑혔나" 였고, 그 선정이 폐기됐으므로 이 열은
+#: 이제 남은 유일한 편입 근거인 **"하드 제외를 통과했다"** 만 담는다. 값이 한 종류인 것이
+#: 동일가중의 표현이다 — 행을 가르는 열이 없다. 열을 지우지 않는 이유는 하위 호환
+#: (`pipeline.assemble._RANKING_REQUIRED` · `l5.inputs` 의 `role`)이고, 옛 스냅샷의
+#: `ANCHOR`/`TORQUE` 도 계속 읽힌다 (`assemble.ROLE_BY_GROUP`).
+SELECTION_GROUP = "ELIGIBLE"
+
+#: `ranking.csv` 에서 L5 입력으로 옮겨 가는 열 (`msa.pipeline.assemble`). 선정 라벨 · 관찰용
+#: 바벨 라벨 · 관찰용 순위·종합·3축 백분위 · 기준가 · 유동성 · 표기용 플래그.
+#: 이 밖의 열은 리포트 전용이다. **`rank`·`composite`·`*_pct`·`barbell_obs` 는 표기용이고
+#: 선정에 쓰이지 않는다** (모듈 docstring).
 RANKING_EXPORT_COLUMNS: tuple[str, ...] = (
     "group",
+    "barbell_obs",
     "rank",
     "composite",
     "composite_partial",
@@ -89,7 +113,14 @@ class PicksResult:
 def rank_theme(
     fs: FeatureSet, *, top: int = DEFAULT_TOP
 ) -> tuple[pd.DataFrame, pd.DataFrame, Barbell]:
-    """특성 표 → (ranking, excluded, barbell). 순수 함수 — 합성 FeatureSet 으로 테스트된다."""
+    """특성 표 → (ranking, excluded, barbell). 순수 함수 — 합성 FeatureSet 으로 테스트된다.
+
+    **선정은 하드 제외를 통과한 적격 종목 전부다** (2026-08-24 · 모듈 docstring). `ranking` 의
+    모든 행이 선정이고 서로 동일가중이며, `group` 은 전원 `SELECTION_GROUP` 이다.
+
+    `top` 은 **관찰용 바벨 라벨(`barbell_obs`)의 개수**일 뿐 선정 개수가 아니다. 반환되는
+    `ranking` 의 행 수는 `top` 과 무관하다.
+    """
     uni = fs.universe
     ex_rows: list[dict[str, Any]] = []
     for tk in uni.index[~uni["listed"]]:
@@ -112,9 +143,11 @@ def rank_theme(
         ranking = pd.DataFrame()
         return ranking, excluded, Barbell([], [])
     sc = axes.score(eligible)
+    # 바벨은 관찰 — 이 라벨은 ranking 의 행을 하나도 걸러 내지 않는다 (2026-08-24)
     bb = classify(sc.join(eligible[["marginal_producer"]]), top=top)
     ranking = sc.join(eligible, how="left")
-    ranking.insert(0, "group", [bb.label(str(t)) for t in ranking.index])
+    ranking.insert(0, "group", SELECTION_GROUP)
+    ranking.insert(1, "barbell_obs", [bb.label(str(t)) for t in ranking.index])
     return ranking, excluded, bb
 
 
@@ -129,6 +162,11 @@ def run_picks(
     allow_fetch: bool = True,
     with_physical: bool = True,
 ) -> PicksResult:
+    """테마 하나의 L4 산출물. **선정 = 적격 종목 전부 · 동일가중** (`rank_theme`).
+
+    `top` 은 관찰용 바벨 라벨의 개수일 뿐 선정 개수가 아니다 — 무엇이 산출물에 남는지를 바꾸지
+    않는다.
+    """
     p = paths()
     themes = load_themes(themes_path)
     theme = themes.get(theme_id)
@@ -159,11 +197,34 @@ def run_picks(
             "below_min_constituents": bool(len(ranking) < theme.min_constituents),
             "etf_fallback": theme.etf_proxy,
         },
-        "barbell": {
+        "selection": {
+            "rule": "하드 제외 통과 종목 전부 · 테마 내 동일가중 (docs/06 §5.1·§6.1 · docs/15 §5)",
+            "n_selected": len(ranking),
+            "group_label": SELECTION_GROUP,
+            "retired": (
+                "바벨 선정(앵커/토크 2~4 종목)과 종합 점수 랭킹은 2026-08-24 에 선정 경로에서 "
+                "빠졌다 — journal/2026-08-24-l4-selection-retired.md"
+            ),
+            "observation_only": [
+                "rank",
+                "composite",
+                "s_pct",
+                "t_pct",
+                "m_pct",
+                "barbell_obs",
+            ],
+            "open_question": (
+                "운용 가능한 K(테마당 몇 종목까지 실제로 들 것인가)는 정하지 않았다 — "
+                "새 사전 등록이 필요하다 (docs/06 §6.2)"
+            ),
+        },
+        "barbell_observation": {
             "anchors": bb.anchors,
             "torques": bb.torques,
             "anchor_count_share": bb.anchor_share,
-            "weight_band_doc": "앵커 55~70% / 토크 30~45% (docs/06 §5; 비중은 L5)",
+            "top": top,
+            "note": "관찰용 — 선정에 쓰이지 않는다. 비중 밴드도 마찬가지",
+            "weight_band_doc": "앵커 55~70% / 토크 30~45% (docs/06 §5, 2026-08-24 이전 판)",
         },
         "inputs_unavailable": fs.inputs_unavailable,
         "inputs_unused": INPUTS_UNUSED,
@@ -222,9 +283,14 @@ def _signed_pct(x: Any, unit: str = "%") -> str:
 
 
 def _stock_block(tk: str, r: pd.Series, theme: str, group: str) -> list[str]:
+    """종목 한 블록. `group` 은 선정 라벨(전원 동일), 머리의 등수·종합·바벨은 관찰 지표다."""
     f = ratio
+    bb_obs = _txt(r, "barbell_obs")
     head = (
-        f"{tk} · {theme} · {group or '—'}   #{int(r['rank'])}  종합 {f(r['composite'], digits=2)}"
+        f"{tk} · {theme} · {group or '—'}   [관찰 #{int(r['rank'])} · "
+        f"종합 {f(r['composite'], digits=2)}"
+        + (f" · 바벨 {bb_obs}" if bb_obs else "")
+        + "]"
     )
     if r.get("name") is not None and str(r.get("name")) != "nan":
         head += f"   ({r['name']})"
@@ -294,6 +360,7 @@ def render_report(
 ) -> str:
     u = meta["universe"]
     anchor_share_txt = ratio(bb.anchor_share * 100 if bb.n else float("nan"), "%", 0)
+    obs = meta.get("barbell_observation", {})
     L: list[str] = [
         f"L4 종목 선정 — {fs.theme} ({theme_name})  asof {meta['asof']} "
         f"(스토어 {meta['store_end']})",
@@ -306,9 +373,15 @@ def render_report(
             else ""
         ),
         "",
-        f"바벨: 앵커 {len(bb.anchors)} [{', '.join(bb.anchors) or '—'}] · 토크 {len(bb.torques)} "
-        f"[{', '.join(bb.torques) or '—'}] · 앵커 수 비중 {anchor_share_txt}"
-        f"  (비중 밴드 {meta['barbell']['weight_band_doc']})",
+        f"선정: 적격 {u['eligible']} 종목 **전부** · 테마 내 동일가중 (라벨 {SELECTION_GROUP})",
+        "  동일가중은 가중치를 정한 것이 아니라 정하지 않은 것이다 — 적격 종목 사이를 가를 근거가",
+        "  이 경로에서 확인되지 않았다 (docs/15 §4·§5 · docs/06 §5.1·§6.1). 비중은 L5 가 정한다.",
+        "  운용 가능한 K 는 정해져 있지 않다 — 새 사전 등록이 필요하다 (docs/06 §6.2).",
+        "",
+        f"바벨 (관찰용 · 선정에 쓰이지 않는다): 앵커 {len(bb.anchors)} "
+        f"[{', '.join(bb.anchors) or '—'}] · 토크 {len(bb.torques)} "
+        f"[{', '.join(bb.torques) or '—'}] · 앵커 수 비중 {anchor_share_txt}",
+        f"  옛 규칙이라면 무엇을 골랐을까 — {obs.get('weight_band_doc', '')}",
         "",
     ]
     if len(excluded):
@@ -329,7 +402,11 @@ def render_report(
     )
     L.append("")
     L.append(
-        "순위 (하드 필터 통과분 전부 · 종합 = 0.40·S̃ + 0.40·T̃ + 0.20·M̃ · 틸데 = 테마 내 백분위)"
+        "적격 종목 — 아래 전부가 선정이고 서로 동일가중이다 (순서는 표기 편의)."
+    )
+    L.append(
+        "  관찰 지표 (선정에 쓰이지 않는다): #순위 · 종합 = 0.40·S̃ + 0.40·T̃ + 0.20·M̃ · "
+        "바벨 라벨 · 틸데 = 테마 내 백분위"
     )
     L.append("-" * 78)
     if ranking.empty:

@@ -441,42 +441,6 @@ def backtest_l4(
     _echo_saved(res.out_dir)
 
 
-@backtest_app.command("l4-structures")
-@cli_guard
-def backtest_l4_structures(
-    force: bool = typer.Option(
-        False, "--force", help="특성 패널 parquet 캐시를 무시하고 다시 만든다 (오래 걸린다)"
-    ),
-    jobs: int = typer.Option(0, "--jobs", help="테마 단위 병렬 프로세스 수 (0 = min(14, cpu−2))"),
-    themes: str = typer.Option(
-        "", "--themes", help="스모크 전용 — 이 테마들만 (쉼표). 주면 산출물이 -smoke 로 갈린다"
-    ),
-    max_months: int = typer.Option(
-        0, "--max-months", help="스모크 전용 — 격자 마지막 N 개월만. 주면 판정하지 않는다"
-    ),
-    no_write: bool = _no_write_option("state/backtests/"),
-    verbose: bool = OPT_VERBOSE,
-) -> None:
-    """L4 선정 구조 비교 — docs/15 사전 등록의 집행 (B0 바벨 · B1 대장주 · B2 토크 · B3 동일가중).
-
-    `msa backtest l4` 가 남긴 특성 패널 캐시를 재사용한다. 산출물:
-    state/backtests/l4-structures/<store_end>/. 결과로 후보·K·임계를 바꾸지 않는다
-    (CLAUDE.md §1, docs/15 §5.1). --themes/--max-months 는 스모크용이며 판정을 내지 않는다.
-    """
-    from msa.l4.structures import render_report, run_structures
-
-    _setup_logging(verbose)
-    res = run_structures(
-        write=not no_write,
-        force=force,
-        jobs=jobs or None,
-        themes_filter=[t.strip() for t in themes.split(",") if t.strip()] or None,
-        max_months=max_months or None,
-    )
-    typer.echo(render_report(res))
-    _echo_saved(res.out_dir)
-
-
 @app.command()
 @cli_guard
 def research(
@@ -552,7 +516,9 @@ def research(
 def picks(
     theme: str,
     asof: str = typer.Option("", help="기준일 YYYY-MM-DD. 기본 = 스토어 최종일"),
-    top: int = typer.Option(4, help="바벨 종목 수 (앵커 max(1, top//2) + 토크)"),
+    top: int = typer.Option(
+        4, help="관찰용 바벨 라벨 수 (선정에 쓰이지 않는다 — 선정은 적격 종목 전부·동일가중)"
+    ),
     no_write: bool = _no_write_option("state/picks/"),
     no_physical: bool = typer.Option(
         False,
@@ -562,7 +528,11 @@ def picks(
     no_fetch: bool = typer.Option(False, "--no-fetch", help="FRED 를 받지 않는다 (캐시만)"),
     verbose: bool = OPT_VERBOSE,
 ) -> None:
-    """L4 종목 선정 — 3축(S·T·M)·하드 필터·바벨 (docs/06). 산출물: state/picks/<date>/<theme>/"""
+    """L4 종목 선정 — 하드 제외 통과 종목 전부·테마 내 동일가중 (docs/06 §5.1·§6.1).
+
+    3축(S·T·M)·종합·순위·바벨 라벨은 함께 산출되지만 **관찰 지표이고 선정에 쓰이지 않는다.**
+    산출물: state/picks/<date>/<theme>/
+    """
     from msa.l4.picks import run_picks
 
     _setup_logging(verbose)
@@ -644,7 +614,9 @@ def portfolio_inputs(
         "--human-theses",
         help="사람이 쓴 논지 디렉터리 <dir>/<theme>.yaml — 있으면 L3 산출보다 우선 (source=human)",
     ),
-    top: int = typer.Option(0, "--top", help="테마당 종목 상한 (0 = L4 바벨 전부)"),
+    top: int = typer.Option(
+        0, "--top", help="테마당 종목 상한 — 사람이 주는 상한이지 L4 규칙이 아니다 (0 = 적격 전부)"
+    ),
     no_write: bool = _no_write_option("state/portfolio_inputs/"),
     verbose: bool = OPT_VERBOSE,
 ) -> None:

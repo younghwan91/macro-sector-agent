@@ -12,11 +12,26 @@ L5 는 L4·L3 를 임포트하지 않고 **파일 계약**(`src/msa/l5/inputs.py
 |---|---|---|
 | `theme` | 디렉터리 이름 | |
 | `ticker` | `ranking.csv` index | |
-| `role` | `group` (`ANCHOR`→`anchor` · `TORQUE`→`torque`) | `docs/06` §5. 빈 라벨은 제외·계수 |
+| `role` | `group` (`ELIGIBLE`→`eligible`; 옛 `ANCHOR`→`anchor` · `TORQUE`→`torque`) | 아래 |
 | `entry_price` | `price` | asof 이하 마지막 비조정 종가 (`features.ENTRY_PRICE_FEATURE`) |
 | `adv20_usd` | `adv20_usd` | C4 유동성 |
-| `rank_score` | `composite` | 0.40·S̃ + 0.40·T̃ + 0.20·M̃ |
-| `notes` | `rank`·`group`·3축 백분위·`penalties`·`red_flags`·`composite_partial`·결측 | 표기용 |
+| `rank_score` | `composite` | 0.40·S̃ + 0.40·T̃ + 0.20·M̃ — **관찰 지표. 선정에 쓰이지 않는다** |
+| `notes` | `rank`·`group`·`barbell_obs`·3축 백분위·플래그·`composite_partial`·결측 | 표기용 |
+
+### `role` — 2026-08-24 개정
+
+L4 의 선정은 **하드 제외 통과 종목 전부 · 테마 내 동일가중**이 됐다 (`docs/15` §5 의 사전 등록된
+조치 · `journal/2026-08-24-l4-selection-retired.md`). 그래서 `ranking.csv` 의 `group` 은 전 행이
+`ELIGIBLE`(`l4.picks.SELECTION_GROUP`)이고, `role` 도 전 행이 `eligible` 이다 — **행을 가르는
+값이 아니다.** 옛 스냅샷의 `ANCHOR`/`TORQUE` 는 그대로 읽힌다 (그때는 그 값이 선정이었다).
+
+따라 나오는 것 둘, 여기 적어 둔다:
+
+- `by_role` 계수와 L5 의 `anchor_share` 진단은 오늘 산출물에서 각각 `eligible` 한 칸과 0 이 된다.
+  L4 가 더 이상 앵커를 지정하지 않기 때문이지 앵커를 0% 로 정한 것이 아니다. "옛 규칙이라면
+  무엇이 앵커였을까" 는 `ranking.csv` 의 `barbell_obs` 열에 관찰로 남아 있다.
+- **테마당 몇 종목까지 실제로 들 것인가(K)는 정해져 있지 않다.** `top_per_theme` 은 사람이 주는
+  상한이고 L4 의 규칙이 아니다 — K 를 규칙으로 만들려면 새 사전 등록이 필요하다 (`docs/06` §6.2).
 
 **쓰지 않는 열과 이유는 `OMITTED_COLUMNS`** 에 있고 리포트에 매번 찍힌다 — L4 가 내지 않는 값을
 여기서 만들어 넣지 않는다 (`idio_vol_ann`·`tp_*`·`prev_cycle_peak_price`·`min_weight`·
@@ -79,7 +94,13 @@ class AssembleError(RefusedInput, ValueError):
 
 #: L4 바벨 라벨 → L5 role (`docs/06` §5). 옵션 그룹(royalty·midstream·etf)은 L4 가 태깅하지 않는다
 #: (`docs/06` §8.4) — 매핑이 없고, 모르는 라벨은 제외하고 센다.
-ROLE_BY_GROUP: Mapping[str, str] = {"ANCHOR": "anchor", "TORQUE": "torque"}
+#: `ranking.csv` 의 `group` → L5 `role`. `ELIGIBLE` 이 2026-08-24 이후의 값이고, `ANCHOR`/
+#: `TORQUE` 는 그 이전 스냅샷을 계속 읽기 위해 남는다 (머리말 "`role` — 2026-08-24 개정").
+ROLE_BY_GROUP: Mapping[str, str] = {
+    "ELIGIBLE": "eligible",
+    "ANCHOR": "anchor",
+    "TORQUE": "torque",
+}
 assert set(ROLE_BY_GROUP.values()) <= set(PICK_ROLES)
 
 #: `picks.csv` 에 쓰는 열 (순서 = 파일 순서). 전부 `load_picks` 계약 안이다.
@@ -156,9 +177,17 @@ def _fnum(v: Any, digits: int = 2) -> str:
 
 
 def _pick_notes(row: pd.Series, group: str) -> str:
-    """표기용 `notes` — L4 순위·바벨·3축 백분위와 플래그. 값만 옮기고 판단은 넣지 않는다."""
-    parts = [
-        f"L4 #{int(row['rank'])} {group}",
+    """표기용 `notes` — L4 선정 라벨 + 관찰 지표(순위·바벨·3축 백분위)와 플래그.
+
+    값만 옮기고 판단은 넣지 않는다. 등수·종합·바벨 라벨이 **선정에 쓰이지 않는다**는 사실을
+    문구가 직접 말한다 (2026-08-24 · 머리말).
+    """
+    parts = [f"L4 {group}"]
+    if group == "ELIGIBLE":
+        parts.append("적격 전부·동일가중 (아래는 관찰 지표 — 선정 무관)")
+    obs = _cell(row, "barbell_obs")
+    parts += [
+        f"관찰 #{int(row['rank'])}" + (f" 바벨 {obs}" if obs else ""),
         f"종합 {_fnum(row['composite'])}",
         f"S̃ {_fnum(_cell(row, 's_pct'))} T̃ {_fnum(_cell(row, 't_pct'))} "
         f"M̃ {_fnum(_cell(row, 'm_pct'))}",
@@ -199,7 +228,9 @@ def picks_csv_from_rankings(
     - `role` 은 `group` 라벨에서만 온다 (`ROLE_BY_GROUP`). 라벨이 비었거나(순위만 있음) 모르는
       값이면 **제외하고 센다.**
     - `top_per_theme` 을 주면 role 이 있는 행을 `rank` 순으로 그만큼만 남기고 나머지를 센다.
-      (L4 `--top` 으로 이미 잘린 바벨을 더 줄일 때만 쓴다 — 기본 None = 바벨 전부.)
+      **이것은 사람이 주는 상한이지 L4 의 선정 규칙이 아니다** (기본 None = 적격 종목 전부).
+      자르는 순서로 쓰는 `rank` 는 관찰 지표이고, 그것을 규칙으로 승격하려면 새 사전 등록이
+      필요하다 (`docs/06` §6.2 · 머리말 "`role` — 2026-08-24 개정").
     - 한 티커는 한 테마에만 — 먼저 온 테마(dict 순서)가 갖고 뒤는 제외하고 센다 (`load_picks` 규칙).
     - `entry_price`·`adv20_usd` 는 `ranking.csv` 에 해당 열이 없으면 빈 값이고 그 사실이
       `missing_inputs` 에 남는다. 나머지 계약 열은 `OMITTED_COLUMNS` 의 이유로 쓰지 않는다.
@@ -228,7 +259,7 @@ def picks_csv_from_rankings(
             role = ROLE_BY_GROUP.get(group)
             if not group:
                 ex_rows.append(
-                    {"theme": theme, "ticker": ticker, "reason": "바벨 미배정 (group 비어 있음)"}
+                    {"theme": theme, "ticker": ticker, "reason": "선정 라벨 없음 (group 비어 있음)"}
                 )
                 continue
             if role is None:
@@ -521,7 +552,9 @@ def assemble_inputs(
 
     pa = picks_csv_from_rankings(rankings, top_per_theme=top_per_theme)
     for theme in pa.themes_without_picks:
-        skipped[theme] = "picks 0건 — ranking.csv 에 바벨 라벨(ANCHOR/TORQUE)이 있는 행이 없다"
+        skipped[theme] = (
+            "picks 0건 — ranking.csv 에 선정 라벨(group=ELIGIBLE; 옛 ANCHOR/TORQUE)이 없다"
+        )
         yamls.pop(theme, None)
         parsed.pop(theme, None)
     included = [t for t in wanted if t in yamls]

@@ -1,4 +1,21 @@
-"""앵커/토크 바벨 분류 — `docs/06-stock-selection.md` §5·§6. 순수 함수.
+"""앵커/토크 바벨 분류 — **관찰용**. 선정에 쓰이지 않는다.
+
+## 2026-08-24 — 이 모듈은 더 이상 종목을 고르지 않는다
+
+`docs/15` §5 의 사전 등록된 조치("아무도 B3 를 못 이김 → L4 의 선정 규칙을 버린다")를 사용자가
+집행하기로 결정했다. `msa picks` 의 선정은 이제 **하드 제외(`axes.hard_filters`)를 통과한 적격
+종목 전부 · 테마 내 동일가중**이고, `classify()` 가 고르는 2~4 종목은 `ranking.csv` 의
+`barbell_obs` 열에 **관찰 지표로만** 실린다 (`picks.rank_theme`). 근거 수치와 무엇을 바꾸지
+않았는지는 `journal/2026-08-24-l4-selection-retired.md`.
+
+`ANCHOR_S_MIN`(0.5) · `TORQUE_S_EXCLUDE_LE`(0.25) · `n_anchor` 배분식 · `DEFAULT_TOP`(4) 은
+**하나도 옮기지 않았다** — 버리는 것과 옮기는 것은 다르고, 결과를 보고 임계를 움직이는 것은
+`CLAUDE.md` §1 · `docs/15` §5.1 이 금지한 바로 그 행위다. 값이 그대로여야 이 라벨이 계속
+"옛 규칙이라면 무엇을 골랐을까" 를 답한다.
+
+아래 문서 규칙은 **그대로 둔다** — 이 라벨이 재현하는 규칙이 무엇인지가 관찰의 의미다.
+
+원 명세 — `docs/06-stock-selection.md` §5·§6 (2026-08-24 개정 이전 판). 순수 함수.
 
 문서 규칙 (그대로):
 - 앵커: `S̃` 상위에서 `T̃` 가 가장 높은 것
@@ -53,7 +70,11 @@ class Barbell:
 
 def classify(scored: pd.DataFrame, top: int = DEFAULT_TOP) -> Barbell:
     """`axes.score()` 출력(index ticker; s_pct·t_pct·marginal_producer 필요)에서 앵커/토크를
-    고른다."""
+    고른다.
+
+    **관찰용이다 — 이 반환값은 무엇을 사는지를 정하지 않는다** (2026-08-24, 모듈 docstring).
+    `picks.rank_theme` 이 이것을 `barbell_obs` 열에 싣고, 선정은 적격 종목 전부다.
+    """
     if top < 1:
         raise ValueError("top 은 1 이상이어야 한다")
     if scored.empty:

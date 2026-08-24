@@ -122,7 +122,10 @@ msa research <theme>  # L3 에이전트 4역할(supply·catalyst·bear·referee)
                       #   실제 실행은 ANTHROPIC_API_KEY 필요 (--provider anthropic, 기본값)
                       #   오프라인: --dry-run (Mock) · --provider fixture (tests/fixtures/l3/)
                       #   산출물 state/theses/<date>/ (thesis.yaml·report.md·rejections-pending·contested)
-msa picks <theme>     # L4 종목 선정 — S·T·M 3축 · 하드 필터 · 바벨 (M5). --asof --top --no-write
+msa picks <theme>     # L4 종목 선정 — **하드 제외 통과 종목 전부 · 테마 내 동일가중** (2026-08-24,
+                      #   docs/06 §5.1·§6.1 · journal/2026-08-24-l4-selection-retired.md).
+                      #   S·T·M 3축 · 종합 · 순위 · 바벨 라벨은 함께 산출되나 **관찰 지표**이고
+                      #   선정에 쓰이지 않는다. --asof --top(관찰용 바벨 라벨 수) --no-write
                       #   --no-physical. 산출물 state/picks/<date>/<theme>/ (ranking·excluded·report·meta)
 msa check             # 포지션 점검 (M8) — 트리거·무효화·Tier-2·사다리·시간스탑·TP. --asof --daily|--weekly
                       #   산출물 state/checks/<date>/ (report·alerts.json·journal-draft). 주문은 내지 않는다

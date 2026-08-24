@@ -3,6 +3,20 @@
 입력은 `features.FeatureSet.frame`(index ticker) 이고 출력은 같은 index 의 점수 표다.
 스토어를 모른다 — 그래서 합성 표로 전부 테스트된다.
 
+## 2026-08-24 — 이 모듈의 두 절반은 지위가 다르다
+
+- **`hard_filters` / `hard_filter_flags` 는 선정한다.** 하드 제외(E1~E5)는 그대로다. 임계도
+  그대로다 — `docs/14` §4.2 가 미리 정한 대로, 하드 제외의 근거는 수익률이 아니라 `docs/06` §2
+  의 도메인 서술이다.
+- **`score`(3축 백분위 · `composite` · `rank`)는 선정하지 않는다.** 관찰 지표다. 선정은
+  "하드 제외를 통과한 종목 전부 · 동일가중" 이고 그 판정은 위 두 함수가 이미 끝낸다
+  (`picks.rank_theme` · `journal/2026-08-24-l4-selection-retired.md`).
+
+`AXIS_WEIGHTS`(0.40/0.40/0.20) · `S_WEIGHTS` · `T_MIN_INPUTS` · `RUNWAY_CAP_Q` 는 **하나도
+옮기지 않았다** (`docs/14` §4.3 · `docs/15` §5.1). 축 정의도 그대로다. 바꾼 것은 이 숫자들이
+어디에 쓰이는지에 대한 **표시**이지 숫자가 아니다. 덧붙여, `AXIS_WEIGHTS` 는 2026-08-23 이전에도
+선정에 쓰인 적이 없다 (`journal/2026-08-23-l4-rank-score-unwired.md`).
+
 ## 선언값 (`CLAUDE.md` §1 — 데이터에 맞춰 바꾸지 않는다)
 
 문서가 준 것 (그대로):
@@ -58,9 +72,11 @@ DILUTION_MAX = 0.15
 ADV_MIN_USD = 2_000_000.0
 PRICE_MIN = 2.0
 
-# ---- 여기서 선언한 값 (모듈 docstring 표)
+# ---- 여기서 선언한 값 (모듈 docstring 표). 값은 2026-08-24 개정에서 하나도 바뀌지 않았다.
 RUNWAY_CAP_Q = 8.0
 S_WEIGHTS = {"runway": 0.40, "leverage": 0.30, "penalty": 0.30}
+#: 종합 점수 `composite` 의 축 가중치 — **선정에 쓰이지 않는다** (관찰 지표). 값을 바꿔도
+#: `msa picks` 가 내놓는 종목 집합은 같다. 그래서 옮기지도 않는다 (`CLAUDE.md` §1).
 AXIS_WEIGHTS = {"S": 0.40, "T": 0.40, "M": 0.20}
 T_MIN_INPUTS = 3
 M_MIN_INPUTS = 3
@@ -313,7 +329,13 @@ def timing(frame: pd.DataFrame) -> pd.DataFrame:
 
 
 def score(frame: pd.DataFrame) -> pd.DataFrame:
-    """적격(하드 필터 통과) 표 → 3축 원점수·백분위·종합·순위. 결정론."""
+    """적격(하드 필터 통과) 표 → 3축 원점수·백분위·종합·순위. 결정론.
+
+    **관찰 지표다 — `composite` 도 `rank` 도 무엇을 사는지를 정하지 않는다** (2026-08-24,
+    모듈 docstring). 선정은 이 함수가 불리기 전에 `hard_filters` 가 끝냈고, 남은 종목은
+    전부 동일가중이다. `rank` 는 리포트·다이제스트의 표시 순서이고, 그 순서를 사람이 잘라
+    쓰기로 한다면 그것은 새 사전 등록이 필요한 별개 결정이다 (`docs/06` §6.2).
+    """
     _check_columns(frame)
     s = survival(frame)
     t = torque(frame)
@@ -366,4 +388,6 @@ def declared_constants() -> dict[str, Any]:
         "m_min_inputs": M_MIN_INPUTS,
         "m_components": [*M_BOOLEAN, "rs_rating", *M_PCT],
         "axis_weights": AXIS_WEIGHTS,
+        "axis_weights_role": "관찰 지표(composite) 전용 — 선정에 쓰이지 않는다 (2026-08-24)",
+        "selection_rule": "하드 제외 통과 전부 · 테마 내 동일가중",
     }

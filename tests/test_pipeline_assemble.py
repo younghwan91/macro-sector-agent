@@ -100,11 +100,11 @@ def test_role_mapping_and_exclusions_are_counted() -> None:
     assert f["theme"].tolist() == ["uranium", "uranium", "grid_equipment"]
     assert f.loc[0, "entry_price"] == 50.0 and f.loc[0, "adv20_usd"] == 3e8
     assert f.loc[0, "rank_score"] == 0.8
-    assert "L4 #1 ANCHOR" in f.loc[0, "notes"]
+    assert "L4 ANCHOR" in f.loc[0, "notes"] and "관찰 #1" in f.loc[0, "notes"]
     # 제외는 수와 사유로
     assert pa.counts == {
         "group 매핑 없음: ROYALTY": 1,
-        "바벨 미배정 (group 비어 있음)": 1,
+        "선정 라벨 없음 (group 비어 있음)": 1,
         "티커 중복 — 이미 uranium 에 배정": 1,
     }
     assert set(pa.excluded["ticker"]) == {"URG", "FNV", "CCJ"}
@@ -286,7 +286,7 @@ def test_assemble_inputs_writes_contract_and_reports_skips(tmp_path: Path) -> No
     assert res.report["sources"]["uranium"]["picks_date"] == "2026-08-14"
     assert res.report["sources"]["uranium"]["thesis_date"] == "2026-08-12"
     assert res.report["sources"]["uranium"]["confidence_source"] == "referee"
-    assert res.picks.counts == {"바벨 미배정 (group 비어 있음)": 1}
+    assert res.picks.counts == {"선정 라벨 없음 (group 비어 있음)": 1}
     # 파일 계약 — L5 로더가 그대로 읽는다
     pk = load_picks(out / "picks.csv")
     assert [p.ticker for p in pk] == ["CCJ", "UEC"]
@@ -518,11 +518,10 @@ def test_assemble_from_real_picks_run(tmp_path: Path) -> None:
         out_dir=out,
     )
     assert ar.themes_included == ["rare_earth"]
-    assert ar.picks.n_included == res.barbell.n
-    assert set(ar.picks.frame["ticker"]) == set(res.barbell.anchors + res.barbell.torques)
-    # 순위만 있는 행은 전부 '바벨 미배정' 으로 세어진다
-    assert (
-        ar.picks.counts.get("바벨 미배정 (group 비어 있음)", 0) == len(res.ranking) - res.barbell.n
-    )
+    # 2026-08-24 — 선정은 적격 종목 전부. 바벨(관찰)이 고른 2~4개가 아니라 랭킹 전 행이 넘어간다
+    assert ar.picks.n_included == len(res.ranking)
+    assert set(ar.picks.frame["ticker"]) == set(res.ranking.index.astype(str))
+    assert set(ar.picks.frame["role"]) == {"eligible"}
+    assert ar.picks.counts.get("선정 라벨 없음 (group 비어 있음)", 0) == 0
     inputs = load_inputs(out, cases_path=None)
     assert all(p.entry_price and p.adv20_usd for p in inputs.picks)

@@ -9,10 +9,11 @@
 |---|---|---|
 | `theme` | ✓ | `state/themes.yaml` 의 id |
 | `ticker` | ✓ | 종목 |
-| `role` | ✓ | `anchor` · `torque` · `royalty` · `midstream` · `etf` (`docs/06` §5) |
+| `role` | ✓ | `eligible` (2026-08-24 이후 L4 의 유일한 값) · `anchor` · `torque` ·
+|  |  | `royalty` · `midstream` · `etf` |
 | `entry_price` | | 계획 기준가 (사다리·스탑·TP 가격). 없으면 가격은 `—` 로 남고 비율만 적는다 |
 | `adv20_usd` | | 20일 평균 달러 거래대금 — C4 유동성. 없으면 C4 를 적용하지 못했다고 **표기**한다 |
-| `rank_score` | | L4 종합 점수 (표기용) |
+| `rank_score` | | L4 종합 점수 — **표기용.** L5 의 어느 모듈도 읽지 않고 L4 선정에도 안 쓰인다 |
 | `idio_vol_ann` | | 종목 고유 변동성(연). 공분산을 테마 지수에서 사상할 때 대각에 더한다 (§risk) |
 | `min_weight` | | 하한 비중 (기본 0). 하한이 있어야만 infeasible 이 생긴다 (`optimize`) |
 | `split_first_leg` | | L4 의 M 축이 낮아 1단을 25%+25% 로 나눈다 (`docs/07` §3). `true/false` |
@@ -77,7 +78,10 @@ from msa.thesis import CONFIDENCE_PROVENANCE, read_thesis_yaml
 
 log = logging.getLogger(__name__)
 
-PICK_ROLES: tuple[str, ...] = ("anchor", "torque", "royalty", "midstream", "etf")
+#: `eligible` — L4 가 2026-08-24 부터 내는 값. "하드 제외를 통과했다" 뿐이고 행을 가르지 않는다
+#: (선정 = 적격 전부 · 테마 내 동일가중; `pipeline.assemble` 머리말 · `l4.picks.SELECTION_GROUP`).
+#: 나머지 다섯은 옛 산출물과 사람이 손으로 쓰는 `picks.csv` 를 위해 그대로 남는다.
+PICK_ROLES: tuple[str, ...] = ("eligible", "anchor", "torque", "royalty", "midstream", "etf")
 #: 확신도를 누가 만들었는가 — L3 스키마의 enum 과 같은 값 (`msa.thesis`).
 CONFIDENCE_SOURCES: tuple[str, ...] = CONFIDENCE_PROVENANCE
 CASE_TYPES: tuple[str, ...] = ("cycle", "death")
@@ -123,7 +127,11 @@ class Pick:
 
     @property
     def is_anchor(self) -> bool:
-        """앵커 성격 — `docs/06` §5 의 앵커 · 로열티 · 미드스트림."""
+        """앵커 성격 — `docs/06` §5 의 앵커 · 로열티 · 미드스트림.
+
+        `eligible` 은 앵커가 아니다 — L4 가 더 이상 앵커를 **지정하지 않기** 때문이지 앵커
+        비중을 0 으로 정한 것이 아니다 (`pipeline.assemble` 머리말 "`role` — 2026-08-24 개정").
+        """
         return self.role in ("anchor", "royalty", "midstream")
 
 

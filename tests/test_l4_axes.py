@@ -9,7 +9,7 @@ import pytest
 from msa.l4 import axes
 from msa.l4.barbell import classify
 from msa.l4.features import FEATURE_COLUMNS, FeatureSet
-from msa.l4.picks import rank_theme
+from msa.l4.picks import SELECTION_GROUP, rank_theme
 
 
 def _frame(rows: dict[str, dict[str, object]]) -> pd.DataFrame:
@@ -429,7 +429,9 @@ def test_rank_theme_accounts_for_every_member() -> None:
     )
     assert excluded.loc["B", "stage"] == "hard_filter"
     assert len(ranking) + len(excluded) == len(uni)
-    assert set(ranking["group"]) <= {"ANCHOR", "TORQUE", ""}
+    # 2026-08-24 — 선정은 적격 전부·동일가중. group 은 전 행 동일, 바벨은 관찰 열로 내려갔다
+    assert set(ranking["group"]) == {SELECTION_GROUP}
+    assert set(ranking["barbell_obs"]) <= {"ANCHOR", "TORQUE", ""}
 
 
 def test_rank_theme_empty_eligible() -> None:
@@ -440,3 +442,71 @@ def test_rank_theme_empty_eligible() -> None:
     )
     ranking, excluded, bb = rank_theme(_fs(frame, uni))
     assert ranking.empty and list(excluded.index) == ["A"] and bb.n == 0
+
+
+# ------------------------------------------------ 동일가중 선정 (2026-08-24, docs/15 §5)
+
+
+def _uni(tickers: list[str]) -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "name": list(tickers),
+            "is_delisted": ["N"] * len(tickers),
+            "listed": [True] * len(tickers),
+            "last_price_date": [None] * len(tickers),
+        },
+        index=pd.Index(tickers, name="ticker"),
+    )
+
+
+def test_selection_is_every_eligible_stock_regardless_of_top() -> None:
+    """선정 = 하드 제외 통과 전부. `top` 은 관찰용 바벨 라벨 수일 뿐 행을 자르지 않는다."""
+    tickers = [f"T{i}" for i in range(8)]
+    frame = _frame({t: _base(cash_runway_q=6.0 + i) for i, t in enumerate(tickers)})
+    fs = _fs(frame, _uni(tickers))
+    r_small, ex_small, bb_small = rank_theme(fs, top=2)
+    r_big, _ex_big, bb_big = rank_theme(fs, top=8)
+    assert list(r_small.index) == list(r_big.index)
+    assert set(r_small.index) == set(tickers)  # 8개 전부 — 2 로도 4 로도 잘리지 않는다
+    assert ex_small.empty
+    # 관찰용 바벨만 top 을 따른다
+    assert bb_small.n == 2 and bb_big.n > bb_small.n
+
+
+def test_selection_group_is_uniform_and_barbell_is_observation_only() -> None:
+    """`group` 은 전 행 `ELIGIBLE`(= 동일가중: 행을 가르는 열이 없다). 바벨은 별도 관찰 열."""
+    tickers = ["AA", "BB", "CC", "DD"]
+    frame = _frame({t: _base(cash_runway_q=5.0 + i) for i, t in enumerate(tickers)})
+    ranking, _ex, bb = rank_theme(_fs(frame, _uni(tickers)), top=2)
+    assert ranking["group"].nunique() == 1
+    assert set(ranking["group"]) == {SELECTION_GROUP}
+    labelled = {str(t) for t in ranking.index if ranking.loc[t, "barbell_obs"]}
+    assert labelled == set(bb.anchors) | set(bb.torques)
+    assert labelled < set(tickers)  # 진부분집합 — 라벨 없는 종목도 선정에 남아 있다
+
+
+def test_hard_exclusion_still_selects() -> None:
+    """하드 제외는 그대로 자른다 — 버린 것은 선정 규칙이지 하드 제외가 아니다."""
+    frame = _frame(
+        {
+            "OK": _base(),
+            "DRY": _base(cash_runway_q=2.0),  # E1
+            "LEV": _base(net_debt_ebitda=9.0),  # E2
+            "WALL": _base(maturity_wall_12m=0.9),  # E3
+        }
+    )
+    ranking, excluded, _bb = rank_theme(_fs(frame, _uni(["OK", "DRY", "LEV", "WALL"])))
+    assert list(ranking.index) == ["OK"]
+    assert set(excluded.index) == {"DRY", "LEV", "WALL"}
+    assert (excluded["stage"] == "hard_filter").all()
+
+
+def test_observation_columns_survive_for_backward_compatibility() -> None:
+    """`group`·`rank`·`composite` 는 계약이라 남는다 (`assemble._RANKING_REQUIRED`)."""
+    from msa.pipeline.assemble import _RANKING_REQUIRED
+
+    tickers = ["AA", "BB", "CC"]
+    frame = _frame({t: _base(cash_runway_q=5.0 + i) for i, t in enumerate(tickers)})
+    ranking, _ex, _bb = rank_theme(_fs(frame, _uni(tickers)))
+    for col in (*_RANKING_REQUIRED, "m_pct", "s_pct", "t_pct", "barbell_obs"):
+        assert col in ranking.columns
