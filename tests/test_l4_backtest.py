@@ -116,25 +116,26 @@ def test_declared_constants_match_preregistration() -> None:
     assert len(axes.S_COMPONENTS) == 3 and len(axes.T_COMPONENTS) == 6
     assert len(axes.M_COMPONENTS) == 6
     assert DEATH_ACTIONS == ("bankruptcyliquidation", "regulatorydelisting")  # §2.5
-    # §1 Q3 의 E1~E5 + 2026-08-24 에 메운 E6·E7 (E2·E3 의 판정 불가 — 데이터 절단)
-    assert axes.HARD_REASON_CODES == ("E1", "E2", "E3", "E4", "E5", "E6", "E7")
+    # §1 Q3 의 E1~E5 + 2026-08-24 에 메운 E6 (E2 의 판정 불가 — 데이터 절단).
+    # E7(만기벽 판정 불가)은 같은 날 철회됐다 — 제외가 아니라 미적용 계수다 (`docs/06` §2.1)
+    assert axes.HARD_REASON_CODES == ("E1", "E2", "E3", "E4", "E5", "E6")
     assert axes.HARD_REASON_ALPHA == ("E1", "E2", "E3")  # §4.1 — 판정은 이 셋만
     assert (BOOT_BLOCK, BOOT_N, BOOT_SEED) == (12, 2000, 0)  # §2.2 부트스트랩
     assert MIN_MEMBERS_POSSIBLE == MIN_STOCKS_XS
 
 
 def test_count_trials_matches_docs14_section_6_2() -> None:
-    """§6.2 의 식과 458 이라는 값을 그대로 낸다 (선언만 세면 1)."""
+    """§6.2 의 식을 그대로 쓴다 — E 만 사유 체계를 따라 움직인다 (선언만 세면 1)."""
     t = count_trials()
     assert (t["variants"], t["horizons"], t["windows"]) == (4, 3, 2)
-    # 2026-08-24 — 사유 코드가 5 → 7 로 늘었다 (E6·E7, `docs/14` §8 개정). 식은 §6.2 그대로이고
-    # E 만 바뀐다. **2026-08 에 끝난 실행의 458 은 그 실행의 기록이라 그대로 둔다**
-    # (`docs/backtest-l4.md` §8) — 다음 실행이 이 값을 쓴다.
-    assert (t["classes"], t["indicators"], t["filter_reasons"]) == (8, 15, 7)
-    assert t["per_window"] == 4 * 3 * 10 + 4 + 15 * 3 + 7 * 3 * 2 == 211
-    assert t["windows_total"] == 422
-    assert t["sensitivity_d1"] == 7 * 3 * 2 * 2 == 84
-    assert t["total"] == 506
+    # 2026-08-24 — 사유 코드 5 → 7(E6·E7 신설) → **6**(E7 철회, `docs/06` §2.1 재개정).
+    # 식은 §6.2 그대로이고 E 만 바뀐다. **2026-08 에 끝난 실행의 458 은 그 실행의 기록이라
+    # 그대로 둔다** (`docs/backtest-l4.md` §9) — 다음 실행이 482 를 쓴다.
+    assert (t["classes"], t["indicators"], t["filter_reasons"]) == (8, 15, 6)
+    assert t["per_window"] == 4 * 3 * 10 + 4 + 15 * 3 + 6 * 3 * 2 == 205
+    assert t["windows_total"] == 410
+    assert t["sensitivity_d1"] == 6 * 3 * 2 * 2 == 72
+    assert t["total"] == 482
     assert t["declared_only"] == 1
 
 
@@ -456,9 +457,9 @@ def _ok_row(**kw: Any) -> dict[str, Any]:
     return d
 
 
-def test_hard_filter_flags_agree_with_hard_filters_and_map_to_e1_e7() -> None:
-    """사유 코드가 `docs/14` §1 Q3 표(+2026-08-24 의 E6·E7)와 같은 조건이고, `hard_filters` 와
-    같은 마스크다."""
+def test_hard_filter_flags_agree_with_hard_filters_and_map_to_e1_e6() -> None:
+    """사유 코드가 `docs/14` §1 Q3 표(+2026-08-24 의 E6)와 같은 조건이고, `hard_filters` 와
+    같은 마스크다. `maturity_wall_12m` 결측은 **제외가 아니다** — 미적용 계수로 따로 센다."""
     f = _feature_frame(
         {
             "PASS": _ok_row(),
@@ -468,10 +469,12 @@ def test_hard_filter_flags_agree_with_hard_filters_and_map_to_e1_e7() -> None:
             "E4": _ok_row(cash_runway_q=np.nan),
             "E5": _ok_row(fund_calendardate=None, fund_status="none"),
             "E6": _ok_row(net_debt_ebitda=np.nan, nd_basis="n/a"),
-            "E7": _ok_row(maturity_wall_12m=np.nan),
+            "NOWALL": _ok_row(maturity_wall_12m=np.nan),
         }
     )
     flags = axes.hard_filter_flags(f)
+    assert not bool(flags.loc["NOWALL"].any())  # 만기벽 결측은 어느 사유에도 걸리지 않는다
+    assert bool(axes.unapplied_filter_flags(f).loc["NOWALL", "E3"])
     for code in axes.HARD_REASON_CODES:
         assert bool(flags.loc[code, code]), code
         assert not bool(flags.loc["PASS", code])
@@ -538,9 +541,9 @@ def test_run_backtest_frames_end_to_end_on_synthetic_panel() -> None:
     tickers_b = [f"B{i:03d}" for i in range(28)]
     panel = pd.concat(
         [
-            # 제외 7 = 사유 코드 7종이 한 바퀴 (E1~E7, 2026-08-24 개정)
-            _panel("theme_a", DATES, tickers_a, rng=rng, n_excl=7, cycle_reasons=True),
-            _panel("theme_b", DATES, tickers_b, rng=rng, n_excl=7, cycle_reasons=True),
+            # 제외 6 = 사유 코드 6종이 한 바퀴 (E1~E6, 2026-08-24 개정 · E7 철회)
+            _panel("theme_a", DATES, tickers_a, rng=rng, n_excl=6, cycle_reasons=True),
+            _panel("theme_b", DATES, tickers_b, rng=rng, n_excl=6, cycle_reasons=True),
         ],
         ignore_index=True,
     )
@@ -555,15 +558,14 @@ def test_run_backtest_frames_end_to_end_on_synthetic_panel() -> None:
             "n_listed": 30,
             "n_delisted": 0,
             "n_no_recent_price": 0,
-            "n_eligible": 23,
+            "n_eligible": 24,
             "n_E1": 1,
             "n_E2": 1,
             "n_E3": 1,
             "n_E4": 1,
             "n_E5": 1,
             "n_E6": 1,
-            "n_E7": 1,
-            "n_excluded_any": 7,
+            "n_excluded_any": 6,
             "n_composite_partial": 0,
             "n_s_na": 0,
             "n_t_na": 0,
@@ -592,7 +594,7 @@ def test_run_backtest_frames_end_to_end_on_synthetic_panel() -> None:
     # 클래스 파티션 칸이 있다 (시도 수에 계상됨)
     assert set(res.ic_summary["partition"]) >= {PARTITION_ALL, "commodity_supply"}
     # 과최적화는 계산해서 싣되 판정에 들어가지 않는다
-    assert res.overfitting["trials"]["total"] == 506  # §6.2, E=7 (2026-08-24 개정)
+    assert res.overfitting["trials"]["total"] == 482  # §6.2, E=6 (2026-08-24 개정 · E7 철회)
     assert res.verdict["dsr_pbo_in_gate"] is False
     assert res.exclusions["theme_months"]["min_stocks_xs"] == MIN_STOCKS_XS
     # 리포트가 렌더된다

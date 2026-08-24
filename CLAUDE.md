@@ -154,7 +154,8 @@ msa run daily         # 일간: 후보 다이제스트 (스캔→상위 K→테�
 msa run quarterly     # 분기 명령 목록 (ops calibration · ops rejections-update) — 나열만
 msa backtest l1       # L1 백테스트 관문 0 (M3.5) — rank-IC·스프레드·breadth_lead·DSR/PBO.
                       #   산출물 state/backtests/l1/<date>/ · 판정 docs/backtest-l1.md. 튜닝 루프가 아니다
-msa backtest l1-structures  # M3.6 — A 집계 구조 검정 S0/S1/S2 (docs/12 §4 사전 등록). 결과 docs/backtest-l1.md §12
+msa backtest l1-structures  # L1 점수 구조 검정 — M3.6 S0/S1/S2 (docs/12 §4) + M3.7 S3(C 단독)/S2ʹ(C·E)
+                      #   (docs/17 §4 — 짝지은 스프레드 차 X−S2 의 CI 하한 > 0). 결과 docs/backtest-l1.md §12·§14
 msa backtest l4       # L4 종목 선정 백테스트 (docs/14 사전 등록의 집행) — 테마 내 rank-IC·축 단독·하드 필터.
                       #   산출물 state/backtests/l4/<date>/ · --jobs 병렬 · 테마별 parquet 캐시라 중단해도 이어서 돈다
 msa backtest l4-structures  # L4 선정 구조 비교 (docs/15 사전 등록의 집행) — B0~B4 후보 규칙의 테마 EW 초과·

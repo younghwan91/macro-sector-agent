@@ -1,7 +1,11 @@
-"""M3.6 구조 검정 — S1(절대 게이트)·S2(풀/타이밍 2단) 점수 구성이 `docs/12` §4.1 정의와 같은가.
+"""L1 점수 구조 검정의 후보 구성이 문서 정의와 같은가 — M3.6(`docs/12` §4.1)·M3.7(`docs/17` §2).
 
 합성 지표에서 (1) 자격 집합이 선언된 조건 그대로인지, (2) 자격 밖은 NaN 인지, (3) 점수가 S0 과 같은
 블록 백분위·클래스 가중치로 재정규화 가중합된 값인지, (4) 선언 상수가 문서 값과 같은지 확인한다.
+
+M3.7 은 여기에 둘을 더 본다: (5) **S2·S3·S2ʹ 의 자격이 정확히 같은지** — 짝지은 스프레드 차
+(`docs/17` §3.1)가 정당하려면 셋이 같은 달 같은 우주를 봐야 한다, (6) 차 긴 표가 `summarize_spread`
+를 그대로 통과하고 값이 `후보 − 기준` 과 같은지.
 """
 
 from __future__ import annotations
@@ -93,3 +97,100 @@ def test_s2_pool_eligibility_and_timing_score(ind: Indicators, themes: ThemeSet)
         num = sum(w[b] * sb.loc[key, f"{b}_pct"] for b in S2_TIMING_BLOCKS)
         den = sum(w[b] for b in S2_TIMING_BLOCKS)
         assert sc.loc[key, "S2"] == pytest.approx(num / den)
+
+
+# ---------------------------------------------------------------- M3.7 (docs/17)
+
+
+def test_m37_declared_constants_match_docs17() -> None:
+    from msa.l1.structures import (
+        CANDIDATES_M37,
+        DIFF_BASE,
+        DIFF_PAIRS,
+        N_TRIALS_ADDED_M37,
+        PBO_VARIANTS,
+        S2P_TIMING_BLOCKS,
+        S3_BLOCK,
+        STRUCTURES,
+    )
+
+    assert S3_BLOCK == "C"  # 점수 = C_pct, 가중치 없음
+    assert S2P_TIMING_BLOCKS == ("C", "E")  # S2 에서 F 만 뺀 것
+    assert CANDIDATES_M37 == ("S3", "S2p") and DIFF_BASE == "S2"
+    assert DIFF_PAIRS == (("S3", "S2"), ("S2p", "S2"))
+    assert STRUCTURES == ("S0", "S1", "S2", "S3", "S2p")
+    assert PBO_VARIANTS == ("S2", "S3", "S2p")
+    # 2 후보 × 창 2 × 호라이즌 3 × (IC+스프레드) + 차 2 × 창 2 × 호라이즌 3 = 24 + 12
+    assert N_TRIALS_ADDED_M37 == 36
+
+
+def test_s3_is_c_pct_and_s2p_is_c_e_on_the_same_eligibility(
+    ind: Indicators, themes: ThemeSet
+) -> None:
+    from msa.l1.structures import S2P_TIMING_BLOCKS
+
+    sb = scoreboard_history(ind, themes)
+    sc = structure_scores(ind, themes, sb)
+    elig = sc["S2_eligible"]
+    # 자격은 셋이 정확히 같다 — 그래야 스프레드를 짝지을 수 있다 (docs/17 §3)
+    assert sc.loc[~elig, ["S2", "S3", "S2p"]].isna().all().all()
+    assert sc.loc[elig, ["S2", "S3", "S2p"]].notna().all().all()
+    # S3 = C_pct 그대로 (재정규화·가중치 없음)
+    pd.testing.assert_series_equal(sc.loc[elig, "S3"], sb.loc[elig, "C_pct"], check_names=False)
+    # S2ʹ = C·E 재정규화 가중합
+    for key in sc.index[elig][:5]:
+        w = BLOCK_WEIGHTS[sb.loc[key, "cycle_class"]]
+        num = sum(w[b] * sb.loc[key, f"{b}_pct"] for b in S2P_TIMING_BLOCKS)
+        den = sum(w[b] for b in S2P_TIMING_BLOCKS)
+        assert sc.loc[key, "S2p"] == pytest.approx(num / den)
+
+
+def test_spread_diff_series_is_paired_and_summarizes_with_the_same_machine() -> None:
+    """차 긴 표가 `summarize_spread` 를 그대로 통과하고, 값이 후보 − 기준과 같은가."""
+    from msa.l1.backtest import summarize_spread
+    from msa.l1.structures import spread_diff_series
+
+    dates = pd.date_range("2011-01-31", periods=60, freq="ME")
+    rows = []
+    rng = np.random.default_rng(3)
+    vals = {v: rng.normal(size=len(dates)) for v in ("S2", "S3", "S2p")}
+    for h in (3, 12):
+        for i, d in enumerate(dates):
+            for v in ("S0", "S1", "S2", "S3", "S2p"):
+                rows.append(
+                    {
+                        "date": d,
+                        "variant": v,
+                        "horizon": h,
+                        # S3 은 S2 를 정확히 h 만큼 올린 것 → 차가 상수 h 여야 한다
+                        "spread": (vals["S2"][i] + h) if v == "S3" else vals.get(v, vals["S2"])[i],
+                        "ret_top": 0.0,
+                        "ret_bot": 0.0,
+                        "n_universe": 60,
+                        "n_small_excluded": 3,
+                    }
+                )
+    sp = pd.DataFrame(rows)
+    d = spread_diff_series(sp)
+    assert set(d["variant"]) == {"S3-S2", "S2p-S2"}
+    got = d[(d["variant"] == "S3-S2") & (d["horizon"] == 12)]["spread"].to_numpy()
+    assert np.allclose(got, 12.0)  # S3 − S2 = h 로 심어 뒀다
+    assert np.allclose(
+        d[(d["variant"] == "S2p-S2") & (d["horizon"] == 3)]["spread"].to_numpy(),
+        vals["S2p"] - vals["S2"],
+    )
+    summ = summarize_spread(d)
+    cell = summ[
+        (summ["window"] == "primary") & (summ["horizon"] == 12) & (summ["variant"] == "S3-S2")
+    ]
+    assert len(cell) == 1 and cell.iloc[0]["mean"] == pytest.approx(12.0)
+    assert cell.iloc[0]["ci_lo"] == pytest.approx(12.0)  # 상수열이라 CI 가 붙는다
+
+
+def test_diff_verdict_reads_one_side_only() -> None:
+    from msa.l1.structures import _diff_verdict
+
+    assert _diff_verdict(pd.Series({"ci_lo": 0.01, "ci_hi": 0.05})) == "beats_S2"
+    assert _diff_verdict(pd.Series({"ci_lo": -0.05, "ci_hi": -0.01})) == "worse_than_S2"
+    assert _diff_verdict(pd.Series({"ci_lo": -0.01, "ci_hi": 0.05})) == "indistinguishable"
+    assert _diff_verdict(pd.Series({"ci_lo": np.nan, "ci_hi": np.nan})) == "undetermined"

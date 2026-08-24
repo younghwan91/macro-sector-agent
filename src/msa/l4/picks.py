@@ -187,6 +187,7 @@ def run_picks(
 
     n_hard = int((excluded["stage"] == "hard_filter").sum()) if len(excluded) else 0
     n_listing = int((excluded["stage"] == "listing").sum()) if len(excluded) else 0
+    unapplied = _unapplied_filters(fs, ranking)
     picks_meta: dict[str, Any] = {
         "theme": theme_id,
         "name_ko": theme.name_ko,
@@ -240,6 +241,10 @@ def run_picks(
             "note": "관찰용 — 선정에 쓰이지 않는다. 비중 밴드도 마찬가지",
             "weight_band_doc": "앵커 55~70% / 토크 30~45% (docs/06 §5, 2026-08-24 이전 판)",
         },
+        # 입력이 없어 **걸지 못한** 하드 필터의 종목 수 — 제외가 아니다 (2026-08-24 재개정).
+        # 이 수가 보이지 않으면 리포트가 "만기벽 필터가 있다" 고 말하면서 실제로는 그 필터가
+        # 걸리지 않은 종목을 적격으로 내놓는다 (`CLAUDE.md` §2 · `docs/06` §2.1).
+        "filters_unapplied": unapplied,
         "inputs_unavailable": fs.inputs_unavailable,
         "inputs_unused": INPUTS_UNUSED,
         "inputs_missing_per_stock": _inputs_missing(ranking),
@@ -270,6 +275,33 @@ def run_picks(
 def _txt(r: pd.Series, key: str) -> str:
     """행의 문자열 셀 — 없음·None·NaN·빈 문자열은 전부 `""`."""
     return str(r.get(key, "") or "")
+
+
+def _unapplied_filters(fs: FeatureSet, ranking: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    """하드 필터별 **미적용** 계수 (`axes.FILTER_UNAPPLIED_CODES`).
+
+    `n_evaluated` 는 재무가 있어 하드 필터를 실제로 돌린 종목 수, `n_unapplied` 는 그중 입력이
+    없어 그 필터를 걸지 못한 수, `n_unapplied_eligible` 는 그러고도 적격으로 남은 수다.
+    셋째가 이 저장소가 실제로 신경 쓰는 수다 — 리포트에 나오는 종목 중 그 필터를 통과한 것이
+    아니라 **평가받지 않은** 것이 몇인가.
+    """
+    out: dict[str, dict[str, Any]] = {}
+    if not len(fs.frame):
+        return out
+    flags = axes.unapplied_filter_flags(fs.frame)
+    evaluated = fs.frame["fund_calendardate"].notna()
+    for code in axes.FILTER_UNAPPLIED_CODES:
+        f = flags[code]
+        elig = f.loc[f.index.isin(ranking.index)] if len(ranking) else f.iloc[:0]
+        out[code] = {
+            "filter": axes.HARD_REASON_LABELS[code],
+            "column": axes.FILTER_UNAPPLIED_COLUMN[code],
+            "n_evaluated": int(evaluated.sum()),
+            "n_unapplied": int(f.sum()),
+            "n_unapplied_eligible": int(elig.sum()),
+            "note": axes.FILTER_UNAPPLIED_LABELS[code],
+        }
+    return out
 
 
 def _nd_basis_counts(ranking: pd.DataFrame) -> dict[str, int]:
@@ -431,6 +463,25 @@ def render_report(
     L.append("없는 입력 (계산하지 않았다 — 빈 값이 아니라 '없다')")
     for k, v in fs.inputs_unavailable.items():
         L.append(f"  {k}: {v}")
+    # 걸지 못한 하드 필터 — 제외가 아니라 **미적용**이다 (2026-08-24 재개정 · docs/06 §2.1).
+    # 이 줄이 없으면 리포트가 만기벽 필터를 걸었다고 읽힌다 (CLAUDE.md §2).
+    ua = meta.get("filters_unapplied", {})
+    if ua:
+        L.append("걸지 못한 하드 필터 (제외가 아니다 — 그 종목엔 이 필터가 적용되지 않았다)")
+        for code, d in ua.items():
+            L.append(
+                f"  {code} {d['filter']}: 평가 대상 {d['n_evaluated']} 중 "
+                f"입력 없음 {d['n_unapplied']} (그중 적격으로 남은 것 "
+                f"{d['n_unapplied_eligible']}) — {d['column']} 결측"
+            )
+        L.append(
+            "  선언된 필터는 maturity_wall_24m 이고 SF1 에 만기 스케줄이 없어 **누구에게도** "
+            "계산되지 않는다."
+        )
+        L.append(
+            "  E3 는 대용치 maturity_wall_12m(debtc/시총) 이 있는 종목에서만 걸린다 — "
+            "없다고 제외하지 않는다 (docs/06 §2.1)."
+        )
     ts = fs.theme_stats
     L.append(
         f"테마 통계: 마진 자기이력 {ts.get('margin_hist_quarters', 0)}분기 · P75 마진 "

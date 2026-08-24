@@ -404,8 +404,11 @@ def backtest_l1_structures(
     no_write: bool = _no_write_option("state/backtests/"),
     verbose: bool = OPT_VERBOSE,
 ) -> None:
-    """M3.6 — A(망각) 집계 구조 검정: S0(현행)·S1(절대 게이트)·S2(풀/타이밍 2단) 를 관문 0 과
-    같은 규칙으로 (docs/12 §4, 사전 등록). 산출물: state/backtests/l1/<store_end>/structures_*.
+    """L1 점수 구조 검정 — S0·S1·S2 (M3.6, docs/12 §4) + S3(C 단독)·S2ʹ(C·E) (M3.7, docs/17).
+
+    M3.6 은 후보별 rank-IC CI 하한 > 0, M3.7 은 짝지은 스프레드 차 `X − S2` 의 CI 하한 > 0 으로
+    판정한다. 둘 다 사전 등록이고 결과로 가중치를 옮기지 않는다 (CLAUDE.md §1).
+    산출물: state/backtests/l1/<store_end>/structures_*.
     """
     from msa.l1.structures import render_structure_report, run_structures
 

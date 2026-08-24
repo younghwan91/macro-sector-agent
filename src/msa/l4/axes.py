@@ -5,7 +5,7 @@
 
 ## 2026-08-24 — 이 모듈의 두 절반은 지위가 다르다
 
-- **`hard_filters` / `hard_filter_flags` 는 선정한다.** 하드 제외(E1~E5)는 그대로다. 임계도
+- **`hard_filters` / `hard_filter_flags` 는 선정한다.** 하드 제외(E1~E6)는 그대로다. 임계도
   그대로다 — `docs/14` §4.2 가 미리 정한 대로, 하드 제외의 근거는 수익률이 아니라 `docs/06` §2
   의 도메인 서술이다.
 - **`score`(3축 백분위 · `composite` · `rank`)는 선정하지 않는다.** 관찰 지표다. 선정은
@@ -44,12 +44,25 @@
   pct(`rvol_expansion`) 의 가용 평균. 문서 §4 의 6개 지표 등가. M 은 종합 가중 0.20 으로 이미 낮다.
 - 축 최소 입력 — T·M 모두 6개 중 **3개 이상** 있어야 계산, 아니면 NaN. 소수 구성 요소의 평균은
   그 축이 아니라 다른 것을 잰다 (예: `above_50d` 하나로 M=1.0). 절반은 표본 크기에 무관한 기준.
-- **하드 제외 3항목의 판정 불가는 전부 하드 제외** (사유 표기) — 런웨이(E4) · 순부채/EBITDA(E6) ·
-  만기벽(E7). 하드 필터를 평가할 수 없는 종목을 통과시키면 필터가 있는 척하는 것이다 — 재무 없음
-  (E5)과 같은 처리. **2026-08-24: 이 문장은 원래 셋 다를 가리켰는데 코드는 런웨이(E4)에만
-  적용하고 있었다.** `nd`/`wall` 이 NaN 이면 `nd > 6`·`wall > 0.5` 가 `False` 라 조용히 통과했다.
-  E6·E7 은 그 누락을 메운 것이고 **임계는 하나도 옮기지 않았다** — 결측 처리만 바꿨다.
-  E4 와 같이 **데이터 절단**이며 알파 주장이 아니다 (`docs/14` §1 Q3 · §4.1 — 판정하지 않는다).
+- **계산된 하드 항목의 판정 불가는 하드 제외** (사유 표기) — 런웨이(E4) · 순부채/EBITDA(E6).
+  하드 필터를 평가할 수 없는 종목을 통과시키면 필터가 있는 척하는 것이다 — 재무 없음(E5)과
+  같은 처리. **2026-08-24: 이 문장은 원래 셋 다를 가리켰는데 코드는 런웨이(E4)에만
+  적용하고 있었다.** `nd` 가 NaN 이면 `nd > 6` 이 `False` 라 조용히 통과했다. E6 은 그 누락을
+  메운 것이고 **임계는 하나도 옮기지 않았다** — 결측 처리만 바꿨다. E4 와 같이 **데이터 절단**
+  이며 알파 주장이 아니다 (`docs/14` §1 Q3 · §4.1 — 판정하지 않는다).
+- **만기벽은 예외다 — 그 필터는 이 스토어에서 선언대로 계산된 적이 없다** (2026-08-24 재개정).
+  `docs/06` §2 가 선언한 필터는 `maturity_wall_24m`(24개월 만기부채/시총)이고, SF1 에 만기
+  스케줄이 없어 **어느 종목에도 계산되지 않는다** (`features.py` 머리말). E3 가 보는
+  `maturity_wall_12m = debtc/mcap` 은 **선언된 적 없는 대용치**이고, `debtc` 가 있는 종목에서만
+  기회적으로 발동해 왔다. 대용치가 없다고 제외하면 **선언되지 않은 강제**를 만드는 것이다 —
+  `going_concern` 이 "선언됐으나 미구현" 으로 **보고**되고 그 부재로 아무도 자르지 않는 것과
+  같은 취급을 한다. 하루 존재했던 E7(만기벽 판정 불가 = 하드 제외)은 그래서 **철회했다.**
+  대신 `unapplied_filter_flags` 가 **E3 를 적용하지 못한 종목 수**를 세어 산출물에 싣는다
+  (`CLAUDE.md` §2 — 필터가 있는 척하지 않으려면 이 수가 보여야 한다).
+  E6 과의 비대칭은 데이터의 성격 차이다: `net_debt_ebitda` 는 EBITDA≤0 이면 순부채/시총으로
+  **대체 계산되므로** NaN 은 "재무가 아예 없다" 는 뜻(E5 와 같은 층위)이지 업종 회계 구조가
+  아니다. `debtc` 결측은 위험이 아니라 회계 구조다 — 실측 REIT 100.0% · 은행 99.7% ·
+  보험 98.2% vs 원유 E&P 0.1% · 금 0.0% (`docs/06` §2.1).
 - 축 결측 시 종합 — 가용 축 가중치를 재정규화하고 `composite_partial=True` 표시. 빈 축을 0 으로
   두면 순위가 결측에 지배된다; 표시 없이 재정규화하면 조용한 절단.
 - 순위 동률 — 종합 ↓ → S̃ ↓ → 티커 ↑. 결정론 — 같은 입력이면 같은 순위.
@@ -123,12 +136,16 @@ _REASON_NO_SF1 = "재무 없음 (SF1 에 행 0개 — 20-F 해외발행사 등 �
 _REASON_STALE = "재무 없음 (asof 이전 15개월 내 분기 없음) — 생존 필터 판정 불가"
 _REASON_RUNWAY_NA = "런웨이 판정 불가 (현금흐름표 또는 현금 없음) — 하드 필터 미통과"
 _REASON_ND_NA = "순부채/EBITDA 판정 불가 (부채·현금 또는 EBITDA·시총 없음) — 하드 필터 미통과"
-_REASON_WALL_NA = "만기벽 판정 불가 (유동부채 또는 시총 없음) — 하드 필터 미통과"
 
-#: 하드 제외 **사유 코드** — `docs/14` §1 Q3 의 E1~E5 + 2026-08-24 에 메운 E6·E7.
-#: E1~E3 이 알파 주장, E4~E7 은 데이터 사정(판정 불가). 한 종목이 여러 사유에 동시에 걸릴 수
+#: 하드 제외 **사유 코드** — `docs/14` §1 Q3 의 E1~E5 + 2026-08-24 에 메운 E6.
+#: E1~E3 이 알파 주장, E4~E6 은 데이터 사정(판정 불가). 한 종목이 여러 사유에 동시에 걸릴 수
 #: 있다 (코드별로 따로 센다).
-HARD_REASON_CODES: tuple[str, ...] = ("E1", "E2", "E3", "E4", "E5", "E6", "E7")
+#: **E7(만기벽 판정 불가)은 2026-08-24 같은 날 철회됐다** — 모듈 docstring 의 만기벽 항목.
+#: 코드를 남겨 두면 `hard_filters` 의 마스크·`backtest.filters` 의 "제외군 − 통과군" 대조·
+#: `count_trials` 의 E 가 전부 "제외한다" 를 전제하므로, 제외하지 않기로 한 사유를 코드로
+#: 남기는 것은 세 곳에 거짓말을 심는 것이다. 그래서 마스크에서만 빼지 않고 **코드 자체를
+#: 뺐고**, 그 자리는 아래 `FILTER_UNAPPLIED_*`(제외가 아니라 미적용 계수)가 받는다.
+HARD_REASON_CODES: tuple[str, ...] = ("E1", "E2", "E3", "E4", "E5", "E6")
 HARD_REASON_LABELS: dict[str, str] = {
     "E1": f"cash_runway_q < {RUNWAY_MIN_Q:.0f}",
     "E2": f"net_debt_ebitda > {ND_EBITDA_EXCLUDE:.0f}x",
@@ -136,13 +153,27 @@ HARD_REASON_LABELS: dict[str, str] = {
     "E4": "런웨이 판정 불가 (현금흐름표 없음)",
     "E5": "fund_status ∈ {none, stale}",
     "E6": "순부채/EBITDA 판정 불가 (입력 없음)",
-    "E7": "만기벽 판정 불가 (입력 없음)",
 }
 #: 알파 주장인 사유 — `docs/14` §4.1 이 합격 판정을 거는 것은 이 셋뿐이다.
 HARD_REASON_ALPHA: tuple[str, ...] = ("E1", "E2", "E3")
 #: 데이터 절단인 사유 — `docs/14` §4.1 이 "판정하지 않는다. 수치만 적는다" 로 못박은 부류.
-#: E6·E7 은 E4 와 같은 등급이다 (2026-08-24 신설 · 모듈 docstring).
-HARD_REASON_DATA: tuple[str, ...] = ("E4", "E5", "E6", "E7")
+#: E6 은 E4 와 같은 등급이다 (2026-08-24 신설 · 모듈 docstring).
+HARD_REASON_DATA: tuple[str, ...] = ("E4", "E5", "E6")
+
+#: **미적용 계수** — 제외 사유가 아니다. 입력이 없어 그 하드 필터를 **걸지 못한** 종목을 센다.
+#: 제외하지 않으므로 `hard_filters` 도 `HARD_REASON_CODES` 도 이것을 모른다. `docs/14` §6.2 의
+#: 시도 수에도 들어가지 않는다 — 어떤 칸도 들여다보지 않고 세기만 한다.
+#: 지금 원소는 하나(E3)다. `going_concern` 은 아예 열이 없어(입력 자체가 없다) 여기가 아니라
+#: `features.INPUTS_UNAVAILABLE` 이 보고한다 — 이쪽은 "열은 있는데 값이 없다" 를 센다.
+FILTER_UNAPPLIED_CODES: tuple[str, ...] = ("E3",)
+FILTER_UNAPPLIED_COLUMN: dict[str, str] = {"E3": "maturity_wall_12m"}
+FILTER_UNAPPLIED_LABELS: dict[str, str] = {
+    "E3": (
+        "만기벽 미적용 (maturity_wall_12m 입력 없음 — SF1 의 debtc 결측). "
+        "제외하지 않는다: 선언된 필터는 maturity_wall_24m 이고 이 스토어에서 "
+        "누구에게도 계산되지 않는다 (docs/06 §2.1 재개정)"
+    ),
+}
 
 
 def _num(s: pd.Series) -> pd.Series:
@@ -195,20 +226,40 @@ def hard_filter_flags(frame: pd.DataFrame) -> pd.DataFrame:
     out["E3"] = (has_fund & (wall > MATURITY_WALL_EXCLUDE)).fillna(False).astype(bool)
     out["E4"] = (has_fund & runway.isna()).fillna(False).astype(bool)
     out["E5"] = (~has_fund).fillna(False).astype(bool)
-    # E6·E7 — E2·E3 의 판정 불가. `nd > 6`·`wall > 0.5` 는 NaN 에서 False 라 조용히 통과했다
-    # (2026-08-24). E4 와 같은 처리이고 임계는 옮기지 않았다.
+    # E6 — E2 의 판정 불가. `nd > 6` 은 NaN 에서 False 라 조용히 통과했다 (2026-08-24).
+    # E4 와 같은 처리이고 임계는 옮기지 않았다.
+    # E3 의 짝(하루 존재했던 E7)은 없다 — `wall` 결측은 제외가 아니라 **미적용**으로 센다
+    # (`unapplied_filter_flags`). 근거는 모듈 docstring 의 만기벽 항목.
     out["E6"] = (has_fund & nd.isna()).fillna(False).astype(bool)
-    out["E7"] = (has_fund & wall.isna()).fillna(False).astype(bool)
     return out[list(HARD_REASON_CODES)]
+
+
+def unapplied_filter_flags(frame: pd.DataFrame) -> pd.DataFrame:
+    """**필터를 걸지 못한** 종목의 불리언 (index ticker · 열 `FILTER_UNAPPLIED_CODES`).
+
+    제외 마스크가 아니다 — 여기 True 인 종목도 다른 사유가 없으면 적격이다. 세는 이유는 하나,
+    "그 종목에는 그 필터가 적용되지 않았다" 를 산출물이 말할 수 있어야 하기 때문이다
+    (`CLAUDE.md` §2). 재무 자체가 없는 종목(E5)은 이미 제외되므로 세지 않는다 — 미적용을
+    말하려면 먼저 평가 대상이어야 한다.
+    """
+    _check_columns(frame)
+    has_fund = frame["fund_calendardate"].notna()
+    out = pd.DataFrame(index=frame.index)
+    for code in FILTER_UNAPPLIED_CODES:
+        col = _num(frame[FILTER_UNAPPLIED_COLUMN[code]])
+        out[code] = (has_fund & col.isna()).fillna(False).astype(bool)
+    return out[list(FILTER_UNAPPLIED_CODES)]
 
 
 def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
     """하드 제외 판정. 반환 index ticker: `excluded`(bool), `reason`(str; 복수는 ' · ' 로 연결).
 
     재무가 없는(신선도 탈락) 종목도 제외한다 — 생존 필터를 **평가할 수 없는** 종목을 통과시키면
-    필터가 있는 척하는 것이다. 사유에 그렇게 적는다. **하드 제외 3항목 전부에 같은 규칙이 걸린다**
-    — 런웨이(E4) · 순부채/EBITDA(E6) · 만기벽(E7) (2026-08-24). `going_concern` 은 입력이 없어
-    적용하지 못한다.
+    필터가 있는 척하는 것이다. 사유에 그렇게 적는다. **계산되는 하드 항목에 같은 규칙이 걸린다**
+    — 런웨이(E4) · 순부채/EBITDA(E6) (2026-08-24). `going_concern` 은 입력이 없어 적용하지
+    못한다. **만기벽도 같은 부류다** — 선언된 `maturity_wall_24m` 은 이 스토어에서 아무에게도
+    계산되지 않고, 대용치 `maturity_wall_12m` 이 없다고 제외하지 않는다 (2026-08-24 재개정 ·
+    모듈 docstring). 미적용 수는 `unapplied_filter_flags` 가 센다.
     """
     _check_columns(frame)
     flags = hard_filter_flags(frame)
@@ -221,7 +272,6 @@ def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
     no_fund = _tagged(flags["E5"], np.where(no_sf1, _REASON_NO_SF1, _REASON_STALE))
     runway_na = _tagged(flags["E4"], _REASON_RUNWAY_NA)
     nd_na = _tagged(flags["E6"], _REASON_ND_NA)
-    wall_na = _tagged(flags["E7"], _REASON_WALL_NA)
     runway_low = _tagged(
         flags["E1"],
         runway.map(lambda r: f"런웨이 {r:.2f}분기 < {RUNWAY_MIN_Q:.0f}"),
@@ -242,7 +292,7 @@ def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
     )
     out = pd.DataFrame(index=frame.index)
     out["reason"] = _join_nonempty(
-        [no_fund, runway_na, runway_low, nd_na, nd_high, wall_na, wall_high], " · "
+        [no_fund, runway_na, runway_low, nd_na, nd_high, wall_high], " · "
     )
     out["excluded"] = out["reason"].str.len() > 0
     return out
