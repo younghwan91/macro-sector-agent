@@ -496,6 +496,15 @@ def research(
     asof: str = typer.Option(
         "", help="기준일 YYYY-MM-DD — 그 이전 최신 스캔을 쓴다. 기본 = 최신 스캔"
     ),
+    decision_date: str = typer.Option(
+        "",
+        "--decision-date",
+        help=(
+            "판정을 내리는 날 YYYY-MM-DD (기본 = 오늘). 증거가 미래인지는 이 날짜로 잰다 — "
+            "스캔 날짜로 재면 스토어가 뒤처진 만큼 실재하는 문서가 미래로 오판된다. "
+            "과거 시점을 되돌려 재현할 때만 명시한다"
+        ),
+    ),
     provider: str = typer.Option(
         "claude_code",
         "--provider",
@@ -541,6 +550,7 @@ def research(
             theme,
             state_dir=paths().state,
             asof=asof or None,
+            decision_date=decision_date or None,
             with_store=not no_store,
         )
     except InputsError as e:

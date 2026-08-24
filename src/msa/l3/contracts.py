@@ -21,6 +21,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 from dataclasses import asdict, dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -175,6 +176,7 @@ class ResearchInputs:
 
     theme_id: str
     theme_name: str
+    #: **가격·재무 스냅샷의 마지막 날** (= 쓰는 스캔의 날짜). PIT 질의의 상한이다.
     asof: str
     industries: tuple[str, ...]
     scorecard: ThemeScorecard
@@ -184,6 +186,11 @@ class ResearchInputs:
     cases: tuple[CaseStudy, ...]
     scan_dir: str
     warnings: tuple[str, ...] = ()
+    #: **판정을 내리는 날.** 증거가 미래인지 아닌지는 이 날짜로 잰다 — `asof`(가격·재무가
+    #: 끊긴 날)로 재면 스토어가 뒤처진 만큼 실재하는 문서가 "미래" 로 오판된다
+    #: (2026-08-25 실측: 6테마 중 6테마). 비면 `run_research` 가 오늘로 채운다.
+    #: 되돌려 재현할 때는 반드시 명시한다.
+    decision_date: str = ""
 
     @property
     def member_tickers(self) -> tuple[str, ...]:
@@ -194,6 +201,7 @@ class ResearchInputs:
             theme_id=self.theme_id,
             theme_name=self.theme_name,
             asof=self.asof,
+            decision_date=self.decision_date,
             industries=self.industries,
             cycle_class=self.scorecard.cycle_class,
             members=self.members,
@@ -212,6 +220,7 @@ class BearInputs:
     cycle_class: str
     members: tuple[MemberSummary, ...]
     cases: tuple[CaseStudy, ...]
+    decision_date: str = ""
 
 
 # ---------------------------------------------------------------- 로더
@@ -408,6 +417,7 @@ def assemble_inputs(
     *,
     state_dir: Path,
     asof: str | None = None,
+    decision_date: str | None = None,
     cases_dir: Path | None = None,
     with_store: bool = True,
     top_members: int = 12,
@@ -442,6 +452,7 @@ def assemble_inputs(
         theme_id=theme_id,
         theme_name=theme.name_ko,
         asof=asof_s,
+        decision_date=decision_date or date.today().isoformat(),
         industries=tuple(theme.industry_match),
         scorecard=card,
         members=tuple(members),

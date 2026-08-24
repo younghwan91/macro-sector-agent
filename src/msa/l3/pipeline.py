@@ -79,6 +79,8 @@ class RoleOutputs:
 @dataclass
 class ResearchResult:
     theme_id: str
+    #: 라운드 식별자 = 쓴 스캔의 날짜. 산출물 디렉터리가 이것으로 묶인다
+    #: (`scan`·`research`·`picks` 가 같은 라운드를 공유한다).
     asof: str
     thesis: dict[str, Any]
     validation: ValidationResult
@@ -92,6 +94,8 @@ class ResearchResult:
     warnings: list[str]
     out_dir: Path | None = None
     thesis_path: Path | None = None
+    #: 판정을 내린 날. 증거의 미래 여부는 이것으로 쟀다.
+    decision_date: str = ""
 
 
 # ---------------------------------------------------------------- 증거 병합
@@ -127,6 +131,22 @@ def _remap_ids(obj: Any, m: dict[int, int]) -> Any:
     if isinstance(obj, list):
         return [_remap_ids(x, m) for x in obj]
     return obj
+
+
+#: 데이터 스냅샷이 판정일보다 이만큼 넘게 뒤처지면 리포트·thesis 에 경고로 남긴다.
+#: 임계가 아니라 **표시**다 — 판정을 막지 않는다. 오래된 가격으로 판단하고 있다는 사실이
+#: 보이지 않으면 나중에 원인을 못 찾는다 (CLAUDE.md §2).
+DATA_LAG_WARN_DAYS = 7
+
+
+def _days_between(a: str, b: str) -> int | None:
+    """`b - a` 일수. 둘 중 하나라도 못 읽으면 None (조용히 0 으로 만들지 않는다)."""
+    from datetime import date as _date
+
+    try:
+        return (_date.fromisoformat(b) - _date.fromisoformat(a)).days
+    except (TypeError, ValueError):
+        return None
 
 
 # ---------------------------------------------------------------- 역할 실행
@@ -353,6 +373,10 @@ def build_thesis(
         "evidence": [dict(e) for e in evidence],
         "inputs": {
             "scan_dir": inputs.scan_dir,
+            # 두 날짜를 모두 남긴다 — 하나로 합치면 어느 쪽 기준인지 다시 알 수 없다
+            "data_asof": inputs.asof,
+            "decision_date": generated_at,
+            "data_lag_days": _days_between(inputs.asof, generated_at),
             "scoreboard_rank": card.rank,
             "cycle_class": card.cycle_class,
             "members_summarized": len(inputs.members),
@@ -600,7 +624,7 @@ def _write_round_files(out_dir: Path, inputs: ResearchInputs, res: ResearchResul
         rows.append(
             rejection_row(
                 theme_id=res.theme_id,
-                rejected_at=res.asof,
+                rejected_at=res.decision_date or res.asof,
                 gate=res.gate,
                 cycle_confidence=res.confidence.value,
                 scoreboard_rank=inputs.scorecard.rank,
@@ -624,8 +648,16 @@ def run_research(
     """전체 파이프라인. 스키마 미달이면 `ThesisRejected` — 저장하지 않는다. 게이트 기각은 "
     "저장한다."""
     ledger = CostLedger()
+    # 판정일과 데이터 스냅샷일은 다른 물건이다 (2026-08-25). `asof` 는 가격·재무가 끊긴 날이고,
+    # 판정은 오늘 내린다. 증거가 "미래" 인지는 **판정일**로 재야 한다 — 스냅샷일로 재면
+    # 스토어가 뒤처진 만큼 실재하는 문서가 미래로 오판된다 (6테마 중 6테마에서 발생).
+    gen = generated_at or inputs.decision_date or inputs.asof
+    if gen < inputs.asof:
+        raise ValueError(
+            f"판정일 {gen} 이 데이터 스냅샷일 {inputs.asof} 보다 앞선다 — "
+            "존재하지 않는 데이터로 판정할 수 없다"
+        )
     roles, evidence = run_roles(inputs, provider, ledger)
-    gen = generated_at or inputs.asof
     thesis, gate, conf = build_thesis(inputs, roles, evidence, generated_at=gen)
     val = validate_thesis(
         thesis,
@@ -637,7 +669,7 @@ def run_research(
     if not val.ok:
         raise ThesisRejected(val)
     diff = thesis_diff(inputs.prior_thesis, thesis)
-    cc = count_contested(theses_root, gen, inputs.theme_id, gate.status)
+    cc = count_contested(theses_root, inputs.asof, inputs.theme_id, gate.status)
     report = render_report(
         inputs,
         thesis,
@@ -651,7 +683,8 @@ def run_research(
     )
     res = ResearchResult(
         theme_id=inputs.theme_id,
-        asof=gen,
+        asof=inputs.asof,
+        decision_date=gen,
         thesis=thesis,
         validation=val,
         gate=gate,

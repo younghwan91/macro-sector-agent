@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any, ClassVar
@@ -10,7 +11,7 @@ import pytest
 import yaml
 from typer.testing import CliRunner
 
-from _l3_synth import ASOF, axis1, inputs, write_scan_dir
+from _l3_synth import ASOF, axis1, inputs, valid_thesis, write_scan_dir
 from msa.config import REPO_ROOT
 from msa.l3.contracts import (
     L1_SCORE_FIELDS,
@@ -538,3 +539,61 @@ def test_same_round_rerun_sees_the_prior_output(tmp_path: Path) -> None:
     # 미래 라운드는 여전히 보지 않는다
     assert find_prior_thesis(root, "uranium", "2026-07-15").parent.name == "2026-07-01"
     assert find_prior_thesis(root, "cobalt", "2026-08-14") is None
+
+
+# ---------------------------------------------------------------- 판정일 ≠ 스냅샷일
+
+
+def test_evidence_future_is_measured_against_the_decision_date() -> None:
+    """스토어가 뒤처진 만큼 실재하는 문서가 "미래" 로 오판되면 안 된다.
+
+    2026-08-25 실측: 스토어가 08-14 에서 끊겼는데 웹에는 08-19 발행 문서(ZIM 2분기 실적,
+    Drewry WCI 주간 평가)가 실재한다. 판정일이 아니라 스냅샷일로 재는 바람에 6테마 중
+    6테마가 저장을 거부당했다. 날짜를 지어낸 것이 아니라 **기준을 잘못 댄 것**이었다.
+    """
+    from msa.l3.schema import validate_thesis
+
+    base = valid_thesis()
+    base["evidence"].append(
+        {
+            "id": 99,
+            "claim": "컨테이너 운임 주간 지수가 3주 연속 올랐다",
+            "source_url": "https://www.drewry.co.uk/wci",
+            "date": "2026-08-20",
+            "reliability": "high",
+        }
+    )
+    # 스냅샷일로 재면 미래로 잡힌다
+    bad = validate_thesis(base, asof="2026-08-14")
+    assert any("R_EVIDENCE_FUTURE" in e for e in bad.errors)
+    # 판정일로 재면 통과한다 — 그 문서는 판정 시점에 실재했다
+    good = validate_thesis(base, asof="2026-08-25")
+    assert not any("R_EVIDENCE_FUTURE" in e for e in good.errors)
+    # 판정일 이후는 여전히 막힌다 — 규칙이 약해진 것이 아니라 기준이 옮겨간 것이다
+    base["evidence"][-1]["date"] = "2026-09-01"
+    still = validate_thesis(base, asof="2026-08-25")
+    assert any("R_EVIDENCE_FUTURE" in e for e in still.errors)
+
+
+def test_decision_date_before_snapshot_is_refused(tmp_path: Path) -> None:
+    """존재하지 않는 데이터로 판정할 수는 없다."""
+    from msa.l3.pipeline import run_research
+
+    inp = dataclasses.replace(inputs(), decision_date="2026-01-01")
+    with pytest.raises(ValueError, match="앞선다"):
+        run_research(inp, MockProvider(), theses_root=tmp_path / "t", write=False)
+
+
+def test_thesis_records_both_dates_and_the_lag(tmp_path: Path) -> None:
+    """두 날짜를 합치면 어느 쪽 기준이었는지 다시 알 수 없다 — 둘 다 남긴다."""
+    from msa.l3.pipeline import run_research
+
+    inp = dataclasses.replace(inputs(), decision_date="2026-08-25")
+    res = run_research(inp, FixtureProvider(FIXTURES, "uranium"), theses_root=tmp_path / "t")
+    got = res.thesis["inputs"]
+    assert got["data_asof"] == inp.asof
+    assert got["decision_date"] == "2026-08-25"
+    assert got["data_lag_days"] == 11
+    # 라운드 묶음은 스캔 날짜로 유지된다 — scan·research·picks 가 같은 라운드를 공유한다
+    assert res.asof == inp.asof
+    assert res.decision_date == "2026-08-25"
