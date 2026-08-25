@@ -447,9 +447,19 @@ def fundamental_features(
     # 순부채 / EBITDA (EBITDA ≤ 0 이면 순부채 / 시총)
     nd = latest["debt"] - latest["cashneq"]
     f["net_debt"] = nd
-    eb_pos = latest["ebitda_ttm"] > 0
-    f["net_debt_ebitda"] = (nd / latest["ebitda_ttm"]).where(eb_pos, nd / f["mcap"])
-    f["nd_basis"] = pd.Series(np.where(eb_pos, "ebitda", "mcap"), index=f.index)
+    # **적자와 결측을 구분한다.** `ebitda_ttm > 0` 은 NaN 에서도 False 라, 예전에는 EBITDA 가
+    # 아예 없는 종목이 "적자" 와 같은 경로로 들어가 리포트에 "적자 대체" 로 찍혔다.
+    # 2026-08-25 실측: GSL·CMRE 는 최신 분기 `ebitda` 가 NULL 일 뿐 **크게 흑자**다
+    # (GSL 직전 3분기 EBITDA 130~139M · TTM EBIT 420M). 사람이 표를 보고 흑자 기업을
+    # 적자로 판단할 수 있었다. 판정은 세 경우 모두 같다(시총 기준) — 바뀌는 것은 **표시**다.
+    eb = latest["ebitda_ttm"]
+    eb_pos = eb > 0
+    eb_missing = eb.isna()
+    f["net_debt_ebitda"] = (nd / eb).where(eb_pos, nd / f["mcap"])
+    f["nd_basis"] = pd.Series(
+        np.where(eb_pos, "ebitda", np.where(eb_missing, "mcap_missing", "mcap_nonpos")),
+        index=f.index,
+    )
     f.loc[f["net_debt_ebitda"].isna(), "nd_basis"] = "n/a"
     f["maturity_wall_12m"] = latest["debtc"] / f["mcap"]
     ic = latest["ebit_ttm"] / latest["intexp_ttm"]

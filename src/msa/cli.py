@@ -151,6 +151,7 @@ def data_status(
             )
 
         _echo_store_lag(store.table_stats())
+        _echo_required_tickers(store)
 
         typer.echo("")
         typer.echo("결측률 (전체 행 대비 NULL 비율)")
@@ -359,6 +360,34 @@ def _echo_store_lag(stats: list[Any]) -> None:
         "    uv run opt-factor ingest --store ~/data/us_micro.duckdb \\\n"
         "        --provider sharadar --tables sf1,sep,daily --since $(date -d '-3 day' +%F)"
     )
+
+
+def _echo_required_tickers(store: Any) -> None:
+    """스토어에 **반드시 있어야 하는 종목**이 있는지 본다. 최신도만 보면 놓친다.
+
+    2026-08-25 실측: 일간 증분 적재를 `--tables sf1,sep,daily` 로 돌렸더니 `prices` 가
+    ETF 없이 다시 만들어져 **SPY 가 0행**이 됐다. 스토어 최신도는 "1일 전 · 정상" 이었고
+    행수도 비슷해서 `msa data status` 로는 아무 이상이 없어 보였다. 스캔을 돌려야 알았다.
+    Sharadar 는 주식(`sep`)과 펀드(`sfp`)를 다른 테이블로 준다 (`docs/18` §6).
+    """
+    from msa.data.store import ETF_IN_STORE
+
+    missing = [t for t in ETF_IN_STORE if not int(store.scalar(_TICKER_COUNT_SQL.format(t=t)))]
+    if not missing:
+        return
+    typer.echo("")
+    typer.echo(
+        f"**필수 종목이 prices 에 없다: {', '.join(missing)}** — 스캔이 멈춘다.\n"
+        "  SPY 는 RS·상대거래대금의 기준이라 없으면 C 블록이 통째로 무의미하다.\n"
+        "  원인은 대개 적재에서 `sfp`(펀드 가격) 테이블이 빠진 것이다 (docs/18 §6):\n"
+        "    uv run opt-factor ingest --store ~/data/us_micro.duckdb \\\n"
+        "        --provider sharadar --tables sfp --since 2020-01-01"
+    )
+
+
+#: 종목 하나의 행수. `Store.scalar` 는 파라미터를 받지 않아 티커를 끼워 넣는다 —
+#: 값은 `ETF_IN_STORE` 상수라 외부 입력이 아니다.
+_TICKER_COUNT_SQL = "select count(*) from prices where ticker = '{t}'"
 
 
 @data_app.command("fred-fetch")

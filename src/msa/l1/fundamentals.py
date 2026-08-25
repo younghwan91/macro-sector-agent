@@ -230,17 +230,23 @@ select
     median(case when mcap > 0 and fcf_ttm is not null then fcf_ttm / mcap end) as fcf_yield_med,
     median(case when (equity - coalesce(intangibles, 0)) > 0 and ev > 0
                 then ev / (equity - coalesce(intangibles, 0)) end) as ev_replacement_med,
-    sum(capex_ttm) as capex_ttm_sum,
+    -- 비율의 분자·분모는 **같은 종목 집합**에서 나와야 한다. 한쪽만 짝을 맞추면 분자에
+    -- 상대 항이 없는 종목이 섞여 비가 부풀거나 줄어든다 — 2026-08-25 실측: capex 만 짝을
+    -- 안 맞춰 `telecom_carriers` capex/D&A 가 17.12(올바른 값 0.83, +1953%)로 나왔고
+    -- 40개 테마가 영향권이었다. 같은 SQL 의 assets_ss·shares_ss·revenue_ss 는 처음부터
+    -- 양방향으로 짝을 맞춘다 — 의도는 짝 맞추기였고 이 세 쌍만 빠져 있었다.
+    sum(case when da_ttm is not null then capex_ttm end) as capex_ttm_sum,
     sum(case when capex_ttm is not null then da_ttm end) as da_ttm_sum,
     sum(assets) as assets_sum,
     sum(revenue_ttm) as revenue_ttm_sum,
-    sum(ebitda_ttm) as ebitda_ttm_sum,
-    sum(ebit_ttm) as ebit_ttm_sum,
+    sum(case when debt is not null and cashneq is not null then ebitda_ttm end)
+        as ebitda_ttm_sum,
+    sum(case when invcap is not null then ebit_ttm end) as ebit_ttm_sum,
     sum(taxexp_ttm) as taxexp_ttm_sum,
     sum(netinc_ttm) as netinc_ttm_sum,
     sum(case when ebit_ttm is not null then invcap end) as invcap_sum,
-    sum(debt) as debt_sum,
-    sum(cashneq) as cash_sum,
+    sum(case when ebitda_ttm is not null and cashneq is not null then debt end) as debt_sum,
+    sum(case when ebitda_ttm is not null and debt is not null then cashneq end) as cash_sum,
     sum(case when assets_prev is not null then assets end) as assets_ss,
     sum(case when assets is not null then assets_prev end) as assets_prev_ss,
     count(case when assets is not null and assets_prev is not null then 1 end) as n_assets_ss,

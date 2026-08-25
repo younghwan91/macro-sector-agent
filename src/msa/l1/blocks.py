@@ -159,6 +159,12 @@ TEXT_OUTPUTS = ("verdict_post_ss", "verdict_pre_ss", "unit_source", "axis1_statu
 #: 무한정 끌어오면 폐기된 시리즈가 살아 있는 것처럼 보이고, 그것이 이 축을 못 믿게 만든다.
 PHYSICAL_STALE_TOL_MONTHS = 3
 
+#: 축 1 참조에 필요한 **최소 관측 수.** 10년 CAGR 을 내려면 월간 시리즈 기준 120개가
+#: 필요하고, 그보다 짧으면 판정이 원리적으로 불가능하다. 값은 `M10Y`(=120) 그대로이고
+#: 새로 고른 임계가 아니다 — 축 1 의 정의가 이미 10년이다 (`docs/04` 축 1).
+#: 분기 시리즈면 40개면 충분하지만, 현재 선언된 `physical_ref` 는 전부 월간이다.
+MIN_REF_OBS = M10Y
+
 
 def _to_panel(series: pd.Series, me: pd.DatetimeIndex) -> pd.Series:
     """참조 시계열을 패널 월말 격자에 올린다 — 발표 시차만큼 앞으로 끌어오되 한도가 있다.
@@ -752,6 +758,16 @@ def _unit_block(
             ok = False  # CPI 없이 nominal 은 실질화 불가
         if ref.kind == "price" and not ss:
             ok = False  # 동일 구성원 매출 없이는 가격지수 폴백 불가
+        # 축 1 은 **10년 CAGR** 을 낸다. 참조가 그만큼 없으면 판정이 원리적으로 불가능한데,
+        # 예전에는 그것을 `data_ok` 로 세고 경고도 남기지 않았다 — "데이터 있음 27" 안에
+        # 판정을 낼 수 없는 시리즈가 섞여 있었다 (2026-08-25 실측: `EXHOSLUSM495S` 가
+        # 13개 관측뿐이라 `home_improvement`·`real_estate_services` 두 테마가 조용히 죽었다).
+        # **"데이터 있음" 은 "판정할 수 있는 데이터가 있음" 이어야 한다** (`CLAUDE.md` §2).
+        if ok and ps is not None and ps.series is not None:
+            n_obs = int(ps.series.dropna().shape[0])
+            if n_obs < MIN_REF_OBS:
+                ok = False
+                unit_source[col] = f"{ref.source}:{ref.symbol}:관측 {n_obs} < {MIN_REF_OBS}"
         if not ok:
             status[col] = Axis1Status.DATA_MISSING.value
             continue

@@ -114,7 +114,9 @@ def test_runway_and_net_debt_rules() -> None:
     feat, _ = F.fundamental_features(qt, asof, mcap)
     assert feat.loc["BURN", "cash_runway_q"] == pytest.approx(5.0)
     assert np.isinf(feat.loc["POS", "cash_runway_q"])
-    assert feat.loc["LOSS", "nd_basis"] == "mcap"
+    # 적자와 결측을 나눈다 — 결측은 흑자일 수도 있다 (2026-08-25: GSL·CMRE 는 최신 분기
+    # ebitda 만 NULL 이고 TTM EBIT 420M 인데 "적자 대체" 로 찍혔다)
+    assert feat.loc["LOSS", "nd_basis"] == "mcap_nonpos"
     assert feat.loc["LOSS", "net_debt_ebitda"] == pytest.approx(100 / 400)
     assert feat.loc["BURN", "nd_basis"] == "ebitda"
     assert feat.loc["BURN", "net_debt_ebitda"] == pytest.approx(-100 / 80)
@@ -466,3 +468,27 @@ def test_vcp_base_window_is_declared_252_not_60() -> None:
     out = F.price_features(px, pd.Timestamp("2026-08-14"))
     assert out.loc["SHORT", "vcp_base"] is None
     assert out.loc["FULL", "vcp_base"] is not None
+
+
+def test_missing_ebitda_is_not_reported_as_a_loss() -> None:
+    """`ebitda_ttm` 이 NaN 인 종목을 적자와 같은 칸에 넣지 않는다.
+
+    `ebitda_ttm > 0` 은 NaN 에서도 False 라 예전에는 둘이 같은 경로였고, 리포트가 흑자
+    기업을 "적자 대체" 로 찍었다 (2026-08-25: GSL 직전 3분기 EBITDA 130~139M · TTM EBIT
+    420M 인데 최신 분기만 NULL). **판정은 셋 다 시총 기준으로 같다 — 바뀌는 것은 표시다.**
+    """
+    import numpy as np
+    import pandas as pd
+
+    from msa.l4.picks import _ND_BASIS_TEXT
+
+    eb = pd.Series({"POS": 100.0, "NEG": -50.0, "MISS": np.nan})
+    eb_pos = eb > 0
+    basis = pd.Series(
+        np.where(eb_pos, "ebitda", np.where(eb.isna(), "mcap_missing", "mcap_nonpos")),
+        index=eb.index,
+    )
+    assert list(basis) == ["ebitda", "mcap_nonpos", "mcap_missing"]
+    # 표시 문구가 둘을 구분하고, 결측 쪽은 적자가 아님을 명시한다
+    assert "적자라는 뜻이 아니다" in _ND_BASIS_TEXT["mcap_missing"]
+    assert "EBITDA≤0" in _ND_BASIS_TEXT["mcap_nonpos"]

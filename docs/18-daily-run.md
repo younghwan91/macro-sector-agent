@@ -227,21 +227,33 @@ grep -H "편입 가능\|cycle_confidence" /tmp/msa_*.log
 ```bash
 cd ~/Documents/git/opt_portfolio
 uv run opt-factor ingest --store ~/data/us_micro.duckdb \
-    --provider sharadar --tables sf1,sep,daily \
+    --provider sharadar --tables sf1,sep,sfp,daily \
     --since $(date -d '-3 day' +%F)
 uv run opt-factor status --store ~/data/us_micro.duckdb
 ```
 
 3일치를 겹쳐 받는 것은 벤더의 사후 수정분을 잡기 위해서다. `SHARADAR_API_KEY` 가 필요하다.
 
-> **이 명령은 `opt_portfolio/docs/factor-system/04-data-contract.md` §5 에서 옮겨 적은 것이고
-> 이 저장소에서 실행해 검증한 적은 없다** (2026-08-25). 공유 스토어에 쓰는 작업이라 임의로
-> 돌리지 않았다. 처음 돌릴 때 결과를 확인하고 이 문단을 고쳐라.
+> **`sfp` 를 빼면 스캔이 멈춘다 — 2026-08-25 에 실제로 겪었다.**
+> Sharadar 는 주식 가격(`sep`)과 **펀드 가격(`sfp`)을 다른 테이블**로 준다. `sfp` 없이
+> 적재하면 `prices` 가 ETF 없이 다시 만들어지고 **SPY·QQQ·IWM 이 0행**이 된다. 그러면
+> `msa scan` 이 "SPY 가 prices 에 없다 — 상대지표를 계산할 수 없다" 로 멈춘다.
+> (멈추는 것이 옳다: SPY 는 RS·상대거래대금의 기준이라 없으면 C 블록이 통째로 무의미하다.)
+>
+> 복구: `--tables sfp --since 2020-01-01` 로 펀드 가격만 다시 받는다. RS 는 252거래일
+> 이력을 쓰므로 기간을 넉넉히 잡는다. 적재기가 `~/data/us_micro.duckdb.prev<타임스탬프>`
+> 백업을 남기므로 최악의 경우 되돌릴 수 있다.
+>
+> 그 외의 부분은 `opt_portfolio/docs/factor-system/04-data-contract.md` §5 에서 옮겨 적은
+> 것이고 이 저장소에서 전부 검증하지는 않았다. 공유 스토어에 쓰는 작업이라 임의로 돌리지 않는다.
 
 **스토어가 뒤처지면 어떻게 되나.** 스캔은 스냅샷 시점 가격으로 순위를 내고, 판별은 **오늘 날짜
 웹**을 본다. 그 간극 자체는 오류가 아니다 — 오늘 결정을 내리는 데 어제 가격을 쓰는 것뿐이다.
 다만 간극이 보이지 않으면 나중에 원인을 못 찾으므로, thesis 에 `data_lag_days` 가 남고
 7일(`DATA_LAG_WARN_DAYS`)을 넘으면 리서치 경고가 뜬다.
+
+**적재 뒤에는 반드시 `msa data status` 를 본다** — 최신도와 행수가 함께 나온다.
+`prices` 의 종목 수가 **줄었으면** 적재가 무언가를 지운 것이다. 최신도만 보고 넘어가지 마라.
 
 **현재 상태 확인**은 `msa data status` — `prices`·`fundamentals` 의 `end` 가 스토어의 마지막 날이다.
 

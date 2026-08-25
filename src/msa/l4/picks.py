@@ -113,6 +113,15 @@ JUDGMENT_COLUMNS: tuple[str, ...] = (
 
 #: `vcp_base` 를 싣는 곳마다 붙는 결함 표시 (`docs/06` §4 · `features.vcp_base` docstring).
 #: 표시 없이 실으면 사람을 오도한다 — 이 값은 **폭락 중에도 True 가 나온다.**
+#: `nd_basis` → 표에 찍는 말. **적자와 결측은 다른 사실이다** — 결측은 벤더가 그 분기
+#: `ebitda` 를 안 준 것이고, 그 종목이 흑자일 수도 있다 (2026-08-25 실측: GSL 직전 3분기
+#: EBITDA 130~139M · TTM EBIT 420M 인데 최신 분기만 NULL 이라 "적자 대체" 로 찍혔다).
+_ND_BASIS_TEXT: dict[str, str] = {
+    "mcap_nonpos": "EBITDA≤0 → 시총 대체",
+    "mcap_missing": "EBITDA 결측 → 시총 대체 (적자라는 뜻이 아니다)",
+    "mcap": "시총 대체",  # 옛 산출물 호환
+}
+
 VCP_DEFECT_NOTE = (
     "VCP* — `vcp_base` 는 2026-08-25 에 폭락 오탐을 고쳤다(마지막 수축 저점을 잃으면 False). "
     "남은 한계 둘: 수축의 **최신성을 요구하지 않고**(베이스 뒤 오래 횡보해도 True), "
@@ -392,7 +401,10 @@ def _unapplied_filters(fs: FeatureSet, ranking: pd.DataFrame) -> dict[str, dict[
 
 
 def _nd_basis_counts(ranking: pd.DataFrame) -> dict[str, int]:
-    """적격 종목의 `nd_basis` 분포 — `ebitda`(순부채/EBITDA) · `mcap`(EBITDA≤0 대체) · `n/a`."""
+    """`nd_basis` 분포 — `ebitda` · `mcap_nonpos`(EBITDA≤0) · `mcap_missing`(EBITDA 결측) · `n/a`.
+
+    적자와 결측을 나눠 센다: 결측은 **흑자일 수도 있다** (2026-08-25 실측: GSL·CMRE).
+    """
     if ranking.empty or "nd_basis" not in ranking.columns:
         return {}
     return {str(k): int(v) for k, v in ranking["nd_basis"].astype(str).value_counts().items()}
@@ -591,14 +603,13 @@ def _stock_block(tk: str, r: pd.Series, theme: str, group: str) -> list[str]:
     )
     if r.get("name") is not None and str(r.get("name")) != "nan":
         head += f"   ({r['name']})"
-    nd_basis = r.get("nd_basis", "n/a")
-    nd_txt = (
-        f"ND/EBITDA {f(r['net_debt_ebitda'])}×"
-        if nd_basis == "ebitda"
-        else f"ND/시총 {f(r['net_debt_ebitda'])}×(적자 대체)"
-        if nd_basis == "mcap"
-        else "ND/EBITDA n/a"
-    )
+    nd_basis = str(r.get("nd_basis", "n/a"))
+    if nd_basis == "ebitda":
+        nd_txt = f"ND/EBITDA {f(r['net_debt_ebitda'])}×"
+    elif nd_basis in _ND_BASIS_TEXT:
+        nd_txt = f"ND/시총 {f(r['net_debt_ebitda'])}×({_ND_BASIS_TEXT[nd_basis]})"
+    else:
+        nd_txt = "ND/EBITDA n/a"
     dil_txt = _signed_pct(r.get("dilution_3y"), "%/y")
     rb = r.get("runway_basis_q")
     rb_txt = "" if rb is None or pd.isna(rb) or float(rb) == 4 else f"({int(rb)}Q 기준)"

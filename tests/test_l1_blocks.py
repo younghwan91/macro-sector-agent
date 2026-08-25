@@ -370,3 +370,16 @@ def test_lagged_reference_reaches_the_last_bucket() -> None:
     assert stale.loc["2026-08-31"] != stale.loc["2026-08-31"]  # NaN
     filled = int(stale.notna().sum())
     assert filled == PHYSICAL_STALE_TOL_MONTHS + 1  # 관측 당월 + 한도 개월
+
+
+def test_short_reference_series_is_reported_as_missing_not_ok() -> None:
+    """축 1 은 10년 CAGR 을 낸다 — 참조가 그만큼 없으면 판정이 원리적으로 불가능하다.
+
+    예전에는 그런 시리즈도 `data_ok` 로 세고 경고를 남기지 않아, "데이터 있음 27" 안에
+    판정을 못 내는 것이 섞여 있었다 (2026-08-25: `EXHOSLUSM495S` 13개 관측 → 두 테마가
+    `ok_external` 인데 verdict 가 비어 있었다). `CLAUDE.md` §2 가 걸려야 할 자리다.
+    """
+    from msa.l1.blocks import M10Y, MIN_REF_OBS
+
+    # 새 임계가 아니다 — 축 1 의 정의(10년)가 그대로 최소 관측 수다
+    assert MIN_REF_OBS == M10Y == 120
