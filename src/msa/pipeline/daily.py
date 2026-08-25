@@ -84,7 +84,7 @@ from msa.pipeline.run import (
     run_cadence_check,
     select_themes,
 )
-from msa.thesis import NO_THESIS_NOTE, thesis_head
+from msa.thesis import NO_THESIS_NOTE, all_theses, thesis_head
 
 log = logging.getLogger(__name__)
 
@@ -413,12 +413,16 @@ def roster_table_md(picks: list[dict[str, Any]], new_top: set[str]) -> list[str]
     return out
 
 
-def excluded_lines_md(ex: list[dict[str, Any]]) -> list[str]:
+def excluded_lines_md(ex: list[dict[str, Any]], theme: str = "<theme>") -> list[str]:
     """제외와 사유 — 명단 **아래**에 붙는다. "왜 이 종목이 없나" 를 다이제스트만 보고 답할 수 있게.
 
-    하드 필터 제외는 **한 줄씩 사유와 함께** 적는다. 상장 단계 제외(폐지·가격 없음)는 테마당
-    수십 개라 표를 덮어 버려 **티커를 한 줄에 모아** 적는다 — 한 종목도 빠뜨리지 않으므로
-    절단이 아니다 (`CLAUDE.md` §2). 전문은 `msa picks <theme>` 의 `excluded.csv`.
+    하드 필터 제외는 **한 줄씩 사유와 함께** 적는다 — 런웨이·부채 같은 판단 재료가 거기 있다.
+
+    상장 단계 제외(폐지·가격 없음)는 **수와 사유만** 적고 티커 전문은 `excluded.csv` 로 넘긴다
+    (2026-08-25). 예전에는 티커를 한 줄에 전부 나열했는데, `media_streaming` 만 160종목이라
+    다이제스트 24KB 중 대부분이 `TWX`·`VIAB` 같은 폐지 티커 문자열이었고 정작 봐야 할
+    hard_filter 사유가 그 사이에 묻혔다. **수와 경로를 적으면 절단이 아니다** (`CLAUDE.md` §2 는
+    "잘린 것을 표시하라" 이지 "전문을 인라인하라" 가 아니다).
     """
     if not ex:
         return ["", "제외 0"]
@@ -429,8 +433,8 @@ def excluded_lines_md(ex: list[dict[str, Any]]) -> list[str]:
     if listing:
         why = sorted({str(x["reason"]) for x in listing})
         out.append(
-            f"- [listing] {len(listing)}종목 ({' · '.join(why)}): "
-            + ", ".join(f"`{x['ticker']}`" for x in listing)
+            f"- [listing] {len(listing)}종목 ({' · '.join(why)}) — 티커 전문은 "
+            f"`state/picks/<date>/{theme}/excluded.csv`"
         )
     return out
 
@@ -461,6 +465,25 @@ def new_item_lines(diff: dict[str, Any]) -> list[str]:
     return L
 
 
+def _eligibility_cell(theme: dict[str, Any]) -> str:
+    """상위 K 표의 `편입` 열. 순위표만 보고 사는 것을 막는 유일한 열이다."""
+    th = theme.get("thesis") or {}
+    if not th.get("found"):
+        return "판별 안 함"
+    conf = th.get("cycle_confidence")
+    c = f"{float(conf):g}" if isinstance(conf, int | float) else "?"
+    return f"**가능** {c}" if th.get("portfolio_eligible") else f"불가 {c}"
+
+
+def _conclusion_lines(digest: dict[str, Any]) -> list[str]:
+    """다이제스트 머리의 결론. `readme_block._headline` 을 그대로 쓴다 — 같은 사실에서
+    두 문서가 갈라지지 않게."""
+    from msa.ops.readme_block import _headline
+
+    verdict, detail = _headline(digest)
+    return [f"> **{verdict}**", ">", f"> {detail}", ""]
+
+
 def render_digest_md(digest: dict[str, Any]) -> str:
     """사람용 다이제스트 — 머리에 정직성 한 줄, 상위 K 표, 테마별 상위 N 한 줄씩, 새로 올라온
     것, 보유 점검 요약, "고르면 다음"."""
@@ -469,6 +492,9 @@ def render_digest_md(digest: dict[str, Any]) -> str:
     L = [
         f"# 일간 후보 다이제스트 · {digest['asof']}",
         "",
+        # 결론이 먼저다. **README 와 같은 함수**를 쓴다 — 두 산출물이 다른 결론을 말하는 것을
+        # 구조적으로 막는다 (2026-08-25 검토 지적: "결론을 모르겠다").
+        *_conclusion_lines(digest),
         HONESTY_HEADER,
         "",
         f"스캔 기준일 {digest['scan'].get('asof')} (스토어 {digest['scan'].get('store_end')}) · "
@@ -481,14 +507,15 @@ def render_digest_md(digest: dict[str, Any]) -> str:
         "",
         f"## 상위 K={digest['params']['top_k']} 테마",
         "",
-        "| 순위 | 테마 | 점수 | pool | 플래그 | 변화 |",
-        "|---:|---|---:|---:|---|---|",
+        "| 순위 | 테마 | 점수 | pool | **편입** | 플래그 | 변화 |",
+        "|---:|---|---:|---:|---|---|---|",
     ]
     for t in themes:
         rank = "지정" if t["source"] == "extra" else ("—" if t["rank"] is None else str(t["rank"]))
         L.append(
             f"| {rank} | {t['theme']} | {_f2(t['score'])} | {_f2(t['pool'])} | "
-            f"{', '.join(t['flags']) or '—'} | {_arrow(t['theme'], diff)} |"
+            f"{_eligibility_cell(t)} | {', '.join(t['flags']) or '—'} | "
+            f"{_arrow(t['theme'], diff)} |"
         )
     dem = digest.get("demoted") or []
     if dem:
@@ -529,18 +556,46 @@ def render_digest_md(digest: dict[str, Any]) -> str:
         rank = (
             "지정" if t["source"] == "extra" else ("—" if t["rank"] is None else f"{t['rank']}위")
         )
-        head = f"### ■ {t['theme']}  (스코어보드 {rank} · {_arrow(t['theme'], diff)})"
+        th = t.get("thesis") or {}
+        # 제목에 편입 여부를 박는다. 괄호 안 다섯 항목 중 넷째로 묻히면 훑는 눈에 안 걸린다.
+        if not th.get("found"):
+            mark = " — 판별 안 함"
+        elif th.get("portfolio_eligible"):
+            mark = " — **편입 가능**"
+        else:
+            mark = " — **편입 불가** (아래 명단은 관찰용)"
+        head = f"### ■ {t['theme']}{mark}  (스코어보드 {rank} · {_arrow(t['theme'], diff)})"
         L += ["", head + (f"  {blocks_txt}" if blocks_txt else ""), ""]
-        L += (t.get("thesis") or {}).get("lines") or [f"논지: {NO_THESIS_NOTE}"]
+        L += th.get("lines") or [f"논지: {NO_THESIS_NOTE}"]
         if t["picks_error"]:
             L += ["", f"- picks 실패: {t['picks_error']}"]
             continue
         new_top = set(diff.get("stocks", {}).get(t["theme"], {}).get("new_in_top", []))
         if diff.get("first_run"):
             new_top = {p["ticker"] for p in t["picks"]}
-        L += ["", f"적격 {len(t['eligible_tickers'])} 종목 전부 · 동일가중:", ""]
+        n_ok = len(t["eligible_tickers"])
+        if th.get("found") and not th.get("portfolio_eligible"):
+            L += [
+                "",
+                f"> ⚠ **이 테마는 편입 불가 판정을 받았다.** 아래 {n_ok}종목은 재무 하드 필터를",
+                "> 통과했다는 **사실**일 뿐 후보가 아니다. 사려면 테마가 먼저 통과해야 한다.",
+                "",
+                f"하드필터 통과 {n_ok} 종목 (선정이 아니다):",
+                "",
+            ]
+        elif not th.get("found"):
+            L += [
+                "",
+                f"> ⚠ **이 테마는 판별을 거치지 않았다.** 아래 {n_ok}종목은 함정 여부가",
+                "> 판정되지 않은 테마의 구성원이다 — `msa research` 로 판정을 먼저 받아라.",
+                "",
+                f"하드필터 통과 {n_ok} 종목 (선정이 아니다):",
+                "",
+            ]
+        else:
+            L += ["", f"하드필터 통과 {n_ok} 종목 전부 · 테마 내 동일가중:", ""]
         L += roster_table_md(t["picks"], new_top)
-        L += excluded_lines_md(t.get("excluded") or [])
+        L += excluded_lines_md(t.get("excluded") or [], t["theme"])
     L += ["", "## 오늘 새로 올라온 것", ""]
     news = new_item_lines(diff)
     L += [f"- {x}" for x in news] or ["- (없음)"]
@@ -917,6 +972,19 @@ def run_daily(
             "bucket": scan.meta.get("bucket"),
         },
         "themes": themes,
+        # 판별 결과의 모집단은 **상위 K 가 아니라 판별된 전부**다. 상위 K 로 세면 순위 밖의
+        # 편입 가능 테마가 사라져 "통과 0개" 라는 거짓이 나온다 (2026-08-25 실측).
+        "judged": [
+            {
+                "theme": h.theme,
+                "portfolio_eligible": h.portfolio_eligible,
+                "cycle_confidence": h.cycle_confidence,
+                "gate": h.gate,
+                "source": h.source,
+                "in_top_k": h.theme in {t.get("theme") for t in themes},
+            }
+            for h in all_theses(asof_s)
+        ],
         "demoted": [{"theme": th, "rank": rk} for th, rk in sel.demoted],
         "diff": diff,
         "positions_check": pc,

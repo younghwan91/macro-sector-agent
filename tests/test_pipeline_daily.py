@@ -461,3 +461,63 @@ def test_daily_smoke_on_real_cache() -> None:
         # diff 계약은 `diff_digests(top_n=picks_per_theme)` 가 앞 N 개만 보게 해 유지된다.
         assert t["picks"], "적격이 0 이면 테마가 다이제스트에 실리지 않아야 한다"
         assert all(p["group"] == "ELIGIBLE" for p in t["picks"])
+
+
+# ---------------------------------------------------------------- 편입 불가 표시
+
+
+def test_digest_marks_ineligible_themes_at_every_level() -> None:
+    """편입 불가 테마의 명단이 무경고로 펼쳐지면 안 된다 (2026-08-25 검토 지적).
+
+    README 만 고쳐서는 사고가 안 막힌다 — 매일 읽는 것은 digest.md 다.
+    """
+    digest = {
+        "asof": "2026-08-14",
+        "params": {"top_k": 1, "picks_per_theme": 5},
+        "scan": {"asof": "2026-08-14", "store_end": "2026-08-14"},
+        "diff": {"first_run": True},
+        "themes": [
+            {
+                "theme": "trap",
+                "source": "scan",
+                "rank": 1,
+                "score": 0.8,
+                "pool": 0.7,
+                "flags": [],
+                "blocks": {},
+                "picks": [{"ticker": "AAA", "rank": 1}],
+                "eligible_tickers": ["AAA"],
+                "excluded": [],
+                "picks_error": None,
+                "thesis": {
+                    "found": True,
+                    "gate": "passed",
+                    "portfolio_eligible": False,
+                    "cycle_confidence": 0.45,
+                    "lines": ["논지: …"],
+                },
+            }
+        ],
+        "judged": [{"theme": "trap", "portfolio_eligible": False, "in_top_k": True}],
+        "demoted": [],
+        "positions_check": None,
+        "note": D.HONESTY_HEADER,
+    }
+    md = D.render_digest_md(digest)
+    assert "편입 가능 판정을 받은 테마가 없다" in md  # ① 머리 결론
+    assert "| 불가 0.45 |" in md  # ② 상위 K 표의 편입 열
+    assert "### ■ trap — **편입 불가**" in md  # ③ 테마 제목
+    assert "⚠ **이 테마는 편입 불가 판정을 받았다.**" in md  # ④ 표 바로 위
+    assert "선정이 아니다" in md
+    assert "적격 1 종목 전부 · 동일가중" not in md, "탈락 테마를 '선정'이라 부르면 안 된다"
+
+
+def test_listing_dump_is_folded_to_a_path() -> None:
+    """폐지 티커 전문이 매일 읽는 문서를 덮으면 안 된다 — 수와 경로면 절단이 아니다."""
+    ex = [{"ticker": f"D{i}", "stage": "listing", "reason": "폐지"} for i in range(160)]
+    ex.append({"ticker": "SOC", "stage": "hard_filter", "reason": "런웨이 0.15분기 < 4"})
+    lines = D.excluded_lines_md(ex, "media_streaming")
+    text = "\n".join(lines)
+    assert "160종목" in text and "excluded.csv" in text
+    assert "`D0`" not in text and "`D159`" not in text
+    assert "런웨이 0.15분기 < 4" in text, "hard_filter 사유는 인라인 유지"

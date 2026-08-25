@@ -29,10 +29,13 @@ TOP_N = 8
 
 #: **"지금 볼 만한 자리"의 기준** — 52주 고점 대비 이만큼 아래.
 #:
-#: 이것은 선정 임계가 **아니다.** 아무것도 거르지 않고 순위도 바꾸지 않는다. 명단을 읽는
-#: 사람이 "고점 근처인 것과 눌린 것"을 구분하도록 **줄 하나를 더 쓰는** 표시일 뿐이다.
-#: 값 −15% 는 흔한 얕은 조정(−5~−10%)과 의미 있는 눌림을 가르는 자리로 골랐고, 선정에
-#: 쓰이지 않으므로 `CLAUDE.md` §1 의 대상이 아니다 — 이 값을 바꿔도 어떤 판정도 안 바뀐다.
+#: 시스템 판정(게이트·확신도·명단·비중)은 이 값과 무관하다. **그러나 사람이 읽는 결론은
+#: 이 값 하나가 정한다** — "차트를 볼 것 N종목" 이 될지 "지금 들어갈 자리는 없다" 가 될지,
+#: 어느 종목이 이름으로 불릴지. 사람이 실제로 행동하는 유일한 출력이 여기 걸려 있으므로
+#: **검토 대상에서 빼지 마라.**
+#:
+#: 근거: **없다 — 선언값이다.** 도메인 문헌에서 온 값이 아니고 데이터에 맞춰 고르지도
+#: 않았다(스윕 없음). 바꾸려면 근거를 적고 바꿔라. 결론 문장에도 선언값임을 표기한다.
 PULLBACK_MARK = -0.15
 
 
@@ -45,10 +48,10 @@ def _fmt_money(v: Any) -> str:
         x = float(v)
     except (TypeError, ValueError):
         return "—"
-    for unit, div in (("T", 1e12), ("B", 1e9), ("M", 1e6)):
+    for unit, div in (("T", 1e12), ("B", 1e9), ("M", 1e6), ("K", 1e3)):
         if abs(x) >= div:
             return f"${x / div:.1f}{unit}"
-    return f"${x:,.0f}"
+    return f"${x:,.2f}" if abs(x) < 100 else f"${x:,.0f}"
 
 
 def _verdict_rows(themes: list[dict[str, Any]]) -> list[str]:
@@ -63,21 +66,35 @@ def _verdict_rows(themes: list[dict[str, Any]]) -> list[str]:
             # 게이트 status 가 아니라 **편입 여부**를 쓴다 — 둘은 다르다.
             mark = "**편입 가능**" if th.get("portfolio_eligible") else "편입 불가"
             verdict = f"{mark} · {conf_s}"
-        n_pick = len(t.get("eligible_tickers") or [])
-        flags = t.get("flags") or ""
+        # 0 과 "모름" 은 다르다. picks 가 안 돌았으면 `—`, 돌았는데 0 이면 `0`.
+        n_pick: Any = len(t.get("eligible_tickers") or [])
+        if t.get("picks_error") or t.get("picks") is None:
+            n_pick = "—"
+        raw_flags = t.get("flags") or ""
+        flags = ", ".join(str(x) for x in raw_flags) if isinstance(raw_flags, list) else raw_flags
         score = t.get("score")
         score_s = f"{float(score):.2f}" if isinstance(score, int | float) else "—"
         rows.append(
             f"| {t.get('rank', '—')} | `{t.get('theme', '?')}` | {score_s} "
-            f"| {verdict} | {n_pick or '—'} | {flags or '—'} |"
+            f"| {verdict} | {n_pick} | {flags or '—'} |"
         )
     return rows
 
 
 def _eligible(themes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """**판별을 통과한** 테마만. `게이트 passed` 로 거르면 안 된다 — 확신도 미달로 통과
-    상태이면서 편입 불가인 경우가 흔하다 (2026-08-25 실측: 4테마 중 3테마)."""
+    """상위 K 안에서 **편입 가능**한 테마. `게이트 passed` 로 거르면 안 된다 — 확신도 미달로
+    통과 상태이면서 편입 불가인 경우가 흔하다 (2026-08-25 실측: 상위 4테마 중 4테마)."""
     return [t for t in themes if (t.get("thesis") or {}).get("portfolio_eligible")]
+
+
+def _judged_eligible(digest: dict[str, Any]) -> list[dict[str, Any]]:
+    """**판별된 테마 전부** 중 편입 가능한 것 (상위 K 밖 포함).
+
+    결론을 상위 K 로 세면 순위 밖의 통과 테마가 사라진다 — 2026-08-25 실측에서 통과 2개가
+    5위 밖이라 "판별을 통과한 테마가 0개" 라는 거짓 결론이 나왔다. L1 순위와 L3 판별은
+    다른 축이다.
+    """
+    return [j for j in (digest.get("judged") or []) if j.get("portfolio_eligible")]
 
 
 def _pullbacks(themes: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -91,54 +108,94 @@ def _pullbacks(themes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(out, key=lambda x: x.get("from_52w_high", 0.0))
 
 
-def _headline(themes: list[dict[str, Any]]) -> tuple[str, str]:
+def _headline(digest: dict[str, Any]) -> tuple[str, str]:
     """한 줄 결론 + 근거. 표를 읽기 전에 **무엇을 할지**가 먼저 나와야 한다.
 
-    세는 대상은 **판별을 통과한 테마의 종목뿐**이다. 게이트 `passed` 로 세면 안 된다 —
-    조항에 안 걸려도 확신도가 기준선 미달이면 `passed` 이면서 편입 불가다. 그것까지 세면
-    "차트 볼 것 37종목" 같은 줄이 나오는데 대부분이 가치 함정 판정을 받은 테마의 구성원이다.
-    이 시스템이 막으려는 사고가 바로 그것이다 (2026-08-25 실측: 4테마 중 3테마가 그 상태).
-    """
-    ok = _eligible(themes)
-    judged = [t for t in themes if (t.get("thesis") or {}).get("found")]
-    n_pick = sum(len(t.get("eligible_tickers") or []) for t in ok)
+    두 가지를 틀리기 쉽고 둘 다 실제로 틀렸었다 (2026-08-25):
 
-    if not ok:
+    1. 게이트 `passed` 로 세면 **편입 불가 테마의 종목**이 "차트 볼 것" 에 들어온다.
+       → `portfolio_eligible` 로 센다.
+    2. 상위 K 로 세면 **순위 밖의 편입 가능 테마**가 사라져 "통과 0개" 라는 거짓이 된다.
+       → 판별된 전부(`digest["judged"]`)를 모집단으로 쓴다.
+    """
+    themes = list(digest.get("themes") or [])
+    judged = list(digest.get("judged") or [])
+    ok_all = _judged_eligible(digest)
+    ok_top = _eligible(themes)
+    outside = [j for j in ok_all if not j.get("in_top_k")]
+
+    if not ok_all:
         why = (
-            f"판별한 것 {len(judged)}개 모두 편입 불가"
+            f"판별한 {len(judged)}개 모두 편입 불가"
             if judged
             else "아직 아무 테마도 판별하지 않았다"
         )
         return (
-            "오늘 살 것은 없다 — 판별을 통과한 테마가 0개",
-            f"상위 {len(themes)}개 중 {why}. 스코어보드 순위는 '오래 잊혀졌다' 는 뜻이지 "
-            "후보라는 뜻이 아니다 — 판정을 받으려면 `msa research <theme>`.",
+            "오늘 편입 가능 판정을 받은 테마가 없다",
+            f"{why}. 스코어보드 순위는 '오래 잊혀졌다' 는 뜻이지 후보라는 뜻이 아니다 — "
+            "판정을 받으려면 `msa research <theme>`.",
         )
 
-    ok_names = " · ".join(f"`{t.get('theme')}`" for t in ok)
+    names_all = " · ".join(f"`{j['theme']}`" for j in ok_all)
+    # 전부 밖이면 이름을 두 번 쓰지 않는다 — 헤드라인이 이미 "상위 K 밖" 이라고 말한다.
+    tail = ""
+    if outside and len(outside) < len(ok_all):
+        tail = (
+            f" (이 중 {' · '.join('`' + j['theme'] + '`' for j in outside)} 는 "
+            "오늘 상위 K 밖이라 아래 표에 없다)"
+        )
+
+    # 눌린 종목은 상위 K 안에서만 셀 수 있다 — 명단(picks)이 다이제스트에 실린 것만이라서.
+    dips = _pullbacks(themes)
+    n_pick = sum(len(t.get("eligible_tickers") or []) for t in ok_top)
+    if not ok_top:
+        return (
+            f"편입 가능 테마 {len(ok_all)}개 — 전부 오늘 상위 K 밖이다",
+            f"{names_all}. 아래 표(상위 K)에는 없다 — 스코어보드 순위와 판별은 다른 축이다. "
+            "명단은 `msa picks <theme>` 또는 `state/picks/<date>/<theme>/` 에서 본다.",
+        )
     if not n_pick:
         return (
-            f"통과한 테마는 {len(ok)}개인데 명단이 비었다",
-            f"{ok_names} — 하드 제외를 통과한 종목이 0개다. `msa picks` 결과를 확인하라.",
+            f"편입 가능 테마는 {len(ok_all)}개인데 명단이 비었다",
+            f"{names_all} — 하드 필터를 통과한 종목이 0개다. `msa picks` 결과를 확인하라.",
         )
-
-    dips = _pullbacks(themes)
     if not dips:
         return (
             "지금 들어갈 자리는 없다",
-            f"통과 테마 {ok_names} 의 명단 {n_pick}종목이 "
-            f"**전부 52주 고점 −{abs(PULLBACK_MARK):.0%} 이내**다. 이 시스템은 잊혀진 바닥을 "
-            "찾는데 나온 것은 이미 회복된 자리다. 관찰만 하고 눌릴 때 다시 본다.",
+            f"편입 가능 {names_all}{tail} 의 명단 {n_pick}종목이 **전부 52주 고점 "
+            f"−{abs(PULLBACK_MARK):.0%}(선언값) 이내**다. 이 시스템은 잊혀진 바닥을 찾는데 "
+            "나온 것은 이미 회복된 자리다. 관찰만 하고 눌릴 때 다시 본다.",
         )
 
-    names = " · ".join(f"`{d['ticker']}` {d['from_52w_high']:+.0%}" for d in dips[:5])
-    more = f" 외 {len(dips) - 5}종목" if len(dips) > 5 else ""
+    flagged = sum(1 for d in dips if d.get("red_flags") or d.get("penalties"))
+    warn = f" 그중 **레드플래그·감점이 붙은 것 {flagged}종목**." if flagged else ""
     return (
-        f"차트를 볼 것은 {len(dips)}종목 — 통과 테마 {ok_names} 의 명단 {n_pick} 중",
-        f"고점 대비 −{abs(PULLBACK_MARK):.0%} 아래로 눌린 것: {names}{more}. "
+        f"차트 확인 대상 {len(dips)}종목 — 편입 가능 {names_all} 의 명단 {n_pick} 중",
+        f"52주 고점 대비 −{abs(PULLBACK_MARK):.0%}(선언값) 아래로 눌린 것이 {len(dips)}종목."
+        f"{warn} 아래 표 밑의 목록을 보라 — **순서에 의미는 없다.** "
         "나머지는 고점 근처라 지금 자리가 아니다. **판정은 사람이 차트로 한다** — "
         "시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다.",
     )
+
+
+def _dip_lines(themes: list[dict[str, Any]]) -> list[str]:
+    """눌린 종목을 **테마·티커 순**으로. 낙폭 순 정렬은 "더 눌린 것이 더 볼 만하다" 는
+    근거 없는 주장이 된다. 낙폭만 적으면 유동성 없는 껍데기가 맨 위에 온다 — 그래서
+    거래대금과 레드플래그를 같이 싣는다."""
+    dips = sorted(_pullbacks(themes), key=lambda d: (str(d.get("theme")), str(d.get("ticker"))))
+    if not dips:
+        return []
+    out = ["", "**눌린 종목** (순서 = 테마·티커 순, 볼 만한 순서가 아니다)", ""]
+    out += ["| 종목 | 테마 | 52wH | 가격 | ADV20 | 비고 |", "|---|---|---:|---:|---:|---|"]
+    for d in dips:
+        mark = "⚠ " if (d.get("red_flags") or d.get("penalties")) else ""
+        note = str(d.get("red_flags") or d.get("penalties") or "—")
+        out.append(
+            f"| {mark}`{d.get('ticker')}` | `{d.get('theme')}` | "
+            f"{d.get('from_52w_high', float('nan')):+.0%} | "
+            f"{_fmt_money(d.get('price'))} | {_fmt_money(d.get('adv20_usd'))} | {note} |"
+        )
+    return out
 
 
 def render_block(digest: dict[str, Any], *, today: date | None = None) -> str:
@@ -150,10 +207,13 @@ def render_block(digest: dict[str, Any], *, today: date | None = None) -> str:
     themes = list(digest.get("themes") or [])
 
     lag = "—"
+    lag_days = 0
     with suppress(ValueError):
-        lag = f"{(date.fromisoformat(now) - date.fromisoformat(store_end)).days}일 전"
+        lag_days = (date.fromisoformat(now) - date.fromisoformat(store_end)).days
+        lag = f"{lag_days}일 전"
 
-    verdict, detail = _headline(themes)
+    verdict, detail = _headline(digest)
+    assert "**" not in verdict, "결론 줄은 렌더러가 굵게 만든다 — 안에서 다시 굵게 하지 않는다"
     out = [
         BEGIN,
         "",
@@ -162,6 +222,14 @@ def render_block(digest: dict[str, Any], *, today: date | None = None) -> str:
         f"> **{verdict}**",
         ">",
         f"> {detail}",
+    ]
+    if lag_days:
+        out += [
+            ">",
+            f"> ⚠ **가격은 {store_end} 기준({lag_days}일 낡음)이다.** 위아래의 52주 고점 대비도 "
+            "그 날짜 값이라, 그 사이 회복했을 수 있다.",
+        ]
+    out += [
         "",
         f"<sub>`msa run daily` 가 자동으로 다시 쓴다. 스캔 기준일 **{asof}** · "
         f"가격 스토어 마지막 날 **{store_end}** ({lag}). "
@@ -171,6 +239,7 @@ def render_block(digest: dict[str, Any], *, today: date | None = None) -> str:
         "|---:|---|---:|---|---:|---|",
     ]
     out += _verdict_rows(themes) or ["| — | (테마 없음) | — | — | — | — |"]
+    out += _dip_lines(themes)
     out += [
         "",
         f"<sub>상위 {min(TOP_N, len(themes))}개만 싣는다. 전문·제외 사유·판단 재료 열은 "

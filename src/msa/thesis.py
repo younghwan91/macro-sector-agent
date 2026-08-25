@@ -103,6 +103,28 @@ def theses_in(round_dir: Path | str) -> list[Path]:
     return sorted(d.glob(f"*{THESIS_SUFFIX}"))
 
 
+def all_theses(asof: str, root: Path | str | None = None) -> list[ThesisHead]:
+    """`asof` 이하의 모든 라운드에서 **테마마다 최신 논지 하나씩**. 테마 id 순.
+
+    `find_thesis` 와 같은 PIT 규칙(디렉터리 이름 ≤ asof, 최신 우선)이다.
+
+    왜 필요한가: 일간 다이제스트는 **L1 상위 K** 테마만 싣는다. 그 모집단으로 "판별을 통과한
+    테마" 를 세면 상위 K 밖의 통과 테마가 통째로 사라지고, 결론이 "통과 0개" 라는 거짓이
+    된다 (2026-08-25 실측: 통과 2개가 순위 5위 밖이라 안 보였다). **L1 순위(얼마나
+    잊혀졌나)와 L3 판별(함정인가)은 다른 축이다** — 후자를 셀 때는 후자의 모집단을 쓴다.
+    """
+    r = Path(root) if root is not None else paths().theses
+    if not r.is_dir():
+        return []
+    seen: dict[str, ThesisHead] = {}
+    for d in sorted((x for x in r.iterdir() if x.is_dir() and x.name <= asof), reverse=True):
+        for f in theses_in(d):
+            t = theme_of(f)
+            if t not in seen:  # 최신 라운드가 먼저 온다
+                seen[t] = thesis_head(t, asof, root=r)
+    return [seen[k] for k in sorted(seen)]
+
+
 def theme_of(path: Path | str) -> str:
     """`<theme>.thesis.yaml` → `<theme>`."""
     return Path(path).name.removesuffix(THESIS_SUFFIX)

@@ -121,6 +121,28 @@ VCP_DEFECT_NOTE = (
 )
 
 
+#: 편입 불가 테마의 명단 머리에 붙는 배너. 없으면 탈락 테마의 명단이 "선정 · ELIGIBLE ·
+#: 동일가중" 이라는 말을 달고 확정 포트폴리오처럼 읽힌다 (2026-08-25 검토에서 지적).
+def ineligible_banner(head: ThesisHead) -> list[str]:
+    """`portfolio_eligible=False` 일 때 명단 위에 붙는 경고. 통과면 빈 목록."""
+    if head.portfolio_eligible:
+        return []
+    if not head.found:
+        return [
+            "⚠ 이 테마는 **판별을 거치지 않았다** (논지 없음). 아래는 재무 하드 필터를",
+            "  통과했다는 사실일 뿐 후보 명단이 아니다 — `msa research <theme>` 로",
+            "  판정을 먼저 받아라.",
+            "",
+        ]
+    conf = f"{head.cycle_confidence:g}" if head.cycle_confidence is not None else "?"
+    return [
+        f"⚠ 이 테마는 **편입 불가 판정**이다 (확신도 {conf} · 게이트 {head.gate or '?'}).",
+        "  게이트 `passed` 는 '기각 조항에 안 걸렸다' 는 뜻이지 '살 수 있다' 가 아니다.",
+        "  아래는 재무 하드 필터를 통과한 명단이지 **후보 명단이 아니다.**",
+        "",
+    ]
+
+
 def order_ranking_columns(ranking: pd.DataFrame) -> pd.DataFrame:
     """명단 열 순서 — 선정 라벨 · 관찰 순위 · **판단 재료** · 나머지. 열은 하나도 버리지 않는다."""
     if ranking.empty:
@@ -645,6 +667,7 @@ def render_report(
         "=" * 78,
         *(f"  {x}" for x in head.lines()),
         "",
+        *ineligible_banner(head),
         f"구성원 {u['members']} → 상장 {u['listed']} (폐지/가격없음 {u['excluded_listing']}) → "
         f"하드 제외 {u['excluded_hard_filter']} → 적격 {u['eligible']}"
         + (
@@ -655,7 +678,12 @@ def render_report(
             else ""
         ),
         "",
-        f"선정: 적격 {u['eligible']} 종목 **전부** · 테마 내 동일가중 (라벨 {SELECTION_GROUP})",
+        (
+            f"선정: 하드필터 통과 {u['eligible']} 종목 **전부** · 테마 내 동일가중 "
+            f"(라벨 {SELECTION_GROUP})"
+            if head.portfolio_eligible
+            else f"하드필터 통과: {u['eligible']} 종목 — **선정이 아니다** (테마가 편입 불가)"
+        ),
         "  동일가중은 가중치를 정한 것이 아니라 정하지 않은 것이다 — 적격 종목 사이를 가를 근거가",
         "  이 경로에서 확인되지 않았다 (docs/15 §4·§5 · docs/06 §5.1·§6.1). 비중은 L5 가 정한다.",
         "  운용 가능한 K 는 정해져 있지 않다 — 새 사전 등록이 필요하다 (docs/06 §6.2).",
