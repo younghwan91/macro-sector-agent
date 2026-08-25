@@ -235,6 +235,9 @@ select
     -- 안 맞춰 `telecom_carriers` capex/D&A 가 17.12(올바른 값 0.83, +1953%)로 나왔고
     -- 40개 테마가 영향권이었다. 같은 SQL 의 assets_ss·shares_ss·revenue_ss 는 처음부터
     -- 양방향으로 짝을 맞춘다 — 의도는 짝 맞추기였고 이 세 쌍만 빠져 있었다.
+    -- 수정 후 실측 (2026-08-24 스캔): telecom_carriers 17.12 → 0.86 · utility_ipp 7.54 → 3.99
+    -- · software_infra 5.70 → 1.73 · consumer_electronics 1.56 → 0.57. 전체 최대 17.12 → 5.43,
+    -- 중앙 1.05. 5 를 넘는 테마가 여럿에서 하나로 줄었다.
     sum(case when da_ttm is not null then capex_ttm end) as capex_ttm_sum,
     sum(case when capex_ttm is not null then da_ttm end) as da_ttm_sum,
     sum(assets) as assets_sum,
