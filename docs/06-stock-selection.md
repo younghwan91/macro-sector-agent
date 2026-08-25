@@ -57,19 +57,45 @@
 
 `fin-checkup` 의 `metrics/redflags.py` 를 이식한다.
 
-| 지표 | 계산 | 임계 |
-|---|---|---|
-| `cash_runway_q` | 현금 / max(0, −분기 FCF) | **< 4분기 = 하드 제외.** 논지 horizon 안에 죽는다 |
-| `net_debt_ebitda` | 순부채 / TTM EBITDA (EBITDA≤0 이면 순부채/시총으로 대체) | > 4× 감점, > 6× 하드 제외 |
-| `maturity_wall_24m` | 24개월 내 만기 부채 / 시총 | > 0.5 하드 제외 (`04-value-trap.md` 축 5) |
-| `interest_coverage` | EBIT / 이자비용 | < 1 감점 |
-| `dilution_3y` | 주식수 3년 CAGR | > 15%/y 감점. **테마 레벨에선 저점 신호, 종목 레벨에선 주주가치 파괴** |
+| 지표 | 계산 | 임계 | 임계의 출처 (2026-08-26 조사) |
+|---|---|---|---|
+| `cash_runway_q` | 현금 / max(0, −분기 FCF) | **< 4분기 = 하드 제외.** 논지 horizon 안에 죽는다 | **PCAOB AS 2415** ¶.02 — 계속기업 평가 기간 "not to exceed **one year** beyond the date of the financial statements". 12개월 = 4분기, **값 일치** |
+| `net_debt_ebitda` | 순부채 / TTM EBITDA (EBITDA≤0 이면 순부채/시총으로 대체) | > 4× 감점, > 6× 하드 제외 | **Interagency Guidance on Leveraged Lending** (OCC·Fed·FDIC, 2013) — "in excess of **6X** Total Debt/EBITDA raises concerns"; leveraged 정의 "exceed **4.0X** EBITDA". **두 값 다 일치.** 단 가이던스는 **Total** Debt, 우리는 **Net** Debt (우리가 더 느슨함) |
+| `maturity_wall_24m` | 24개월 내 만기 부채 / 시총 | > 0.5 하드 제외 (`04-value-trap.md` 축 5) | **출처 없음.** S&P·OCC·학술 파산예측 문헌에서 "만기부채/**시총**" 이라는 지표 자체를 찾지 못했다 — 신용 문헌은 **총부채 대비**로 본다. 분모에 시총을 쓰는 것은 이 저장소의 발명이고 0.5 의 근거가 없다 (`docs/20` §4.3) |
+| `interest_coverage` | EBIT / 이자비용 | < 1 감점 | **BIS Quarterly Review 2018-09** (Banerjee & Hofmann) — zombie = "interest coverage ratio … **less than one**". **값 일치.** 단 BIS 는 **3년 연속 + 업력 10년**을 함께 요구하는데 우리는 단일 시점이고 업력 조건이 없다 — 적자 성장주·바이오텍이 정의상 전원 걸린다 |
+| `dilution_3y` | 주식수 3년 CAGR | > 15%/y 감점. **테마 레벨에선 저점 신호, 종목 레벨에선 주주가치 파괴** | **방향만 있고 값은 출처 없음.** 방향: Loughran-Ritter (1995) *The New Issues Puzzle* · Pontiff-Woodgate (2008) *Share Issuance and Cross-sectional Returns*. 두 문헌 다 **연속 변수의 횡단면 분위**로 쓰지 절대 임계를 쓰지 않는다. **15% 는 선언값이다** (`CLAUDE.md` §1 이 요구하는 그 문장) |
 | `going_concern` | 감사의견 계속기업 의문 | 하드 제외 (에이전트 또는 SEC 파싱) |
 | `liquidity` | 20일 평균 달러 거래대금 | < $2M 감점 (자금 규모 작아 완화 가능, 값은 설정) |
 | `price_floor` | 종가 | < $2 감점 (상장폐지·역분할 리스크) |
 
 > **하드 제외는 스코어가 아니다.** 아무리 토크가 커도 4분기 안에 현금이 마르는 기업은
 > 후보에서 사라진다. AG·SBSW·MP·ALM 형 트레이드에서 이 필터 하나가 최대 손실을 좌우한다.
+
+> **표의 감점 넷은 한 종목도 자르지 않는다** (2026-08-26 배선 확인). `interest_coverage` ·
+> `dilution_3y` · `net_debt_ebitda > 4×` · `liquidity` · `price_floor` 는 `penalty_score` →
+> `s_raw` → `composite` 로만 흐르고, `composite` 는 2026-08-24 에 관찰 지표로 강등됐다 (§6.1).
+> 값을 어떻게 놓든 `msa picks` 의 산출 종목 집합이 같다. **자르는 것은 `cash_runway_q`(E1) ·
+> `net_debt_ebitda`(E2) · `maturity_wall_12m`(E3) 셋뿐이다.**
+
+> **2026-08-26 — 이 셋이 무엇을 자르는지 실측했다. 셋 중 하나만 설계 의도와 맞는다.**
+> 2023-08 단면 · 24개월 추적 · 겹침을 벗긴 단독 제외군 기준 (통과군: 사망률 2.7% · 중앙수익률 +14.4%):
+>
+> | 단독 | n | 24M 사망률 | 중앙수익률 | |
+> |---|---|---|---|---|
+> | E1 | 862 | **15.1%** | **−53.5%** | 일한다 (임상 바이오텍 307) |
+> | E2 | 333 | **1.8%** | **+20.1%** | **통과군보다 안 죽고 더 올랐다** |
+> | E3 | 53 | 13.2% | −22.2% | 일한다 (CI 넓음) |
+>
+> `docs/backtest-l4.md` §5 의 "E2 사망률 +6.7%p" 는 **겹침이 만든 것**이다 — E2 전체(447)에서
+> E1·E3 와 겹친 114종목을 빼면 8.7% → 1.8% 로 사라진다. E2 단독군의 절반 이상이 은행·자산
+> 운용·모기지REIT 이고, **순부채/EBITDA 는 금융업에서 정의가 성립하지 않는 비율이다.**
+>
+> 데이터 절단 쪽도 같다: **E5 단독 사망률 1.4% (통과군보다 낮다)**, E4 는 $300M 미만에서만
+> 일하고 **$300M 이상 59종목은 24개월 사망 0 · 수익률 +25%** 였다 (BTI +113% · CRH +109% ·
+> RELX +58% · UL +33%).
+>
+> **임계는 하나도 옮기지 않았다.** 무엇을 할지는 `docs/20` 이 사전 등록으로 다룬다 —
+> `docs/14` §4.2 가 "필터를 푸는 것은 이 문서가 열지 않는 문" 이라고 못박았기 때문이다.
 
 ### 2.1 개정 — 2026-08-24 · 판정 불가는 통과가 아니다 (임계는 그대로)
 

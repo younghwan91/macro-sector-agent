@@ -39,9 +39,9 @@
 
 ## 오늘의 결론 · 2026-08-26
 
-> **지금 들어갈 자리는 없다**
+> **차트 확인 대상 3종목 — 편입 가능 `shipping_container` · `managed_care` 의 명단 15 중**
 >
-> 편입 가능 `managed_care` · `shipping_container` (이 중 `managed_care` 는 오늘 상위 K 밖이라 아래 표에 없다) 의 명단 6종목이 **전부 52주 고점 −15%(선언값) 이내**다. 이 시스템은 잊혀진 바닥을 찾는데 나온 것은 이미 회복된 자리다. 관찰만 하고 눌릴 때 다시 본다. ⚠ **판정을 만든 근거 46건 중 23건은 원문에서 못 찾은 숫자가 있고 7건은 문서를 읽지 못했다** (`msa ops audit-evidence <theme>` 로 목록을 본다 — 단위 변환 때문에 오탐도 섞인다). 확인된 근거가 하나도 없는 축: substitution.
+> **`ALHC` -45% · ⚠`CLOV` -24% · ⚠`MOH` -18%**. 그중 **레드플래그·감점이 붙은 것 2종목**. 나머지는 52주 고점 −15%(선언값) 이내라 지금 자리가 아니다. ⚠ **판정을 만든 근거 46건 중 23건은 원문에서 못 찾은 숫자가 있고 7건은 문서를 읽지 못했다** (`msa ops audit-evidence <theme>` 로 목록을 본다 — 단위 변환 때문에 오탐도 섞인다). 확인된 근거가 하나도 없는 축: substitution. **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.
 >
 > ⚠ **가격은 2026-08-24 기준(2일 낡음)이다.** 위아래의 52주 고점 대비도 그 날짜 값이라, 그 사이 회복했을 수 있다.
 
@@ -57,6 +57,24 @@
 | 7 | `insurance_brokers` | 0.74 | **판별 안 함** | 13 | SECULAR — 게이트 필요 |
 | 8 | `pharma_generic` | 0.70 | **판별 안 함** | 40 | — |
 | 9 | `home_improvement` | 0.69 | 편입 불가 · 0.6 | 5 | — |
+
+**눌린 종목** (순서 = 테마·티커 순, 볼 만한 순서가 아니다)
+
+**52주 고점 대비**
+
+```
+ALHC      -45%  ████████████████████████
+CLOV      -24%  ████████████▊
+MOH       -18%  █████████▊
+```
+
+<sub>막대는 크기만 — 부호는 숫자가 든다. 순서는 테마·티커 순이지 우선순위가 아니다.</sub>
+
+| 종목 | 테마 | 52wH | 가격 | ADV20 | 비고 |
+|---|---|---:|---:|---:|---|
+| `ALHC` | `managed_care` | -45% | $13.43 | $83.8M | — |
+| ⚠ `CLOV` | `managed_care` | -24% | $4.11 | $19.4M | consecutive_operating_loss |
+| ⚠ `MOH` | `managed_care` | -18% | $198 | $119.9M | interest_coverage_lt1 |
 
 <sub>상위 8개만 싣는다. 전문·제외 사유·판단 재료 열은 `state/daily/2026-08-26/digest.md`. **순위가 높다 = 오래 잊혀졌다** 이지 사라는 뜻이 아니다 — 판별(`msa research`)을 거치지 않은 테마는 후보가 아니다.</sub>
 
@@ -1052,6 +1070,7 @@ msa backtest l4              # docs/14 사전 등록의 집행 — 테마 내 ra
 | [14-l4-backtest-preregistration](docs/14-l4-backtest-preregistration.md) | **L4 백테스트 사전 등록** — Q1~Q4 · 합격 기준 숫자 · 결과별 조치 · 시도 수. **적은 뒤에 돌린다** |
 | [15-l4-selection-structure-preregistration](docs/15-l4-selection-structure-preregistration.md) | **L4 선정 구조 사전 등록** — B0~B3 후보 · §4 판정(아무도 B3 를 못 이김) · §5 미리 고정한 조치 · §6 못 재는 것 여덟 |
 | [16-module-audit-2026-08-24](docs/16-module-audit-2026-08-24.md) | 계층별 모듈 감사 — 결함 목록(심각 2 · 높음 8 · 중간 37) · §7 수정 우선순위(**제안이지 결정이 아니다**). `vcp_base` 결함(#P2)이 여기 있다 |
+| [20-design-question-hard-filters](docs/20-design-question-hard-filters.md) | **설계 질문 5** — 하드 제외가 재무 위험을 재는가, 회계 서식·데이터 커버리지를 재는가. §1 임계 4개의 1차 출처(AS 2415 · Interagency Guidance · BIS) · §2 겹침을 벗긴 사망률 실측 · §3 이름으로 본 절단 · §4 후보 · §6 결정 절차 |
 | [19-design-question-entry-timing](docs/19-design-question-entry-timing.md) | **설계 질문 4** — 게이트는 "함정인가" 만 답한다. "지금 들어갈 때인가" 는 §4 에 항이 없다. 후보 A~D · §5 이번 라운드에 한 것(표시만) · §6 결정에 필요한 표본 |
 | [18-daily-run](docs/18-daily-run.md) | **실전 운영** — 명령 세 개와 순서 · 판정·종료코드 읽는 법 · provider 별 비용(크레딧 경로는 haiku 만) · 테마 병렬 실행과 라운드 파일 잠금 · §5 현재 한계 · §6 하지 말 것 |
 | [17-l1-score-structure-preregistration](docs/17-l1-score-structure-preregistration.md) | **설계 질문 3** — 테마 선정 점수를 `C 단독` 으로 바꿀 것인가. §1.1 역할 변경 · §1.2 사후 선택 위험 · §5 결과별 조치 · §7 해석 경계 |

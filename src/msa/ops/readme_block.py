@@ -196,12 +196,21 @@ def _headline(digest: dict[str, Any]) -> tuple[str, str]:
     flagged = sum(1 for d in dips if d.get("red_flags") or d.get("penalties"))
     warn = f" 그중 **레드플래그·감점이 붙은 것 {flagged}종목**." if flagged else ""
     names_top = " · ".join(f"`{t.get('theme')}`" for t in ok_top)
+    # **종목 이름을 결론 문장에 직접 넣는다.** 예전에는 "아래 표 밑의 목록을 보라" 고만 했는데
+    # 그 목록은 README 블록에만 있고 digest.md 에는 없어, 다이제스트만 읽는 사람에게는
+    # 결론이 가리키는 대상이 어디에도 없었다 (2026-08-26).
+    named = " · ".join(
+        f"{'⚠' if (d.get('red_flags') or d.get('penalties')) else ''}`{d['ticker']}` "
+        f"{d['from_52w_high']:+.0%}"
+        for d in sorted(dips, key=lambda x: (str(x.get("theme")), str(x.get("ticker"))))[:8]
+    )
+    more = f" 외 {len(dips) - 8}종목" if len(dips) > 8 else ""
     return (
         f"차트 확인 대상 {len(dips)}종목 — 편입 가능 {names_top} 의 명단 {n_pick} 중{tail}",
-        f"52주 고점 대비 −{abs(PULLBACK_MARK):.0%}(선언값) 아래로 눌린 것이 {len(dips)}종목."
-        f"{warn} 아래 표 밑의 목록을 보라 — **순서에 의미는 없다.** "
-        f"나머지는 고점 근처라 지금 자리가 아니다.{audit} **판정은 사람이 차트로 한다** — "
-        "시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다.",
+        f"**{named}**{more}."
+        f"{warn} 나머지는 52주 고점 −{abs(PULLBACK_MARK):.0%}(선언값) 이내라 지금 자리가 "
+        f"아니다.{audit} **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 "
+        "아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.",
     )
 
 
@@ -212,7 +221,15 @@ def _dip_lines(themes: list[dict[str, Any]]) -> list[str]:
     dips = sorted(_pullbacks(themes), key=lambda d: (str(d.get("theme")), str(d.get("ticker"))))
     if not dips:
         return []
+    from msa.ops.charts import block
+
     out = ["", "**눌린 종목** (순서 = 테마·티커 순, 볼 만한 순서가 아니다)", ""]
+    # 그래프는 숫자를 대신하지 않고 옆에 붙는다 — 낙폭 크기 차이가 표만 봐서는 안 잡힌다.
+    out += block(
+        "52주 고점 대비",
+        [(str(d.get("ticker")), float(d.get("from_52w_high", 0.0))) for d in dips],
+        note="막대는 크기만 — 부호는 숫자가 든다. 순서는 테마·티커 순이지 우선순위가 아니다.",
+    )
     out += ["| 종목 | 테마 | 52wH | 가격 | ADV20 | 비고 |", "|---|---|---:|---:|---:|---|"]
     for d in dips:
         mark = "⚠ " if (d.get("red_flags") or d.get("penalties")) else ""

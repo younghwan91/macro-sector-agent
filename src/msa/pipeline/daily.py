@@ -480,10 +480,14 @@ def _eligibility_cell(theme: dict[str, Any]) -> str:
 def _conclusion_lines(digest: dict[str, Any]) -> list[str]:
     """다이제스트 머리의 결론. `readme_block._headline` 을 그대로 쓴다 — 같은 사실에서
     두 문서가 갈라지지 않게."""
-    from msa.ops.readme_block import _headline
+    from msa.ops.readme_block import _dip_lines, _headline
 
     verdict, detail = _headline(digest)
-    return [f"> **{verdict}**", ">", f"> {detail}", ""]
+    out = [f"> **{verdict}**", ">", f"> {detail}", ""]
+    # 결론이 가리키는 종목 표를 **여기에도** 싣는다. 예전에는 README 블록에만 있어서
+    # 다이제스트만 읽는 사람에게는 결론이 가리키는 대상이 없었다 (2026-08-26).
+    out += _dip_lines(list(digest.get("themes") or []))
+    return [*out, ""]
 
 
 def render_digest_md(digest: dict[str, Any]) -> str:
@@ -935,7 +939,13 @@ def run_daily(
 
     # 2) select — 월간과 같은 규칙 (자격 상위 K + 지정; 풀 미달로 채우지 않는다)
     t = _Timer()
-    sel = select_themes(sb, top_k=top_k, extra_themes=extra_themes)
+    # **편입 가능 테마는 순위와 무관하게 넣는다** (2026-08-26).
+    # 상위 K 만 명단을 뽑으면, 판별을 통과했는데 오늘 순위가 밖인 테마의 종목이 통째로
+    # 사라진다. 실제로 `managed_care`(편입 가능 0.75)가 9위라 빠졌고, 그 안에 고점 대비
+    # −45%·−24%·−18% 인 종목 셋이 있었는데 결론은 "지금 들어갈 자리는 없다" 였다.
+    # 사람이 돈을 걸 후보는 편입 가능 테마이지 순위 상위가 아니다.
+    eligible_now = sorted({h.theme for h in all_theses(asof_s) if h.eligible} - set(extra_themes))
+    sel = select_themes(sb, top_k=top_k, extra_themes=[*extra_themes, *eligible_now])
     result.selection = sel
     for n in sel.notes:
         report.notes.append(f"select: {n}")
