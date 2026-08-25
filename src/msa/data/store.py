@@ -253,9 +253,17 @@ class Store:
     def close_series(
         self, ticker: str, start: date | str | None = None, end: date | str | None = None
     ) -> pd.Series:
-        """한 종목의 조정 종가 — `DatetimeIndex`(오름차순), name = ticker. 없으면 빈 시리즈."""
+        """한 종목의 조정 종가 — `DatetimeIndex`(오름차순), name = ticker. 없으면 빈 시리즈.
+
+        `ETF_IN_STORE` 종목이 스토어에 없으면 **벌크 `funds.csv.zip` 으로 넘어간다.**
+        ETF 가 `prices` 에 있느냐는 스토어를 어떻게 빌드했느냐에 달린 우연이고(주식 `SEP` 과
+        펀드 `SFP` 는 다른 파일이다), 2026-08-25 재빌드에서 실제로 SPY 가 0행이 되어
+        L1 패널과 L4 달력이 동시에 멈췄다. 벌크에도 없으면 빈 시리즈다 — 호출자가 판단한다.
+        """
         where, params = _ticker_date_where([ticker], start, end)
         df = self._df(f"select date, close from prices {where} order by date", params)
+        if df.empty and ticker.upper() in ETF_IN_STORE:
+            df = _etf_close_from_bulk(ticker, start, end)
         return pd.Series(
             df["close"].to_numpy(dtype=float),
             index=pd.DatetimeIndex(pd.to_datetime(df["date"]), name="date"),
@@ -510,6 +518,29 @@ ETF_COLUMNS: tuple[str, ...] = ("ticker", "date", "close", "closeadj", "volume")
 #: 벌크 CSV 에서 읽는 열의 pyarrow 타입 — 전부 문자열로 받아 pandas 에서 예전과 같은 규칙으로
 #: 변환한다 (`pd.to_datetime(...).dt.date` · `pd.to_numeric(errors="coerce")`).
 _ETF_READ_TYPES = {c: pa.string() for c in ETF_COLUMNS}
+
+
+def _etf_close_from_bulk(
+    ticker: str, start: date | str | None, end: date | str | None
+) -> pd.DataFrame:
+    """벌크에서 한 ETF 의 `date,close` — 조정 종가(`closeadj`)를 쓴다. 실패하면 빈 프레임."""
+    try:
+        raw = etf_prices([ticker], min_rows=1)
+    except Exception as e:  # 벌크가 없거나 읽히지 않는다 — 조용히 실패하지 않는다
+        log.warning("%s: 스토어에 없고 벌크도 읽지 못했다 — %s", ticker, e)
+        return pd.DataFrame(columns=["date", "close"])
+    if raw.empty:
+        log.warning("%s: 스토어에도 벌크에도 없다", ticker)
+        return pd.DataFrame(columns=["date", "close"])
+    log.warning("%s 를 스토어가 아니라 벌크 funds.csv.zip 에서 읽었다 (docs/18 §6)", ticker)
+    out = raw.loc[:, ["date", "closeadj"]].rename(columns={"closeadj": "close"})
+    d = pd.to_datetime(out["date"])
+    if start is not None:
+        out = out[d >= pd.Timestamp(start)]
+        d = pd.to_datetime(out["date"])
+    if end is not None:
+        out = out[d <= pd.Timestamp(end)]
+    return out.dropna().sort_values("date").reset_index(drop=True)
 
 
 def empty_etf_frame() -> pd.DataFrame:

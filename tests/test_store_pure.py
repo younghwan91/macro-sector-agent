@@ -70,3 +70,48 @@ def test_action_kind_constants_are_disjoint() -> None:
     assert "delisted" in EXIT_ACTIONS
     assert "bankruptcyliquidation" in EXIT_ACTIONS
     assert ENTRY_ACTIONS == ("listed",)
+
+
+def test_close_series_falls_back_to_bulk_for_store_etfs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """ETF 가 `prices` 에 있느냐는 스토어 빌드 방식에 달린 우연이다.
+
+    2026-08-25 벌크 재빌드에서 SPY 가 0행이 되어 L1 패널과 L4 달력이 동시에 멈췄다.
+    나머지 ETF 는 이미 벌크에서 읽고 있었으므로 SPY 만 스토어에 의존할 이유가 없다.
+    """
+    import pandas as pd
+
+    from msa.data import store as S
+
+    called: list[list[str]] = []
+
+    def fake_etf(tickers, **_kw):  # type: ignore[no-untyped-def]
+        called.append(list(tickers))
+        return pd.DataFrame(
+            {
+                "ticker": ["SPY", "SPY"],
+                "date": ["2026-08-20", "2026-08-21"],
+                "close": [600.0, 601.0],
+                "closeadj": [600.0, 601.0],
+                "volume": [1e6, 1e6],
+            }
+        )
+
+    monkeypatch.setattr(S, "etf_prices", fake_etf)
+    got = S._etf_close_from_bulk("SPY", None, None)
+    assert called == [["SPY"]]
+    assert list(got["close"]) == [600.0, 601.0]
+
+    # 구간 필터가 먹는다
+    win = S._etf_close_from_bulk("SPY", "2026-08-21", None)
+    assert list(win["close"]) == [601.0]
+
+
+def test_bulk_fallback_returns_empty_instead_of_raising(monkeypatch: pytest.MonkeyPatch) -> None:
+    """벌크도 없으면 **빈 프레임**이다 — 호출자가 판단한다. 조용히 가짜를 만들지 않는다."""
+    from msa.data import store as S
+
+    def boom(*_a, **_kw):  # type: ignore[no-untyped-def]
+        raise FileNotFoundError("funds.csv.zip 없음")
+
+    monkeypatch.setattr(S, "etf_prices", boom)
+    assert S._etf_close_from_bulk("SPY", None, None).empty
