@@ -1057,6 +1057,7 @@ msa backtest l4              # docs/14 사전 등록의 집행 — 테마 내 ra
 | [14-l4-backtest-preregistration](docs/14-l4-backtest-preregistration.md) | **L4 백테스트 사전 등록** — Q1~Q4 · 합격 기준 숫자 · 결과별 조치 · 시도 수. **적은 뒤에 돌린다** |
 | [15-l4-selection-structure-preregistration](docs/15-l4-selection-structure-preregistration.md) | **L4 선정 구조 사전 등록** — B0~B3 후보 · §4 판정(아무도 B3 를 못 이김) · §5 미리 고정한 조치 · §6 못 재는 것 여덟 |
 | [16-module-audit-2026-08-24](docs/16-module-audit-2026-08-24.md) | 계층별 모듈 감사 — 결함 목록(심각 2 · 높음 8 · 중간 37) · §7 수정 우선순위(**제안이지 결정이 아니다**). `vcp_base` 결함(#P2)이 여기 있다 |
+| [19-design-question-entry-timing](docs/19-design-question-entry-timing.md) | **설계 질문 4** — 게이트는 "함정인가" 만 답한다. "지금 들어갈 때인가" 는 §4 에 항이 없다. 후보 A~D · §5 이번 라운드에 한 것(표시만) · §6 결정에 필요한 표본 |
 | [18-daily-run](docs/18-daily-run.md) | **실전 운영** — 명령 세 개와 순서 · 판정·종료코드 읽는 법 · provider 별 비용(크레딧 경로는 haiku 만) · 테마 병렬 실행과 라운드 파일 잠금 · §5 현재 한계 · §6 하지 말 것 |
 | [17-l1-score-structure-preregistration](docs/17-l1-score-structure-preregistration.md) | **설계 질문 3** — 테마 선정 점수를 `C 단독` 으로 바꿀 것인가. §1.1 역할 변경 · §1.2 사후 선택 위험 · §5 결과별 조치 · §7 해석 경계 |
 | [backtest-l4](docs/backtest-l4.md) | L4 백테스트 판정문 — Q1 FAIL · 축 단독 IC · 하드 필터 · §8 DSR · §10 한계 14개 |

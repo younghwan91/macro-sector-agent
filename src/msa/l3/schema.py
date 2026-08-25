@@ -274,6 +274,12 @@ def _check_claim(
         )
 
 
+#: 자리표시자로 보이는 날짜 — 월 1일. 발행일을 모를 때 반올림해 적는 자리다.
+#: 진짜 월초 발행 문서(월간 통계 릴리스 등)도 여기 걸리므로 **경고이지 거부가 아니다.**
+def _is_placeholder_date(raw: str) -> bool:
+    return bool(re.match(r"^\d{4}-\d{2}-01$", raw.strip()))
+
+
 def _check_evidence(r: ValidationResult, ev: Any, today: date) -> tuple[set[int], dict[int, str]]:
     """증거 배열 검사. 반환: (유효 id 집합, id → reliability) — 축·ruling 참조 검사에 쓴다."""
     ev_ids: set[int] = set()
@@ -301,7 +307,16 @@ def _check_evidence(r: ValidationResult, ev: Any, today: date) -> tuple[set[int]
                 f"evidence[{i}] reliability {e.get('reliability')!r} ∉ {RELIABILITY}",
             )
         url = str(e.get("source_url", ""))
-        if url and not re.match(r"^(https?://|state/|file://)", url):
+        if url.startswith("internal://"):
+            # 프롬프트에 실려 온 값을 자기 출처로 적는 것은 출처가 아니다 (`CLAUDE.md` §3).
+            # 2026-08-25 실측: `internal://task_prompt/pit_financial_summary_sharadar` 가
+            # 경고만 받고 통과했다. 스토어에서 온 값이면 `state/...` 경로를 적는다.
+            r.error(
+                "R_EVIDENCE_SELF_SOURCE",
+                f"evidence[{i}] source_url 이 자기 입력을 가리킨다: {url[:60]} — "
+                "출처가 아니다. 스토어 값이면 state/ 경로를, 문서면 실제 URL 을 적어라",
+            )
+        elif url and not re.match(r"^(https?://|state/|file://)", url):
             r.warn(
                 "W_EVIDENCE_URL",
                 f"evidence[{i}] source_url 이 URL/경로 형식이 아니다: {url[:60]}",
@@ -321,6 +336,16 @@ def _check_evidence(r: ValidationResult, ev: Any, today: date) -> tuple[set[int]
             r.warn(
                 "W_EVIDENCE_STALE",
                 f"evidence[{e.get('id', i)}] 날짜 {d} — {EVIDENCE_STALE_MONTHS}개월 초과 (05 §6)",
+            )
+        # 자리표시자 여부는 **오래됨과 별개 사실**이다 — 같은 사슬에 묶으면 하나가 다른
+        # 하나를 가린다. 월초·연초 반올림은 미래 증거 검사를 구조적으로 우회한다: 8월 문서를
+        # 1월 1일로 적으면 asof 검사를 통과한다. 2026-08-25 실측: 309건 중 70건(23%)이
+        # 자리표시자였고, 확인한 것마다 실제 발행일과 달랐다(최대 7개월 차이).
+        if d is not None and _is_placeholder_date(str(e.get("date"))):
+            r.warn(
+                "W_EVIDENCE_DATE_PLACEHOLDER",
+                f"evidence[{e.get('id', i)}] 날짜 {d} 가 자리표시자로 보인다 (월초/연초) — "
+                "문서의 실제 발행일을 확인하라. 이 값으로는 미래 증거 검사가 무력하다",
             )
     return ev_ids, rel_of
 

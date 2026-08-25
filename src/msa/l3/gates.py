@@ -152,6 +152,17 @@ def cycle_confidence(ci: ConfidenceInputs) -> ConfidenceResult:
     )
 
 
+#: 편입 가능이 **답한 것과 답하지 않은 것.** 리포트·계획서가 매번 이 문장을 싣는다.
+#: 2026-08-25 실측: 논지 본문이 "진입 조건 미성립" 이라고 적은 테마가 편입 가능 0.75 를
+#: 받았다. 5축은 전부 "이 산업이 죽었는가" 를 묻고, "지금이 사이클의 어느 국면인가" 를
+#: 묻는 항은 §4 에 없다 (설계 질문 4 — `docs/19`).
+ELIGIBILITY_SCOPE = (
+    "이 판정은 '가치 함정이 아니다' 이지 '지금 사도 된다' 가 아니다 — "
+    "5축은 산업의 사망 여부를 묻고, 사이클의 국면(자본이 지금 들어오는 중인가)을 묻는 항은 "
+    "없다 (docs/19). 진입 시점은 논지 본문과 차트로 사람이 판단한다"
+)
+
+
 @dataclass(frozen=True)
 class GateResult:
     status: str  # passed | contested | rejected
@@ -172,6 +183,7 @@ class GateResult:
             "rule": self.rule,
             "axis_verdicts": dict(self.axis_verdicts),
             "reason": self.reason,
+            "eligibility_scope": ELIGIBILITY_SCOPE,
         }
         if self.path is not None:
             d["path"] = self.path

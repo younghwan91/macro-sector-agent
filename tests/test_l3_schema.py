@@ -310,3 +310,57 @@ def test_stock_mention_checked_beyond_claim() -> None:
     assert "triggers 에 종목명" in ws
     assert "key_uncertainties 에 종목명" in ws
     assert res.ok  # 경고이지 거부가 아니다
+
+
+# ---------------------------------------------------------------- 증거 품질 (2026-08-25)
+
+
+def test_placeholder_date_is_flagged_and_does_not_hide_staleness() -> None:
+    """월초 반올림은 **미래 증거 검사를 구조적으로 우회한다** — 8월 문서를 1월 1일로 적으면
+    asof 검사를 통과한다. 실측 309건 중 70건(23%)이 자리표시자였고 확인한 것마다 실제
+    발행일과 달랐다(최대 7개월). 오래됨과는 별개 사실이라 둘 다 적어야 한다.
+    """
+    t = valid_thesis()
+    t["evidence"][0]["date"] = "2024-01-01"  # 자리표시자 + 12개월 초과
+    eid0 = t["evidence"][0]["id"]
+    res = validate_thesis(t, asof="2026-08-14")
+    mine = [w for w in res.warnings if f"evidence[{eid0}]" in w]
+    assert any("W_EVIDENCE_DATE_PLACEHOLDER" in w for w in mine)
+    assert any("W_EVIDENCE_STALE" in w for w in mine), "한 경고가 다른 경고를 가리면 안 된다"
+
+    # 실제 발행일로 보이는 날짜면 그 항목에는 경고가 안 붙는다 (픽스처의 다른 항목은
+    # 여전히 월초라 전체 코드 집합으로 보면 안 된다 — 그 항목만 본다)
+    eid = t["evidence"][0]["id"]
+    t["evidence"][0]["date"] = "2026-08-13"
+    res2 = validate_thesis(t, asof="2026-08-14")
+    assert not any(
+        "W_EVIDENCE_DATE_PLACEHOLDER" in w and f"evidence[{eid}]" in w for w in res2.warnings
+    )
+
+
+def test_self_referential_source_url_is_rejected() -> None:
+    """프롬프트에 실려 온 값을 자기 출처로 적는 것은 출처가 아니다 (`CLAUDE.md` §3).
+
+    실측: `internal://task_prompt/pit_financial_summary_sharadar` 가 경고만 받고 통과했다.
+    """
+    t = valid_thesis()
+    t["evidence"][0]["source_url"] = "internal://task_prompt/pit_financial_summary_sharadar"
+    res = validate_thesis(t, asof="2026-08-14")
+    assert any("R_EVIDENCE_SELF_SOURCE" in e for e in res.errors)
+    assert not res.ok, "출처 없는 주장은 저장되지 않는다"
+
+    # 스토어에서 온 값이면 경로를 적는다 — 그건 통과한다
+    t["evidence"][0]["source_url"] = "state/scans/2026-08-14/indicators.csv"
+    assert not any(
+        "R_EVIDENCE_SELF_SOURCE" in e for e in validate_thesis(t, asof="2026-08-14").errors
+    )
+
+
+def test_gate_dict_says_what_eligibility_did_not_answer() -> None:
+    """편입 가능은 '함정이 아니다' 이지 '지금 사도 된다' 가 아니다 (`docs/19`)."""
+    from msa.l3.gates import ELIGIBILITY_SCOPE
+
+    t = valid_thesis()
+    assert "지금 사도 된다" in ELIGIBILITY_SCOPE
+    assert "docs/19" in ELIGIBILITY_SCOPE
+    del t  # 이 검사는 상수 자체에 대한 것이다
