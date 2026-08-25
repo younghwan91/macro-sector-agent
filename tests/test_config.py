@@ -39,3 +39,32 @@ def test_missing_fred_key_raises_not_returns_none(monkeypatch: pytest.MonkeyPatc
 def test_fred_key_returned_stripped(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("FRED_API_KEY", "  abc123  ")
     assert fred_api_key() == "abc123"
+
+
+def test_store_lag_is_reported_when_stale(capsys: pytest.CaptureFixture[str]) -> None:
+    """스토어가 뒤처진 사실은 문서가 아니라 화면에 나와야 한다 (`CLAUDE.md` §2).
+
+    이 저장소는 적재를 하지 않으므로(`docs/18` §6) 뒤처짐을 알려주지 않으면 사용자는
+    묵은 가격으로 순위를 보면서 그것을 모른다.
+    """
+    from dataclasses import dataclass
+    from datetime import date, timedelta
+
+    from msa.cli import STORE_LAG_WARN_DAYS, _echo_store_lag
+
+    @dataclass
+    class _S:
+        name: str
+        end: date | None
+
+    fresh = [_S("prices", date.today() - timedelta(days=STORE_LAG_WARN_DAYS))]
+    _echo_store_lag(fresh)  # type: ignore[arg-type]
+    assert "정상" in capsys.readouterr().out
+
+    stale = [_S("prices", date.today() - timedelta(days=STORE_LAG_WARN_DAYS + 1))]
+    _echo_store_lag(stale)  # type: ignore[arg-type]
+    out = capsys.readouterr().out
+    assert "뒤처져 있다" in out and "opt-factor ingest" in out
+
+    _echo_store_lag([_S("prices", None)])  # type: ignore[arg-type]
+    assert "end 가 없다" in capsys.readouterr().out

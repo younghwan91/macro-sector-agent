@@ -150,6 +150,8 @@ def data_status(
                 f"{s.start or '—'!s:<12}{s.end or '—'!s:<12}  {state}"
             )
 
+        _echo_store_lag(store.table_stats())
+
         typer.echo("")
         typer.echo("결측률 (전체 행 대비 NULL 비율)")
         for table, cols in (
@@ -328,6 +330,35 @@ def scan(
         f"없음 {ph['data_missing']} · CPI {ph['cpi']}"
     )
     _echo_saved(res.out_dir)
+
+
+#: `prices` 가 오늘보다 이만큼 넘게 뒤처지면 `msa data status` 가 적재를 권한다.
+#: 거래일 기준 3일(주말+공휴일 한 번)이면 정상 범위다 — 그 이상은 적재를 건너뛴 것이다.
+#: 이 저장소는 적재를 하지 않는다 (`docs/18` §6): 실제 적재는 `opt_portfolio` 가 한다.
+STORE_LAG_WARN_DAYS = 4
+
+
+def _echo_store_lag(stats: list[Any]) -> None:
+    """스토어가 며칠 뒤처졌는지 찍는다. 문서에만 적으면 아무도 안 본다 (`CLAUDE.md` §2)."""
+    from datetime import date as _date
+
+    px = next((s for s in stats if s.name == "prices" and s.end), None)
+    if px is None:
+        typer.echo("\n주가 스토어에 end 가 없다 — 적재 상태를 확인하라")
+        return
+    end = px.end if isinstance(px.end, _date) else _date.fromisoformat(str(px.end))
+    lag = (_date.today() - end).days
+    typer.echo("")
+    if lag <= STORE_LAG_WARN_DAYS:
+        typer.echo(f"스토어 최신도: {end} · {lag}일 전 — 정상")
+        return
+    typer.echo(
+        f"스토어 최신도: {end} · **{lag}일 전** — 뒤처져 있다 (기준 {STORE_LAG_WARN_DAYS}일).\n"
+        "  스캔은 이 시점 가격으로 순위를 내고, 판별은 오늘 날짜 웹을 본다.\n"
+        "  적재는 이 저장소가 하지 않는다 (docs/18 §6) — opt_portfolio 에서:\n"
+        "    uv run opt-factor ingest --store ~/data/us_micro.duckdb \\\n"
+        "        --provider sharadar --tables sf1,sep,daily --since $(date -d '-3 day' +%F)"
+    )
 
 
 @data_app.command("fred-fetch")

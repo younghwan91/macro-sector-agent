@@ -207,7 +207,98 @@ grep -H "편입 가능\|cycle_confidence" /tmp/msa_*.log
 
 ---
 
-## 6. 절대 하지 말 것
+## 6. 데이터를 어떻게 최신으로 유지하나
+
+**이 저장소는 데이터를 적재하지 않는다.** `Store` 는 `duckdb.connect(read_only=True)` 로 연다.
+적재는 밖에서 일어나고, 여기는 읽기만 한다. 그래서 "스캔이 안 맞는다" 의 원인은 대개
+**스토어가 뒤처진 것**이지 이 저장소의 버그가 아니다.
+
+데이터는 네 갈래로 들어온다.
+
+| | 무엇 | 어떻게 | 주기 | 없으면 |
+|---|---|---|---|---|
+| **①** | 주가·재무·상장정보 → `~/data/us_micro.duckdb` | `opt-factor ingest` (**`opt_portfolio` 저장소**) | **매일** | 스캔이 묵은 가격으로 순위를 낸다 |
+| **②** | ETF 가격 (`funds.csv.zip`) | **브라우저 로그인 · 손으로** | 분기 1회 | ETF 프록시 검증만 흐려진다 |
+| **③** | 실물 수요 지표 · CPI | `msa data fred-fetch` | **월 1회** | 축 1 이 `data_missing` |
+| **④** | 에이전트 근거 | 판별 시 자동 (웹 검색) | 매번 | — |
+
+### ① Sharadar 일간 증분 — 매일
+
+```bash
+cd ~/Documents/git/opt_portfolio
+uv run opt-factor ingest --store ~/data/us_micro.duckdb \
+    --provider sharadar --tables sf1,sep,daily \
+    --since $(date -d '-3 day' +%F)
+uv run opt-factor status --store ~/data/us_micro.duckdb
+```
+
+3일치를 겹쳐 받는 것은 벤더의 사후 수정분을 잡기 위해서다. `SHARADAR_API_KEY` 가 필요하다.
+
+> **이 명령은 `opt_portfolio/docs/factor-system/04-data-contract.md` §5 에서 옮겨 적은 것이고
+> 이 저장소에서 실행해 검증한 적은 없다** (2026-08-25). 공유 스토어에 쓰는 작업이라 임의로
+> 돌리지 않았다. 처음 돌릴 때 결과를 확인하고 이 문단을 고쳐라.
+
+**스토어가 뒤처지면 어떻게 되나.** 스캔은 스냅샷 시점 가격으로 순위를 내고, 판별은 **오늘 날짜
+웹**을 본다. 그 간극 자체는 오류가 아니다 — 오늘 결정을 내리는 데 어제 가격을 쓰는 것뿐이다.
+다만 간극이 보이지 않으면 나중에 원인을 못 찾으므로, thesis 에 `data_lag_days` 가 남고
+7일(`DATA_LAG_WARN_DAYS`)을 넘으면 리서치 경고가 뜬다.
+
+**현재 상태 확인**은 `msa data status` — `prices`·`fundamentals` 의 `end` 가 스토어의 마지막 날이다.
+
+### ② Sharadar 벌크 CSV — 손으로, 분기 1회
+
+`~/data/sharadar/*.csv.zip` (3.4GB). `msa` 는 이 중 `funds.csv.zip` 을 ETF 일별 가격으로 직접
+읽는다 (`store.etf_prices()`) — 스토어에 적재된 ETF 는 하나뿐이다.
+
+> **API 키로는 받을 수 없다 — 브라우저 로그인 세션이 필요해서 손으로 받아야 한다**
+> (`~/data/sharadar/README.md`). **지우지 마라.** 재취득 비용이 용량보다 비싸다.
+
+ETF 는 L1 검증용 프록시라 며칠 묵어도 테마 순위가 흔들리지 않는다. 분기 1회로 충분하다.
+
+### ③ FRED — 월 1회
+
+```bash
+cd ~/Documents/git/macro-sector-agent
+uv run msa data fred-fetch          # 실패한 시리즈는 이름을 전부 찍고 종료코드 1
+```
+
+미국 월간 통계는 익월 중순에 나온다 — **매일 받아도 새 것이 없다.** 매달 20일경 한 번이면 된다.
+시리즈가 폐기되면 400 을 받고 실패 목록에 뜬다. 그때는 `state/themes.yaml` 의 `physical_ref`
+를 살아 있는 대체 심볼로 바꾼다 (2026-08-25 에 2건 교체했다 — 교체 사유와 한계를 그 자리
+주석에 남길 것).
+
+---
+
+## 7. 케이던스 — 무엇을 얼마나 자주
+
+```bash
+# ── 매일 (장 마감 후) ──────────────────────────────────
+cd ~/Documents/git/opt_portfolio
+uv run opt-factor ingest --store ~/data/us_micro.duckdb \
+    --provider sharadar --tables sf1,sep,daily --since $(date -d '-3 day' +%F)
+
+cd ~/Documents/git/macro-sector-agent
+uv run msa scan --top 20        # 테마 순위
+uv run msa check --daily        # 보유 중일 때만 — 무효화·스탑 점검
+
+# ── 새 테마를 볼 때만 (월 1회면 충분) ─────────────────
+uv run msa research <theme> --record state/fixtures
+uv run msa picks <theme>
+
+# ── 매달 ──────────────────────────────────────────────
+uv run msa data fred-fetch
+
+# ── 분기 ──────────────────────────────────────────────
+# Sharadar 벌크 zip 재다운로드 (브라우저) · msa ops calibration · msa ops rejections-update
+```
+
+**판별을 매일 돌릴 이유는 없다.** 테마 사이클은 몇 달 단위이고, 논지가 하루 만에 바뀌면 그것은
+논지가 아니라 소음이다. 그 사이 판정을 다시 보고 싶으면 녹화된 fixture 로 $0 재현한다 (§3).
+
+한편 **무효화 조건 점검(`msa check --daily`)은 매일이 맞다.** 논지가 깨지는 것은 사이클과 무관하게
+하루아침에 일어난다 — 그것을 잡으려고 무효화 조건을 미리 적어 둔 것이다.
+
+## 8. 절대 하지 말 것
 
 - **스캔 순위만 보고 사지 않는다.** ②를 거치지 않은 테마는 후보가 아니다.
 - **명단을 추천으로 읽지 않는다.** 명단은 "하드 제외를 통과했다" 이지 "좋다" 가 아니다.
