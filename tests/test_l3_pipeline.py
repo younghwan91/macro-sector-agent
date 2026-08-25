@@ -635,3 +635,34 @@ def test_survival_flag_reaches_the_stock_list(tmp_path: Path) -> None:
 
     off = dataclasses.replace(head, l4_survival_filter=False)
     assert "축5" not in "\n".join(off.lines())
+
+
+def test_thesis_head_distrusts_missing_provenance(tmp_path: Path) -> None:
+    """`cycle_confidence_by` 가 없으면 그 숫자는 파이프라인의 산출이 아니다."""
+    from msa.thesis import dump_thesis_yaml, thesis_head
+
+    d = tmp_path / "2026-08-14"
+    base = {
+        "theme_id": "t",
+        "claim": "c",
+        "invalidations": [],
+        "cycle_confidence": 0.7,
+        "gate_result": {"status": "passed", "portfolio_eligible": True},
+    }
+    dump_thesis_yaml(d / "t.thesis.yaml", base)
+    h = thesis_head("t", "2026-08-14", root=tmp_path)
+    assert h.portfolio_eligible is True  # 파일이 주장하는 값은 그대로 읽는다
+    assert h.trusted is False
+    assert h.eligible is False, "신뢰할 수 없는 논지를 편입으로 세면 안 된다"
+    assert any("산출 주체 표기가 없다" in x for x in h.lines())
+
+    dump_thesis_yaml(
+        d / "t.thesis.yaml",
+        {
+            **base,
+            "cycle_confidence_by": "referee-pipeline",
+            "cycle_confidence_terms": {"base": 0.5},
+        },
+    )
+    h2 = thesis_head("t", "2026-08-14", root=tmp_path)
+    assert h2.trusted is True and h2.eligible is True

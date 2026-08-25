@@ -359,7 +359,8 @@ def _theme_entry(
         # `gate` 와 `portfolio_eligible` 은 다른 값이다 — `passed` 이면서 편입 불가인 경우가
         # 흔하다(확신도 기준선 미달). 둘을 같이 실어야 읽는 쪽이 혼동하지 않는다.
         "gate": head.gate,
-        "portfolio_eligible": head.portfolio_eligible,
+        "portfolio_eligible": head.eligible,
+        "trusted": head.trusted,
         "cycle_confidence": head.cycle_confidence,
         "lines": head.lines(),
     }
@@ -560,6 +561,8 @@ def render_digest_md(digest: dict[str, Any]) -> str:
         # 제목에 편입 여부를 박는다. 괄호 안 다섯 항목 중 넷째로 묻히면 훑는 눈에 안 걸린다.
         if not th.get("found"):
             mark = " — 판별 안 함"
+        elif not th.get("trusted", True):
+            mark = " — **논지 신뢰 불가** (산출 주체 없음)"
         elif th.get("portfolio_eligible"):
             mark = " — **편입 가능**"
         else:
@@ -790,6 +793,9 @@ def _update_readme(report: RunReport, digest: dict[str, Any], *, readme: Path | 
     """
     from msa.ops.readme_block import MarkerMissing, render_block, update_readme
 
+    # 기본값이 저장소 README 다 — 그래서 **테스트는 반드시 `readme=` 를 넘겨야 한다.**
+    # 안 넘기면 pytest 가 공개 문서를 합성 데이터로 덮는다 (2026-08-25 실제 발생:
+    # 스토어가 도달한 적 없는 날짜와 "판별 0개" 라는 거짓이 main 에 커밋됐다).
     path = readme or (REPO_ROOT / "README.md")
     t = _Timer()
     try:
@@ -977,7 +983,8 @@ def run_daily(
         "judged": [
             {
                 "theme": h.theme,
-                "portfolio_eligible": h.portfolio_eligible,
+                "portfolio_eligible": h.eligible,
+                "trusted": h.trusted,
                 "cycle_confidence": h.cycle_confidence,
                 "gate": h.gate,
                 "source": h.source,

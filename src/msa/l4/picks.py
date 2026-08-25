@@ -125,8 +125,15 @@ VCP_DEFECT_NOTE = (
 #: 동일가중" 이라는 말을 달고 확정 포트폴리오처럼 읽힌다 (2026-08-25 검토에서 지적).
 def ineligible_banner(head: ThesisHead) -> list[str]:
     """`portfolio_eligible=False` 일 때 명단 위에 붙는 경고. 통과면 빈 목록."""
-    if head.portfolio_eligible:
+    if head.eligible:
         return []
+    if head.found and not head.trusted:
+        return [
+            "⚠ 이 테마의 논지는 **산출 주체 표기가 없다** — 확신도가 파이프라인의 산출이",
+            "  아니라 손으로 적힌 값일 수 있다. 편입 판정으로 쓰지 마라.",
+            "  다시 판별하라: `msa research <theme>`",
+            "",
+        ]
     if not head.found:
         return [
             "⚠ 이 테마는 **판별을 거치지 않았다** (논지 없음). 아래는 재무 하드 필터를",
@@ -681,7 +688,7 @@ def render_report(
         (
             f"선정: 하드필터 통과 {u['eligible']} 종목 **전부** · 테마 내 동일가중 "
             f"(라벨 {SELECTION_GROUP})"
-            if head.portfolio_eligible
+            if head.eligible
             else f"하드필터 통과: {u['eligible']} 종목 — **선정이 아니다** (테마가 편입 불가)"
         ),
         "  동일가중은 가중치를 정한 것이 아니라 정하지 않은 것이다 — 적격 종목 사이를 가를 근거가",

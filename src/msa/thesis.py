@@ -195,7 +195,15 @@ class ThesisHead:
     #: `gate_result.portfolio_eligible` — **이것이 편입 여부다.** 게이트 조항에 안 걸려도
     #: 확신도가 기준선 미만이면 `passed` 이면서 `False` 다. 둘을 같은 것으로 읽으면
     #: 탈락한 테마의 종목이 "볼 만한 것" 으로 올라온다 (2026-08-25 실측: 4테마 중 3테마).
+    #:
+    #: **산출 주체가 없는 논지에서는 항상 False 다** (`trusted` 참조).
     portfolio_eligible: bool = False
+    #: 확신도의 **산출 주체** (`cycle_confidence_by`) 와 항(`cycle_confidence_terms`)이 있는가.
+    #: 없으면 그 숫자는 파이프라인이 계산한 것이 아니다 — 사람이 손으로 적었거나 옛 형식이다.
+    #: `schema._check_recompute`(저장 전 재도출 대조)가 붙기 전에 쓰인 파일이 여기 걸린다.
+    #: 실제로 `commodity_chem`(2026-08-23, 손으로 씀, conf 0.70 → 재도출 0.45/0.60)이
+    #: 2026-08-25 결론에 "편입 가능" 으로 새어들었다.
+    trusted: bool = True
     #: 게이트가 켠 L4 생존 플래그 (`gate_result.l4_survival_filter`). **L4 는 이것으로 종목을
     #: 자동 제외하지 않는다** — 테마 단위 판정이라 어느 종목인지 모른다. 사람이 명단의
     #: 부채 열을 직접 보라는 표시다. 예전에는 이 값이 게이트 dict 에만 남고 아무도 읽지
@@ -206,6 +214,11 @@ class ThesisHead:
     @property
     def found(self) -> bool:
         return bool(self.source)
+
+    @property
+    def eligible(self) -> bool:
+        """**읽는 쪽이 써야 하는 편입 판정.** 신뢰할 수 없는 논지는 편입으로 세지 않는다."""
+        return self.portfolio_eligible and self.trusted
 
     def lines(self, *, claim_chars: int = 220, max_invalidations: int = 4) -> list[str]:
         """리포트·다이제스트가 공유하는 머리 줄. **자른 것은 잘랐다고 적는다.**"""
@@ -219,11 +232,17 @@ class ThesisHead:
             meta.append(f"확신도 {self.cycle_confidence:g}")
         if self.gate:
             meta.append(f"게이트 {self.gate}")
-        meta.append("편입 가능" if self.portfolio_eligible else "편입 불가")
+        meta.append("편입 가능" if self.eligible else "편입 불가")
         if self.l4_survival_filter:
             meta.append("축5 생존 경고")
         meta.append(self.source)
         head.append("  (" + " · ".join(meta) + ")")
+        if not self.trusted:
+            head.append(
+                "⚠ **이 논지는 산출 주체 표기가 없다** (`cycle_confidence_by` 없음) — 확신도가 "
+                "파이프라인의 산출이 아니라 손으로 적힌 값일 수 있다. 편입으로 세지 않는다. "
+                "다시 판별하라: `msa research <theme>`"
+            )
         if not self.invalidations:
             head.append("무효화 조건: 없음 — 스키마상 있을 수 없다 (CLAUDE.md §5). 논지를 확인하라")
             return head
@@ -272,6 +291,8 @@ def thesis_head(theme_id: str, asof: str, root: Path | str | None = None) -> The
         cycle_confidence=float(conf) if isinstance(conf, int | float) else None,
         gate=gate_status(raw),
         portfolio_eligible=bool((raw.get("gate_result") or {}).get("portfolio_eligible", False)),
+        trusted=bool(raw.get("cycle_confidence_by"))
+        and raw.get("cycle_confidence_terms") is not None,
         l4_survival_filter=bool((raw.get("gate_result") or {}).get("l4_survival_filter", False)),
         source=rel(f),
     )

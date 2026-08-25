@@ -169,8 +169,9 @@ def _headline(digest: dict[str, Any]) -> tuple[str, str]:
 
     flagged = sum(1 for d in dips if d.get("red_flags") or d.get("penalties"))
     warn = f" 그중 **레드플래그·감점이 붙은 것 {flagged}종목**." if flagged else ""
+    names_top = " · ".join(f"`{t.get('theme')}`" for t in ok_top)
     return (
-        f"차트 확인 대상 {len(dips)}종목 — 편입 가능 {names_all} 의 명단 {n_pick} 중",
+        f"차트 확인 대상 {len(dips)}종목 — 편입 가능 {names_top} 의 명단 {n_pick} 중{tail}",
         f"52주 고점 대비 −{abs(PULLBACK_MARK):.0%}(선언값) 아래로 눌린 것이 {len(dips)}종목."
         f"{warn} 아래 표 밑의 목록을 보라 — **순서에 의미는 없다.** "
         "나머지는 고점 근처라 지금 자리가 아니다. **판정은 사람이 차트로 한다** — "
@@ -201,7 +202,11 @@ def _dip_lines(themes: list[dict[str, Any]]) -> list[str]:
 def render_block(digest: dict[str, Any], *, today: date | None = None) -> str:
     """`digest.json` → README 블록 텍스트 (마커 포함)."""
     scan = digest.get("scan") or {}
+    # 스캔 기준일과 **다이제스트가 저장된 디렉터리**는 다르다. 스토어가 뒤처지면
+    # 스캔 asof(가격이 끊긴 날) < 실행일이고, 다이제스트는 실행일 디렉터리에 저장된다.
+    # 링크에 스캔 asof 를 쓰면 스토어가 밀린 평시에 항상 깨진 경로가 된다 (2026-08-25).
     asof = str(scan.get("asof") or digest.get("asof") or "?")
+    round_dir = str(digest.get("asof") or asof)
     store_end = str(scan.get("store_end") or "?")
     now = (today or date.today()).isoformat()
     themes = list(digest.get("themes") or [])
@@ -243,7 +248,7 @@ def render_block(digest: dict[str, Any], *, today: date | None = None) -> str:
     out += [
         "",
         f"<sub>상위 {min(TOP_N, len(themes))}개만 싣는다. 전문·제외 사유·판단 재료 열은 "
-        f"`state/daily/{asof}/digest.md`. **순위가 높다 = 오래 잊혀졌다** 이지 "
+        f"`state/daily/{round_dir}/digest.md`. **순위가 높다 = 오래 잊혀졌다** 이지 "
         "사라는 뜻이 아니다 — 판별(`msa research`)을 거치지 않은 테마는 후보가 아니다.</sub>",
         "",
         END,

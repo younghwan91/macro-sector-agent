@@ -290,3 +290,20 @@ def test_verdict_has_no_nested_bold() -> None:
         block = render_block(d, today=TODAY)
         head = next(x for x in block.splitlines() if x.startswith("> **"))
         assert head.count("**") == 2, f"굵게가 중첩됐다: {head}"
+
+
+def test_untrusted_thesis_is_not_counted_as_eligible() -> None:
+    """산출 주체 표기가 없는 논지는 편입으로 세지 않는다.
+
+    2026-08-25 실측: `commodity_chem`(2026-08-23, 손으로 씀, conf 0.70 이지만
+    `cycle_confidence_by`·`cycle_confidence_terms` 없음, 재도출하면 0.45/0.60)이
+    저장 전 재도출 대조가 붙기 전 파일이라 검증을 피해 "편입 가능" 으로 결론에 들어왔다.
+    """
+    judged = [
+        {"theme": "handwritten", "portfolio_eligible": False, "trusted": False, "in_top_k": True},
+    ]
+    block = render_block(
+        _digest([_theme("handwritten", eligible=False)], judged=judged), today=TODAY
+    )
+    assert "편입 가능 판정을 받은 테마가 없다" in block
+    assert "`handwritten`" not in block.split("| # |")[0]
