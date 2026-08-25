@@ -36,6 +36,7 @@ from msa.l5.ladders import (
     build_position_plan,
 )
 from msa.l5.optimize import (
+    CAP_STOCK,
     LAMBDA_COMPRESS,
     MDD_BUDGET,
     MDD_K,
@@ -212,6 +213,63 @@ def _covariance(
     return cov
 
 
+def equalize_uninformed_themes(
+    weights: dict[str, float],
+    picks: Sequence[Pick],
+    idio_vol_ann: Sequence[float | None],
+    warnings: list[str],
+) -> dict[str, float]:
+    """고유분산이 하나도 없는 테마의 종목 비중을 **테마 내 동일가중으로 되돌린다.**
+
+    왜: `Σ = B Σ_θ Bᵀ + diag(σ²_idio)` 에서 그 테마의 σ_idio 가 전부 0 이면 목적함수도
+    위험항도 **테마 합에만** 의존한다. 계수도 μ=1·테마 확신도라 종목별로 같다. 그러면
+    테마 내부 분배는 목적값에 나타나지 않고, 솔버가 내놓는 값은 평평한 면 위의 **임의의
+    한 점**이다 — 정보가 아니라 수치 잡음이다.
+
+    2026-08-25 실측: 실린 비중을 동일가중으로 바꿔도 포트 분산·목적값이 **비트 단위로**
+    같았다. 그런데 CMRE 4.81% 대 ZIM 3.57% 은 35% 큰 포지션이고, 사람은 그 차이를 정보로
+    읽는다. 같은 날 L4 는 "적격 종목 사이를 가를 근거가 확인되지 않았다" 며 동일가중을
+    선언했다 (`docs/06` §5.1) — L5 가 그것을 잡음으로 뒤집고 있었다.
+
+    **탐색이 아니다.** 값을 고르는 것이 아니라, 모델이 구분하지 못한다는 사실을 그대로
+    표시하는 것이다 (`CLAUDE.md` §1 은 데이터에 맞춰 값을 옮기는 것을 금지한다).
+    종목 상한(`CAP_STOCK`)을 깨는 테마는 건드리지 않고 그 사실을 적는다.
+    """
+    have_idio = {p.theme for p, v in zip(picks, idio_vol_ann, strict=True) if v}
+    by_theme: dict[str, list[Pick]] = {}
+    for p in picks:
+        by_theme.setdefault(p.theme, []).append(p)
+
+    out = dict(weights)
+    equalized: list[str] = []
+    skipped: list[str] = []
+    for theme, members in by_theme.items():
+        if theme in have_idio or len(members) < 2:
+            continue
+        total = sum(out.get(m.ticker, 0.0) for m in members)
+        each = total / len(members)
+        if each > CAP_STOCK + 1e-12:
+            skipped.append(f"{theme}(동일가중 {each:.1%} > 상한 {CAP_STOCK:.0%})")
+            continue
+        for m in members:
+            out[m.ticker] = each
+        equalized.append(f"{theme} {len(members)}종목 각 {each:.2%}")
+    if equalized:
+        warnings.append(
+            "테마 내 동일가중으로 되돌림 — " + " · ".join(equalized) + ". "
+            "그 테마들은 종목 고유분산이 없어 **테마 내부 분배가 목적함수에 나타나지 않는다** "
+            "(동일가중으로 바꿔도 목적값·분산이 같다). 솔버가 낸 종목별 차이는 정보가 아니라 "
+            "수치 잡음이라 표시하지 않는다 (docs/06 §5.1 의 L4 선언과 같은 이유)."
+        )
+    if skipped:
+        warnings.append(
+            "동일가중으로 되돌리지 못한 테마 — "
+            + " · ".join(skipped)
+            + ". 솔버 값을 그대로 두었다: 종목별 차이를 정보로 읽지 마라."
+        )
+    return out
+
+
 def _solve_and_report(
     inputs: PortfolioInputs,
     picks: Sequence[Pick],
@@ -377,7 +435,9 @@ def build_portfolio(
         solution, enb = _solve_and_report(
             inputs, picks, by_id=by_id, c_tilde=c_tilde, losses=losses, cov=cov, warnings=warnings
         )
-        weights = solution.weights
+        weights = equalize_uninformed_themes(
+            solution.weights, picks, [p.idio_vol_ann for p in picks], warnings
+        )
     else:
         warnings.append("편입 가능한 후보가 0개 — 포트폴리오를 만들지 않았다")
 

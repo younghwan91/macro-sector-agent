@@ -130,8 +130,13 @@ def _position_block(p: PositionPlan) -> list[str]:
         f"(−{(1 - p.ladder.leg_prices[2]) * 100:.0f}%)"
         "   — 2·3단은 무효화 0건 AND 트리거 충족 시에만"
     )
-    inv = " / ".join(p.tier1_invalidations) if p.tier1_invalidations else "(없음 — 불가)"
-    lines.append(f"         Tier1  {inv}")
+    # 무효화마다 **조치가 다르다.** 한 줄에 이어 붙이면 전부 전량 청산으로 읽힌다
+    # (2026-08-25: 11건 중 9건이 청산이 아닌 조치였다).
+    if p.tier1_invalidations:
+        lines.append("         Tier1  무효화 조건 — 조치는 조건마다 다르다:")
+        lines += [f"           · {x}" for x in p.tier1_invalidations]
+    else:
+        lines.append("         Tier1  (없음 — 불가)")
     lines.append(
         f"         Tier2  {_tier2_text(p)}   시간스탑  {p.time_stop} "
         f"(horizon {p.horizon_months[1]}M, 트리거 0건일 때)"

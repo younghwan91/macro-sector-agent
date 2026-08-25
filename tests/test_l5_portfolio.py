@@ -567,7 +567,9 @@ def test_parse_thesis_requires_invalidations_and_source() -> None:
         "value_trap_axes": {"unit_demand": {"axis1_available": True}},
     }
     t = parse_thesis(good)
-    assert t.invalidations == ("x [s]",) and t.triggers == ("t [s]",)
+    # 무효화에는 **조치가 앞에 붙는다** — 조치를 버리면 계획서에서 전부 전량 청산으로
+    # 읽힌다 (2026-08-25: 11건 중 9건이 청산이 아닌 조치였다). 트리거에는 조치가 없다.
+    assert t.invalidations == ("[전량 청산] x [s]",) and t.triggers == ("t [s]",)
     assert t.axis1_available is True and t.portfolio_eligible
     bad = dict(good, invalidations=[])
     with pytest.raises(InputError, match="invalidations"):
@@ -861,3 +863,76 @@ def test_weights_csv_tier2_columns_are_one_pair(tmp_path: Path) -> None:
         assert float(r["tier2_price"]) == pytest.approx(
             float(r["entry_price"]) * (1 + float(r["tier2_vs_initial"])), abs=0.01
         )
+
+
+# --------------------------------------------------------------- 정보 없는 분배
+
+
+def test_equalize_uninformed_themes_removes_solver_noise() -> None:
+    """고유분산이 없는 테마의 종목 비중은 목적함수에 나타나지 않는다 — 잡음을 정보로 보이게
+    하지 않는다 (2026-08-25 검증 지적).
+
+    실측: 실린 비중을 동일가중으로 바꿔도 포트 분산·목적값이 비트 단위로 같았는데,
+    CMRE 4.81% 대 ZIM 3.57% 은 35% 큰 포지션이라 사람이 정보로 읽는다.
+    """
+    from msa.l5.run import equalize_uninformed_themes
+
+    class _P:
+        def __init__(self, ticker: str, theme: str, idio: float | None) -> None:
+            self.ticker, self.theme, self.idio_vol_ann = ticker, theme, idio
+
+    picks = [_P("A", "t1", None), _P("B", "t1", None), _P("C", "t2", 0.4), _P("D", "t2", 0.3)]
+    w = {"A": 0.06, "B": 0.02, "C": 0.05, "D": 0.03}
+    warns: list[str] = []
+    got = equalize_uninformed_themes(w, picks, [p.idio_vol_ann for p in picks], warns)
+
+    assert got["A"] == got["B"] == 0.04, "고유분산 없는 테마는 동일가중"
+    assert abs(got["A"] + got["B"] - 0.08) < 1e-12, "테마 합은 보존된다"
+    assert got["C"] == 0.05 and got["D"] == 0.03, "고유분산이 있는 테마는 건드리지 않는다"
+    assert any("동일가중으로 되돌림" in x for x in warns)
+    assert any("수치 잡음" in x for x in warns)
+
+
+def test_equalize_respects_the_per_name_cap() -> None:
+    """동일가중이 종목 상한을 깨면 되돌리지 않고 **그 사실을 적는다.**"""
+    from msa.l5.optimize import CAP_STOCK
+    from msa.l5.run import equalize_uninformed_themes
+
+    class _P:
+        def __init__(self, ticker: str, theme: str) -> None:
+            self.ticker, self.theme, self.idio_vol_ann = ticker, theme, None
+
+    picks = [_P("A", "t"), _P("B", "t")]
+    total = 2 * (CAP_STOCK + 0.01)
+    w = {"A": total * 0.7, "B": total * 0.3}
+    warns: list[str] = []
+    got = equalize_uninformed_themes(w, picks, [None, None], warns)
+
+    assert got == w, "상한을 깨면 건드리지 않는다"
+    assert any("되돌리지 못한" in x for x in warns)
+
+
+def test_invalidation_action_reaches_the_plan() -> None:
+    """조치가 다른 무효화를 한 줄로 이어 붙이면 전부 청산으로 읽힌다."""
+    from msa.l5.inputs import ACTION_TEXT, parse_thesis
+
+    raw = {
+        "theme_id": "t",
+        "claim": "c",
+        "horizon_months": [12, 24],
+        "cycle_confidence": 0.7,
+        "cycle_confidence_source": "referee",
+        "invalidations": [
+            {"observable": "A", "source": "s", "action": "exit"},
+            {"observable": "B", "source": "s", "action": "freeze_ladder"},
+            {"observable": "C", "source": "s", "action": "halve"},
+            {"observable": "D", "source": "s"},  # 조치 미기재
+        ],
+        "source_path": "x",
+    }
+    inv = parse_thesis(raw).invalidations
+    assert inv[0].startswith(f"[{ACTION_TEXT['exit']}]")
+    assert inv[1].startswith(f"[{ACTION_TEXT['freeze_ladder']}]")
+    assert inv[2].startswith(f"[{ACTION_TEXT['halve']}]")
+    # 모르는/빈 조치를 조용히 청산으로 만들지 않는다
+    assert inv[3].startswith("[조치 미기재]")

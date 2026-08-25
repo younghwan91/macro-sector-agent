@@ -234,7 +234,24 @@ class ThesisInput:
     source_path: str = ""
 
 
-def _observables(raw: Any, *, field_name: str, where: str) -> tuple[str, ...]:
+#: 무효화 조치 → 계획서에 찍는 말. 조치를 버리면 **전부 전량 청산으로 읽힌다** —
+#: 2026-08-25 실측: 11건 중 9건이 청산이 아닌 조치인데 계획서는 11건을 Tier-1(즉시 전량
+#: 청산)로 나열하고 있었다. `docs/specs/thesis.schema.yaml` 의 정의를 그대로 옮긴다.
+ACTION_TEXT: dict[str, str] = {
+    "exit": "전량 청산",
+    "halve": "절반 축소",
+    "freeze_ladder": "사다리 동결(물타기 중단·보유 유지)",
+}
+
+
+def _observables(
+    raw: Any, *, field_name: str, where: str, with_action: bool = False
+) -> tuple[str, ...]:
+    """관측 조건 문자열. `with_action` 이면 **조치를 앞에 붙인다.**
+
+    조치가 빠지면 `freeze_ladder`(물타기만 중단)와 `exit`(전량 청산)이 같은 줄로 보인다.
+    계획서를 그대로 집행하면 보유해야 할 것을 파는 일이 생긴다.
+    """
     if raw is None:
         return ()
     if not isinstance(raw, Sequence) or isinstance(raw, str):
@@ -246,7 +263,13 @@ def _observables(raw: Any, *, field_name: str, where: str) -> tuple[str, ...]:
             if not obs:
                 raise InputError(f"{where}: {field_name} 항목에 observable 이 없다: {item!r}")
             src = item.get("source")
-            out.append(f"{obs} [{src}]" if src else str(obs))
+            body = f"{obs} [{src}]" if src else str(obs)
+            if with_action:
+                act = str(item.get("action") or "")
+                # 모르는 조치를 조용히 청산으로 만들지 않는다 — 있는 그대로 적는다.
+                label = ACTION_TEXT.get(act, f"조치 미상({act})" if act else "조치 미기재")
+                body = f"[{label}] {body}"
+            out.append(body)
         else:
             out.append(str(item))
     return tuple(out)
@@ -268,7 +291,9 @@ def parse_thesis(raw: Mapping[str, Any], *, where: str = "<thesis>") -> ThesisIn
             f"{where}: cycle_confidence_source 허용값 {CONFIDENCE_SOURCES}: {src!r} — "
             "누가 c 를 만들었는지 없는 논지는 캘리브레이션 표본이 될 수 없다 (docs/11 M6)"
         )
-    inv = _observables(raw.get("invalidations"), field_name="invalidations", where=where)
+    inv = _observables(
+        raw.get("invalidations"), field_name="invalidations", where=where, with_action=True
+    )
     if not inv:
         raise InputError(
             f"{where}: invalidations 가 비었다 — 무효화 조건 없는 논지는 저장할 수 없다 "
