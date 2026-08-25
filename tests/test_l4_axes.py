@@ -127,7 +127,8 @@ def test_missing_maturity_wall_is_not_excluded_but_counted() -> None:
     assert hf.loc["WALL", "excluded"] and "만기벽(12m 대용)" in hf.loc["WALL", "reason"]
     assert "E7" not in axes.HARD_REASON_CODES
     ua = axes.unapplied_filter_flags(f)
-    assert list(ua.columns) == ["E3"]
+    # 2026-08-26: E2 도 미적용 대상이 됐다 (금융업에서 순부채/EBITDA 는 정의되지 않는다)
+    assert list(ua.columns) == ["E2", "E3"]
     assert bool(ua.loc["NOWALL", "E3"])
     assert not bool(ua.loc["WALL", "E3"]) and not bool(ua.loc["OK", "E3"])
     # 재무가 아예 없는 종목은 이미 제외됐다 — 미적용을 말하려면 먼저 평가 대상이어야 한다
@@ -147,7 +148,7 @@ def test_hard_reason_codes_classification() -> None:
     assert axes.HARD_REASON_DATA == ("E4", "E5", "E6")
     assert set(axes.HARD_REASON_ALPHA) | set(axes.HARD_REASON_DATA) == set(axes.HARD_REASON_CODES)
     assert set(axes.HARD_REASON_LABELS) == set(axes.HARD_REASON_CODES)
-    assert axes.FILTER_UNAPPLIED_CODES == ("E3",)
+    assert axes.FILTER_UNAPPLIED_CODES == ("E2", "E3")
     assert set(axes.FILTER_UNAPPLIED_LABELS) == set(axes.FILTER_UNAPPLIED_CODES)
     assert set(axes.FILTER_UNAPPLIED_COLUMN) == set(axes.FILTER_UNAPPLIED_CODES)
 
@@ -624,3 +625,54 @@ def test_disabled_penalties_are_not_evaluated_and_are_announced() -> None:
         assert back.loc["FAT", "n_penalties"] == 0
     finally:
         axes.PENALTY_ENABLED["adv_lt_2m"] = False
+
+
+def test_debt_ratios_are_not_applied_to_financials() -> None:
+    """은행·브로커에서 부채는 위험이 아니라 **영업 그 자체**다 — 그 비율은 정의되지 않는다.
+
+    2026-08-26 실측(2023-08 단면·24개월): E2 단독 제외군의 사망률이 **1.8%** 로 통과군 2.7%
+    보다 **낮았고** 중앙수익률은 +20.1% 로 더 높았다. 단독군 절반 이상이 은행·자산운용·
+    모기지REIT 였다. `docs/backtest-l4.md` §5 의 "+6.7%p" 는 E1·E3 와 겹친 종목이 만든 것이다.
+
+    **새 임계가 아니다** — `vendor/redflags.FINANCIAL_SECTORS` 가 이자보상배율에 대해 이미
+    선언한 원칙의 확장이다.
+    """
+    import pandas as pd
+
+    from msa.vendor.redflags import FINANCIAL_SECTORS
+
+    fin = next(iter(FINANCIAL_SECTORS))
+    frame = _frame(
+        {
+            "BANK": _base(net_debt_ebitda=40.0, maturity_wall_12m=3.0, sector=fin),
+            "MFG": _base(net_debt_ebitda=40.0, maturity_wall_12m=3.0, sector="Industrials"),
+        }
+    )
+    hf = axes.hard_filter_flags(frame)
+    assert not hf.loc["BANK", "E2"] and not hf.loc["BANK", "E3"], "금융업에는 걸리지 않는다"
+    assert hf.loc["MFG", "E2"] and hf.loc["MFG", "E3"], "제조업에는 그대로 걸린다"
+
+    # 조용히 넘어가지 않는다 — 미적용으로 **센다** (`CLAUDE.md` §2)
+    ua = axes.unapplied_filter_flags(frame)
+    assert ua.loc["BANK", "E2"] and ua.loc["BANK", "E3"]
+    assert not ua.loc["MFG", "E2"] and not ua.loc["MFG", "E3"]
+
+    # 판정 불가(E6)도 금융업에는 걸지 않는다 — 같은 이유다
+    nan_frame = _frame({"BANK": _base(net_debt_ebitda=None, sector=fin)})
+    assert not axes.hard_filter_flags(nan_frame).loc["BANK", "E6"]
+
+
+def test_unknown_sector_still_gets_filtered() -> None:
+    """섹터를 모르면(빈 문자열·결측) **필터는 그대로 적용된다.**
+
+    모른다는 이유로 필터가 조용히 꺼지면, 섹터 결측이 곧 면제가 된다. 면제는 "이 업종에는
+    이 비율이 정의되지 않는다" 를 **아는** 경우에만이다 (`CLAUDE.md` §2).
+    """
+    frame = _frame(
+        {
+            "EMPTY": _base(net_debt_ebitda=40.0, sector=""),
+            "NAN": _base(net_debt_ebitda=40.0),
+        }
+    )
+    hf = axes.hard_filter_flags(frame)
+    assert hf.loc["EMPTY", "E2"] and hf.loc["NAN", "E2"]

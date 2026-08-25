@@ -186,6 +186,7 @@ FEATURE_COLUMNS: tuple[str, ...] = (
     "dilution_3y",
     "adv20_usd",
     "red_flags",
+    "sector",
     "n_red_flags",
     # T
     "revenue_ttm",
@@ -478,6 +479,14 @@ def fundamental_features(
         nflags[str(tk)] = len(fl)
     f["red_flags"] = pd.Series(flags)
     f["n_red_flags"] = pd.Series(nflags)
+    # 섹터를 특성 표에 남긴다 — 지금까지 레드플래그 계산에만 쓰고 버렸다. 하드 필터가
+    # "이 업종에는 이 비율이 정의되지 않는다" 를 판단하려면 여기까지 와야 한다
+    # (`axes.FILTER_UNAPPLIED_SECTORS`, 2026-08-26).
+    f["sector"] = (
+        pd.Series({str(tk): str(sectors.get(tk, "")) for tk in f.index})
+        if sectors is not None
+        else pd.Series("", index=f.index)
+    )
 
     # T
     margin = (latest["ebitda_ttm"] / latest["revenue_ttm"]).where(latest["revenue_ttm"] > 0)

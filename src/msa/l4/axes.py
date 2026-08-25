@@ -85,6 +85,7 @@ import pandas as pd
 from msa.l1.scoreboard import xs_pct
 from msa.l4.features import FEATURE_COLUMNS
 from msa.status import FundStatus
+from msa.vendor.redflags import FINANCIAL_SECTORS
 
 # ---- 문서 선언값 (docs/06 §2)
 RUNWAY_MIN_Q = 4.0
@@ -215,9 +216,37 @@ HARD_REASON_DATA: tuple[str, ...] = ("E4", "E5", "E6")
 #: 시도 수에도 들어가지 않는다 — 어떤 칸도 들여다보지 않고 세기만 한다.
 #: 지금 원소는 하나(E3)다. `going_concern` 은 아예 열이 없어(입력 자체가 없다) 여기가 아니라
 #: `features.INPUTS_UNAVAILABLE` 이 보고한다 — 이쪽은 "열은 있는데 값이 없다" 를 센다.
-FILTER_UNAPPLIED_CODES: tuple[str, ...] = ("E3",)
-FILTER_UNAPPLIED_COLUMN: dict[str, str] = {"E3": "maturity_wall_12m"}
+#: **이 업종에는 이 비율이 정의되지 않는다** — 제외가 아니라 **미적용**으로 센다 (2026-08-26).
+#:
+#: `net_debt_ebitda`(E2)·`maturity_wall_12m`(E3)은 둘 다 대차대조표 부채를 분모/분자로 쓴다.
+#: **은행·브로커·보험에서 부채는 위험이 아니라 영업 그 자체**다 — 예금·차입이 곧 사업 자산의
+#: 재원이고, 그 비율은 제조업에서 뜻하는 것을 뜻하지 않는다. 근거가 된 문헌(2013 Interagency
+#: Guidance on Leveraged Lending)도 **대출을 받는 기업**의 레버리지를 다루지 대출을 **하는**
+#: 기관을 다루지 않는다.
+#:
+#: 이 저장소는 같은 원칙을 이미 선언했다 — `vendor/redflags.FINANCIAL_SECTORS` 가 이자보상배율
+#: 판정을 금융업에서 뺀다. **새 임계가 아니라 그 원칙의 확장이다** (`CLAUDE.md` §1 은 값을
+#: 데이터에 맞춰 옮기는 것을 금지하지, 정의되지 않는 곳에 적용하지 않는 것을 금지하지 않는다).
+#:
+#: 실측(2026-08-26, 2023-08 단면·24개월): E2 단독 제외군의 사망률은 **1.8%** 로 통과군 2.7%
+#: 보다 **낮았고** 중앙수익률은 +20.1% 로 더 높았다. 그 단독군의 절반 이상이 은행·자산운용·
+#: 모기지REIT 였다. `docs/backtest-l4.md` §5 의 "+6.7%p" 는 E1·E3 와 겹친 114종목이 만든 것이다.
+FILTER_UNAPPLIED_SECTORS: dict[str, frozenset[str]] = {
+    "E2": FINANCIAL_SECTORS,
+    "E3": FINANCIAL_SECTORS,
+}
+
+FILTER_UNAPPLIED_CODES: tuple[str, ...] = ("E2", "E3")
+FILTER_UNAPPLIED_COLUMN: dict[str, str] = {
+    "E2": "net_debt_ebitda",
+    "E3": "maturity_wall_12m",
+}
 FILTER_UNAPPLIED_LABELS: dict[str, str] = {
+    "E2": (
+        "순부채/EBITDA 미적용 (금융업 — 부채가 위험이 아니라 영업이다). "
+        "제외하지 않는다: 근거 문헌(2013 Interagency Guidance)은 대출을 받는 기업을 다루지 "
+        "대출을 하는 기관을 다루지 않는다 (docs/06 §2.1.2)"
+    ),
     "E3": (
         "만기벽 미적용 (maturity_wall_12m 입력 없음 — SF1 의 debtc 결측). "
         "제외하지 않는다: 선언된 필터는 maturity_wall_24m 이고 이 스토어에서 "
@@ -259,6 +288,14 @@ def _tagged(mask: pd.Series, text: Any) -> pd.Series:
     return pd.Series(np.where(mask.fillna(False).astype(bool), text, ""), index=mask.index)
 
 
+def _sector_mask(frame: pd.DataFrame, code: str) -> pd.Series:
+    """그 사유가 **적용되지 않는 업종**인가. `sector` 열이 없으면 전부 False (예전 산출물 호환)."""
+    sectors = FILTER_UNAPPLIED_SECTORS.get(code)
+    if not sectors or "sector" not in frame.columns:
+        return pd.Series(False, index=frame.index)
+    return frame["sector"].astype(str).isin(sectors)
+
+
 def hard_filter_flags(frame: pd.DataFrame) -> pd.DataFrame:
     """사유 **코드별** 하드 제외 불리언 (index ticker · 열 `HARD_REASON_CODES`).
 
@@ -272,15 +309,21 @@ def hard_filter_flags(frame: pd.DataFrame) -> pd.DataFrame:
     wall = _num(frame["maturity_wall_12m"])
     out = pd.DataFrame(index=frame.index)
     out["E1"] = (has_fund & (runway < RUNWAY_MIN_Q)).fillna(False).astype(bool)
-    out["E2"] = (has_fund & (nd > ND_EBITDA_EXCLUDE)).fillna(False).astype(bool)
-    out["E3"] = (has_fund & (wall > MATURITY_WALL_EXCLUDE)).fillna(False).astype(bool)
+    # 금융업에서는 부채 비율이 정의되지 않는다 — 제외하지 않고 `unapplied_filter_flags` 가 센다.
+    fin = _sector_mask(frame, "E2")
+    out["E2"] = (has_fund & ~fin & (nd > ND_EBITDA_EXCLUDE)).fillna(False).astype(bool)
+    out["E3"] = (
+        (has_fund & ~_sector_mask(frame, "E3") & (wall > MATURITY_WALL_EXCLUDE))
+        .fillna(False)
+        .astype(bool)
+    )
     out["E4"] = (has_fund & runway.isna()).fillna(False).astype(bool)
     out["E5"] = (~has_fund).fillna(False).astype(bool)
     # E6 — E2 의 판정 불가. `nd > 6` 은 NaN 에서 False 라 조용히 통과했다 (2026-08-24).
     # E4 와 같은 처리이고 임계는 옮기지 않았다.
     # E3 의 짝(하루 존재했던 E7)은 없다 — `wall` 결측은 제외가 아니라 **미적용**으로 센다
     # (`unapplied_filter_flags`). 근거는 모듈 docstring 의 만기벽 항목.
-    out["E6"] = (has_fund & nd.isna()).fillna(False).astype(bool)
+    out["E6"] = (has_fund & ~fin & nd.isna()).fillna(False).astype(bool)
     return out[list(HARD_REASON_CODES)]
 
 
@@ -297,7 +340,8 @@ def unapplied_filter_flags(frame: pd.DataFrame) -> pd.DataFrame:
     out = pd.DataFrame(index=frame.index)
     for code in FILTER_UNAPPLIED_CODES:
         col = _num(frame[FILTER_UNAPPLIED_COLUMN[code]])
-        out[code] = (has_fund & col.isna()).fillna(False).astype(bool)
+        # 미적용의 사유는 둘이다 — 입력이 없거나(결측), 그 업종에 정의되지 않거나.
+        out[code] = (has_fund & (col.isna() | _sector_mask(frame, code))).fillna(False).astype(bool)
     return out[list(FILTER_UNAPPLIED_CODES)]
 
 
