@@ -906,6 +906,11 @@ def run_daily_cmd(
         help="이 실행의 발신 허용 — 다이제스트 요약 + 보유 점검 알림 "
         "(MSA_TELEGRAM_* 둘 다 있을 때만). 없으면 아무것도 보내지 않는다",
     ),
+    no_audit: bool = typer.Option(
+        False,
+        "--no-audit",
+        help="편입 가능 테마의 증거 실사를 건너뛴다 (네트워크를 쓴다 — 테마당 ~35초)",
+    ),
     no_readme: bool = typer.Option(
         False,
         "--no-readme",
@@ -933,6 +938,7 @@ def run_daily_cmd(
             picks_per_theme=per_theme,
             write=not no_write,
             send=send,
+            audit=not no_audit,
             update_readme=not no_readme,
         )
     except RunError as e:
@@ -1128,6 +1134,54 @@ def journal_diff(
 # ---------------------------------------------------------------------------
 # msa ops
 # ---------------------------------------------------------------------------
+
+
+@ops_app.command("audit-evidence")
+@cli_guard
+def ops_audit_evidence(
+    theme: str = typer.Argument(..., help="테마 id"),
+    asof: str = typer.Option("", help="기준일 YYYY-MM-DD 이하의 최신 논지 (기본 오늘)"),
+    all_evidence: bool = typer.Option(
+        False, "--all", help="판정을 만든 증거뿐 아니라 **전부** 실사한다 (느리다)"
+    ),
+    no_write: bool = _no_write_option("state/audits/"),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """증거 실사 — `claim` 의 숫자가 **그 문서에 실제로 있는지** 확인한다 (`docs/05` §6.10).
+
+    스키마는 형식만 본다. 그것을 통과하면서 원문에 없는 수치를 적을 수 있고, 2026-08-25
+    실사에서 표본의 20% 가 그랬다. 이 명령은 판정을 만든 증거만 골라 원문을 받아 대조한다.
+    문맥은 못 본다 — 못 찾은 것과 못 읽은 것을 알려줘 **사람이 어느 URL 을 먼저 열지** 정한다.
+    """
+    from msa.io import write_snapshot
+    from msa.l3.evidence_audit import audit_thesis, http_fetch, render_audit
+    from msa.thesis import find_thesis, read_thesis_yaml
+
+    _setup_logging(verbose)
+    p = paths()
+    asof_s = asof or date.today().isoformat()
+    path = find_thesis(theme, asof_s, p.theses)
+    if path is None:
+        typer.echo(
+            f"{theme}: {asof_s} 이하의 논지가 없다 — `msa research {theme}` 를 먼저", err=True
+        )
+        raise typer.Exit(code=1)
+    res = audit_thesis(read_thesis_yaml(path), http_fetch, only_axis_refs=not all_evidence)
+    typer.echo(render_audit(theme, res))
+    if not no_write:
+        out = write_snapshot(
+            p.state / "audits" / asof_s,
+            jsons={
+                f"{theme}.audit.json": {
+                    "theme": theme,
+                    "thesis": str(path),
+                    "counts": res.counts(),
+                    "unverified_axes": res.unverified_axes(),
+                    "checks": [c.as_dict() for c in res.checks],
+                }
+            },
+        )
+        _echo_saved(out)
 
 
 @ops_app.command("schedule")

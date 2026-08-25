@@ -98,6 +98,7 @@ DAILY_STEPS: tuple[str, ...] = (
     "diff",
     "check",
     "digest",
+    "audit",
     "readme",
 )
 
@@ -784,6 +785,61 @@ def build_digest_alert(digest: dict[str, Any], asof_d: date, *, picks_per_theme:
 # ---------------------------------------------------------------- run_daily
 
 
+def _audit_eligible(
+    report: RunReport, digest: dict[str, Any], asof_s: str, *, enabled: bool
+) -> None:
+    """**편입 가능 테마의 근거만** 실사한다 (`l3.evidence_audit`).
+
+    왜 여기서 하나: 사람이 실제로 돈을 걸 후보는 편입 가능 테마뿐이고, 그 판정을 만든
+    증거가 원문에 있는지는 **매번 확인해야 하는 것**이지 한 번 해두고 잊을 것이 아니다.
+    2026-08-25 실사에서 표본의 20% 가 원문에 없는 수치였다.
+
+    편입 불가 테마는 건너뛴다 — 사지 않을 테마의 URL 수십 개를 매일 받을 이유가 없다.
+    실패는 다이제스트를 죽이지 않지만 **단계로 보고한다** (`CLAUDE.md` §2).
+    """
+    t = _Timer()
+    if not enabled:
+        report.add(StepResult("audit", "skipped", "--no-audit", seconds=t.seconds))
+        return
+    ok = [j for j in (digest.get("judged") or []) if j.get("portfolio_eligible")]
+    if not ok:
+        report.add(StepResult("audit", "skipped", "편입 가능 테마가 없다", seconds=t.seconds))
+        return
+
+    from msa.l3.evidence_audit import audit_thesis, http_fetch
+    from msa.thesis import find_thesis, read_thesis_yaml
+
+    p = paths()
+    out: dict[str, Any] = {}
+    for j in ok:
+        theme = str(j["theme"])
+        path = find_thesis(theme, asof_s, p.theses)
+        if path is None:
+            out[theme] = {"error": "논지를 찾지 못했다"}
+            continue
+        try:
+            res = audit_thesis(read_thesis_yaml(path), http_fetch)
+        except Exception as e:  # 네트워크 사고가 다이제스트를 죽이지 않게
+            out[theme] = {"error": f"{type(e).__name__}: {e}"}
+            continue
+        out[theme] = {
+            "counts": res.counts(),
+            "unverified_axes": res.unverified_axes(),
+            "checked": len(res.checks),
+        }
+    digest["evidence_audit"] = out
+    bad = sum(v.get("counts", {}).get("partial", 0) for v in out.values() if "counts" in v)
+    n = sum(v.get("checked", 0) for v in out.values() if "checked" in v)
+    report.add(
+        StepResult(
+            "audit",
+            "ok",
+            f"{len(out)}테마 · 근거 {n}건 · 원문에서 못 찾은 숫자가 있는 것 {bad}건",
+            seconds=t.seconds,
+        )
+    )
+
+
 def _update_readme(report: RunReport, digest: dict[str, Any], *, readme: Path | None) -> None:
     """README 의 "오늘의 결론" 블록을 다시 쓴다 (2026-08-25 사용자 지시).
 
@@ -817,6 +873,7 @@ def run_daily(
     picks_per_theme: int = 5,
     write: bool = True,
     send: bool = False,
+    audit: bool = True,
     update_readme: bool = True,
     readme: Path | None = None,
 ) -> DailyResult:
@@ -838,6 +895,7 @@ def run_daily(
             "extra_themes": [str(t) for t in extra_themes],
             "picks_per_theme": picks_per_theme,
             "send": send,
+            "audit": audit,
             "update_readme": update_readme,
         },
     )
@@ -1012,6 +1070,10 @@ def run_daily(
         report.add(StepResult("digest", "ok", "", outs, t.seconds))
     else:
         report.add(StepResult("digest", "ok", "no-write — 파일을 쓰지 않았다", seconds=t.seconds))
+
+    _audit_eligible(report, digest, asof_s, enabled=audit and write)
+    if write and out_dir is not None and digest.get("evidence_audit"):
+        write_snapshot(out_dir, jsons={"digest.json": digest})  # 실사 결과를 반영해 다시 쓴다
 
     # README 블록 — 건너뛰어도 **단계로 보고한다.** 단계가 통째로 사라지면 "안 돌았다" 와
     # "돌았는데 할 게 없었다" 를 구분할 수 없다 (`CLAUDE.md` §2).

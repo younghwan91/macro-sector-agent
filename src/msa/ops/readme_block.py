@@ -108,6 +108,31 @@ def _pullbacks(themes: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(out, key=lambda x: x.get("from_52w_high", 0.0))
 
 
+def _audit_line(digest: dict[str, Any]) -> str:
+    """증거 실사 요약 한 조각. 결론 안에 넣는다 — 파일에만 있으면 아무도 안 본다."""
+    audit = digest.get("evidence_audit") or {}
+    if not audit:
+        return ""
+    partial = sum(v.get("counts", {}).get("partial", 0) for v in audit.values() if "counts" in v)
+    unread = sum(
+        v.get("counts", {}).get("unreachable", 0) + v.get("counts", {}).get("unsupported", 0)
+        for v in audit.values()
+        if "counts" in v
+    )
+    total = sum(v.get("checked", 0) for v in audit.values() if "checked" in v)
+    if not total:
+        return ""
+    axes = sorted({a for v in audit.values() for a in (v.get("unverified_axes") or [])})
+    bit = (
+        f" ⚠ **판정을 만든 근거 {total}건 중 {partial}건은 원문에서 못 찾은 숫자가 있고 "
+        f"{unread}건은 문서를 읽지 못했다** (`msa ops audit-evidence <theme>` 로 목록을 본다 — "
+        "단위 변환 때문에 오탐도 섞인다)."
+    )
+    if axes:
+        bit += f" 확인된 근거가 하나도 없는 축: {', '.join(axes)}."
+    return bit
+
+
 def _headline(digest: dict[str, Any]) -> tuple[str, str]:
     """한 줄 결론 + 근거. 표를 읽기 전에 **무엇을 할지**가 먼저 나와야 한다.
 
@@ -164,9 +189,10 @@ def _headline(digest: dict[str, Any]) -> tuple[str, str]:
             "지금 들어갈 자리는 없다",
             f"편입 가능 {names_all}{tail} 의 명단 {n_pick}종목이 **전부 52주 고점 "
             f"−{abs(PULLBACK_MARK):.0%}(선언값) 이내**다. 이 시스템은 잊혀진 바닥을 찾는데 "
-            "나온 것은 이미 회복된 자리다. 관찰만 하고 눌릴 때 다시 본다.",
+            f"나온 것은 이미 회복된 자리다. 관찰만 하고 눌릴 때 다시 본다.{_audit_line(digest)}",
         )
 
+    audit = _audit_line(digest)
     flagged = sum(1 for d in dips if d.get("red_flags") or d.get("penalties"))
     warn = f" 그중 **레드플래그·감점이 붙은 것 {flagged}종목**." if flagged else ""
     names_top = " · ".join(f"`{t.get('theme')}`" for t in ok_top)
@@ -174,7 +200,7 @@ def _headline(digest: dict[str, Any]) -> tuple[str, str]:
         f"차트 확인 대상 {len(dips)}종목 — 편입 가능 {names_top} 의 명단 {n_pick} 중{tail}",
         f"52주 고점 대비 −{abs(PULLBACK_MARK):.0%}(선언값) 아래로 눌린 것이 {len(dips)}종목."
         f"{warn} 아래 표 밑의 목록을 보라 — **순서에 의미는 없다.** "
-        "나머지는 고점 근처라 지금 자리가 아니다. **판정은 사람이 차트로 한다** — "
+        f"나머지는 고점 근처라 지금 자리가 아니다.{audit} **판정은 사람이 차트로 한다** — "
         "시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다.",
     )
 

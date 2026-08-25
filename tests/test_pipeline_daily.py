@@ -166,6 +166,8 @@ def test_daily_first_run_writes_digest_and_marks_everything_new(env: dict[str, A
         "diff": "ok",
         "check": "skipped",  # positions.yaml 없음
         "digest": "ok",
+        # 증거 실사 — 편입 가능 테마가 없으면 건너뛴다 (합성 테마엔 논지가 없다)
+        "audit": "skipped",
         # README 블록 갱신 — 저장소 README 에는 마커가 있으므로 ok 다. 마커가 없으면
         # skipped 이고, 어느 쪽이든 **단계로 보고된다** (조용히 넘기지 않는다).
         "readme": "ok",
@@ -437,6 +439,7 @@ def test_cli_run_daily_registered_and_passes_options(monkeypatch: pytest.MonkeyP
         "picks_per_theme": 2,
         "write": False,
         "send": True,
+        "audit": True,  # 기본은 실사 — 끄려면 --no-audit
         "update_readme": True,  # 기본은 갱신 — 끄려면 --no-readme
     }
     assert "(다이제스트)" in r.output
