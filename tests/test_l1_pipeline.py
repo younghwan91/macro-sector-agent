@@ -26,7 +26,7 @@ from msa.data.store import StoreError
 from msa.l1.blocks import BLOCK_INDICATORS, Indicators, compute_indicators
 from msa.l1.fundamentals import FundPanel, grid_dates
 from msa.l1.panel import PANEL_COLUMNS, ThemePanel, load_cached_panel
-from msa.l1.scan import scan_dirs
+from msa.l1.scan import asof_note, clamp_asof, scan_dirs
 from msa.l1.scoreboard import (
     BLOCKS,
     SCORED,
@@ -291,3 +291,36 @@ def test_axis1_counts_come_from_the_scoreboard_only() -> None:
     assert got == {"declared": 4, "data_ok": 3, "data_missing": 1, "cpi": "ok"}
     # `not_declared` 는 선언 수에 들어가지 않는다 — themes.yaml 에 physical_ref 가 없는 것이다
     assert got["declared"] == got["data_ok"] + got["data_missing"]
+
+
+# ---------------------------------------------------------------- asof > 스토어 최종일
+
+
+def test_clamp_asof_below_store_end_is_untouched() -> None:
+    end = pd.Timestamp("2026-08-24")
+    assert clamp_asof("2026-08-20", end) == (pd.Timestamp("2026-08-20"), False)
+    assert clamp_asof("2026-08-24", end) == (end, False)
+    assert clamp_asof(None, end) == (end, False)
+
+
+def test_clamp_asof_beyond_store_end_says_so(caplog: pytest.LogCaptureFixture) -> None:
+    """스토어보다 앞선 asof 는 내려서 계산하되 **조용히 하지 않는다** (`CLAUDE.md` §2)."""
+    end = pd.Timestamp("2026-08-24")
+    with caplog.at_level("WARNING"):
+        ts, clamped = clamp_asof("2026-08-26", end)
+    assert (ts, clamped) == (end, True)
+    msg = caplog.text
+    assert "2026-08-26" in msg and "2026-08-24" in msg
+
+
+def test_asof_note_is_empty_unless_clamped() -> None:
+    assert asof_note({"asof": "2026-08-24", "store_end": "2026-08-24"}) == ""
+    note = asof_note(
+        {
+            "asof": "2026-08-24",
+            "store_end": "2026-08-24",
+            "asof_requested": "2026-08-26",
+            "asof_clamped": True,
+        }
+    )
+    assert "2026-08-26" in note and "2026-08-24" in note

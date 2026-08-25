@@ -58,7 +58,7 @@ from msa.config import REPO_ROOT, paths, rel
 from msa.dates import parse_date
 from msa.errors import ProviderError
 from msa.io import write_snapshot
-from msa.l1.scan import ScanResult, run_scan, scan_dirs
+from msa.l1.scan import ScanResult, asof_note, run_scan, scan_dirs
 from msa.l3.contracts import InputsError
 from msa.l3.contracts import assemble_inputs as l3_assemble_inputs
 from msa.l3.pipeline import ResearchResult, run_research
@@ -714,10 +714,17 @@ def _monthly_steps(
             "scan",
             "ok",
             f"테마 {len(sb)} · 자격 {_n_eligible(sb)} · "
-            f"스캔 기준일 {scan.meta.get('asof')} (스토어 {scan.meta.get('store_end')})",
+            f"스캔 기준일 {scan.meta.get('asof')} (스토어 {scan.meta.get('store_end')})"
+            # 요청 asof 를 내렸으면 그 사실을 단계 노트에 싣는다 (`CLAUDE.md` §2)
+            + (f" · {asof_note(scan.meta)}" if scan.meta.get("asof_clamped") else ""),
             [rel(scan_dir)] if scan_dir else [],
             t.seconds,
-            {"asof": scan.meta.get("asof"), "store_end": scan.meta.get("store_end")},
+            {
+                "asof": scan.meta.get("asof"),
+                "store_end": scan.meta.get("store_end"),
+                "asof_requested": scan.meta.get("asof_requested"),
+                "asof_clamped": scan.meta.get("asof_clamped"),
+            },
         )
     )
 

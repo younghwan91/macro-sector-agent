@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -284,6 +285,47 @@ def _axis1_counts(scoreboard: pd.DataFrame, cpi_status: str) -> dict[str, Any]:
     }
 
 
+def clamp_asof(asof: str | None, store_end: pd.Timestamp) -> tuple[pd.Timestamp, bool]:
+    """요청 `asof` 를 스토어 최종일 이하로 내린다 — **내렸으면 말한다** (`CLAUDE.md` §2).
+
+    스토어보다 앞선 asof 는 흔하다: `msa run daily` 는 `--asof` 가 없으면 **오늘 날짜**를 쓰고,
+    스토어는 마지막 적재일(주말·미수집일이면 며칠 전)에서 끝난다. 미래 가격은 존재하지 않으므로
+    마지막 완결 데이터로 계산하는 것 말고 할 수 있는 일이 없다. 그러나 그렇게 하면
+    **산출물의 날짜 라벨(`state/daily/<오늘>/`, 다이제스트 제목)과 계산의 데이터 기준일이
+    갈라진다** — 조용히 내리면 08-24 데이터로 만든 표를 08-26 것으로 읽게 된다.
+
+    돌려주는 두 번째 값 `clamped` 는 그 사실을 상위 계층(스캔 메타·단계 노트·다이제스트 머리)이
+    그대로 싣기 위한 것이다. 임계값이 아니라 보고 규약이므로 §1 과 무관하다.
+    """
+    if asof is None:
+        return store_end, False
+    req = pd.Timestamp(asof)
+    if req <= store_end:
+        return req, False
+    log.warning(
+        "scan: 요청 asof %s 가 스토어 최종일 %s 보다 앞선다 — %s 데이터로 계산한다 "
+        "(미래 가격은 없다; 산출물의 날짜 라벨과 데이터 기준일이 다르다)",
+        req.date(),
+        store_end.date(),
+        store_end.date(),
+    )
+    return store_end, True
+
+
+def asof_note(meta: Mapping[str, Any]) -> str:
+    """스캔 메타 → "asof 를 내렸다" 한 줄. 안 내렸으면 빈 문자열.
+
+    단계 노트·다이제스트·월간 리포트가 **같은 문구**를 쓴다 — 같은 사실을 세 곳에서 따로
+    쓰면 반드시 갈라진다 (`scan.py` 의 축 1 주석과 같은 이유).
+    """
+    if not meta.get("asof_clamped"):
+        return ""
+    return (
+        f"요청 asof {meta['asof_requested']} 는 스토어 최종일 {meta['store_end']} 보다 앞선다 "
+        f"— {meta['asof']} 데이터로 계산했다"
+    )
+
+
 def run_scan(
     *,
     asof: str | None = None,
@@ -302,7 +344,7 @@ def run_scan(
     counts = inp.membership.counts()
 
     store_end = pd.Timestamp(inp.store_end)
-    asof_ts = min(pd.Timestamp(asof), store_end) if asof else store_end
+    asof_ts, asof_clamped = clamp_asof(asof, store_end)
     sb = build_scoreboard(ind, themes, asof_ts, n_live=counts["n_live"])
     data_date = min(asof_ts, store_end)  # 버킷 라벨(월말)이 아니라 실제 데이터 기준일
 
@@ -324,6 +366,10 @@ def run_scan(
     )
     scan_meta: dict[str, Any] = {
         "asof": str(data_date.date()),
+        # 요청받은 날짜와 실제로 쓴 날짜를 **둘 다** 남긴다 — 같으면 같고, 다르면 다르다는
+        # 사실 자체가 산출물에 남아야 한다 (`clamp_asof` 주석 · `CLAUDE.md` §2).
+        "asof_requested": str(pd.Timestamp(asof).date()) if asof else str(store_end.date()),
+        "asof_clamped": asof_clamped,
         "bucket": str(sb.date.date()),
         "store_end": inp.store_end,
         "fingerprint": inp.fingerprint,
@@ -393,6 +439,11 @@ def render_report(sb: Scoreboard, cov: pd.DataFrame, meta: dict[str, Any]) -> st
         "커버리지·결측 보고 (CLAUDE.md §2 — 제외는 보고한다)",
         "=" * 78,
     ]
+    if meta.get("asof_clamped"):
+        lines.append(
+            f"asof: 요청 {meta['asof_requested']} 은 스토어 최종일 {meta['store_end']} 보다 "
+            f"앞선다 — {meta['asof']} 데이터로 계산했다 (미래 가격은 없다)"
+        )
     lines.append(f"구성원: {meta['membership']}")
     u = meta["unclassified_mcap"]
     lines.append(

@@ -123,10 +123,16 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
 
     def scan(**kw: Any) -> _Scan:
         calls["scan"].append(kw)
-        return _Scan(
-            _SBox(_sb(data["sb"], data.get("small"))),
-            {"asof": data["asof"], "store_end": data["asof"], "bucket": "x"},
-        )
+        meta: dict[str, Any] = {
+            "asof": data["asof"],
+            "store_end": data["asof"],
+            "bucket": "x",
+            "asof_requested": data["asof"],
+            "asof_clamped": False,
+        }
+        # asof > store_end 를 흉내내는 테스트가 여기에 덮어쓴다 (`run_scan` 의 계약과 같은 키).
+        meta.update(data.get("scan_meta", {}))
+        return _Scan(_SBox(_sb(data["sb"], data.get("small"))), meta)
 
     def picks(theme: str, **kw: Any) -> _Picks:
         calls["picks"].append((theme, kw))
@@ -550,3 +556,41 @@ def test_tests_never_touch_the_repository_readme(env: dict[str, Any]) -> None:
     assert hashlib.md5(real.read_bytes()).hexdigest() == before, "테스트가 저장소 README 를 고쳤다"
     # 대신 넘긴 쪽은 갱신됐다 — 기능이 죽은 것이 아니라 격리된 것이다
     assert "오늘의 결론" in env["readme"].read_text(encoding="utf-8")
+
+
+# ---------------------------------------------------------------- asof > 스토어 최종일
+
+
+def test_digest_says_when_asof_was_clamped_to_store_end(env: dict[str, Any]) -> None:
+    """`--asof` 없이 오늘 날짜로 돌면 스토어보다 앞선다 — 제목은 오늘, 데이터는 스토어 최종일.
+
+    그 갈라짐을 **단계 노트와 다이제스트 본문 양쪽이 말해야 한다** (`CLAUDE.md` §2).
+    수치는 하나도 바뀌지 않는다 — 표시 문구뿐이다.
+    """
+    env["data"]["scan_meta"] = {"asof_requested": ASOF2, "asof_clamped": True}
+    res = D.run_daily(asof=ASOF2, top_k=2, picks_per_theme=2, readme=env["readme"])
+    assert res.exit_code == 0
+
+    step = next(s for s in res.report.steps if s.name == "scan")
+    assert ASOF2 in step.reason and ASOF1 in step.reason
+    assert step.details["asof_clamped"] is True
+    assert step.details["asof_requested"] == ASOF2
+
+    out = env["state"] / "daily" / ASOF2
+    md = (out / "digest.md").read_text(encoding="utf-8")
+    head = md.split("## 상위 K", 1)[0]
+    assert ASOF2 in head and ASOF1 in head
+    assert "스토어 최종일" in head
+    digest = json.loads((out / "digest.json").read_text(encoding="utf-8"))
+    assert digest["scan"]["asof_clamped"] is True
+    assert digest["scan"]["asof_requested"] == ASOF2
+
+
+def test_digest_stays_quiet_when_asof_is_within_the_store(env: dict[str, Any]) -> None:
+    """내리지 않았으면 아무 말도 하지 않는다 — 없는 경고를 만들지 않는다."""
+    res = D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"])
+    assert res.exit_code == 0
+    step = next(s for s in res.report.steps if s.name == "scan")
+    assert "스토어 최종일" not in step.reason
+    md = (env["state"] / "daily" / ASOF1 / "digest.md").read_text(encoding="utf-8")
+    assert "스토어 최종일" not in md.split("## 상위 K", 1)[0]

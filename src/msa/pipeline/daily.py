@@ -59,7 +59,7 @@ import pandas as pd
 
 from msa.config import REPO_ROOT, paths, rel
 from msa.io import write_snapshot
-from msa.l1.scan import run_scan, scan_dirs
+from msa.l1.scan import asof_note, run_scan, scan_dirs
 from msa.l1.scoreboard import BLOCKS
 from msa.l4 import axes
 from msa.l4.picks import (
@@ -499,6 +499,8 @@ def render_digest_md(digest: dict[str, Any]) -> str:
         *_conclusion_lines(digest),
         HONESTY_HEADER,
         "",
+        # 제목의 날짜는 요청한 날짜다 — 데이터가 그보다 이전이면 **바로 여기서** 말한다.
+        *([f"> **{asof_note(digest['scan'])}**", ""] if digest["scan"].get("asof_clamped") else []),
         f"스캔 기준일 {digest['scan'].get('asof')} (스토어 {digest['scan'].get('store_end')}) · "
         "기준 다이제스트 "
         + (
@@ -919,8 +921,15 @@ def run_daily(
             "scan",
             "ok",
             f"테마 {len(sb)} · 스캔 기준일 {scan.meta.get('asof')} "
-            f"(스토어 {scan.meta.get('store_end')})",
+            f"(스토어 {scan.meta.get('store_end')})"
+            + (f" · {asof_note(scan.meta)}" if scan.meta.get("asof_clamped") else ""),
             seconds=t.seconds,
+            details={
+                "asof": scan.meta.get("asof"),
+                "store_end": scan.meta.get("store_end"),
+                "asof_requested": scan.meta.get("asof_requested"),
+                "asof_clamped": scan.meta.get("asof_clamped"),
+            },
         )
     )
 
@@ -1034,6 +1043,10 @@ def run_daily(
             "asof": scan.meta.get("asof"),
             "store_end": scan.meta.get("store_end"),
             "bucket": scan.meta.get("bucket"),
+            # 다이제스트의 날짜 라벨(`asof` 위)은 **요청한 날짜**이고 데이터는 아래
+            # `asof` 것이다. 둘이 갈라졌으면 갈라졌다고 적는다 (`CLAUDE.md` §2).
+            "asof_requested": scan.meta.get("asof_requested"),
+            "asof_clamped": scan.meta.get("asof_clamped"),
         },
         "themes": themes,
         # 판별 결과의 모집단은 **상위 K 가 아니라 판별된 전부**다. 상위 K 로 세면 순위 밖의
