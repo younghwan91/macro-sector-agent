@@ -637,7 +637,6 @@ def test_debt_ratios_are_not_applied_to_financials() -> None:
     **새 임계가 아니다** — `vendor/redflags.FINANCIAL_SECTORS` 가 이자보상배율에 대해 이미
     선언한 원칙의 확장이다.
     """
-    import pandas as pd
 
     from msa.vendor.redflags import FINANCIAL_SECTORS
 
