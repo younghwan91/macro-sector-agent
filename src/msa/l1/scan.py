@@ -264,6 +264,26 @@ def prepare_inputs(
     )
 
 
+def _axis1_counts(scoreboard: pd.DataFrame, cpi_status: str) -> dict[str, Any]:
+    """축 1 상태 집계 — **스코어보드의 `axis1_status` 하나만 센다.**
+
+    "데이터 있음" 은 "판정할 수 있는 데이터가 있음" 이어야 한다. 시리즈를 읽었는지가 아니라
+    `_unit_block` 이 실제로 무엇을 낼 수 있었는지가 기준이다.
+    """
+    col = scoreboard.get("axis1_status")
+    if col is None:
+        return {"declared": 0, "data_ok": 0, "data_missing": 0, "cpi": cpi_status}
+    vc = col.value_counts()
+    ok = int(vc.get(Axis1Status.OK_EXTERNAL.value, 0) + vc.get(Axis1Status.OK_FALLBACK.value, 0))
+    missing = int(vc.get(Axis1Status.DATA_MISSING.value, 0))
+    return {
+        "declared": ok + missing,
+        "data_ok": ok,
+        "data_missing": missing,
+        "cpi": cpi_status,
+    }
+
+
 def run_scan(
     *,
     asof: str | None = None,
@@ -313,13 +333,11 @@ def run_scan(
         "panel": panel.built_from,
         "fund": inp.fund.built_from,
         "indicators": {k: v for k, v in ind.meta.items() if k != "physical_status"},
-        "physical": {
-            "declared": int(cov["axis1_declared"].sum()),
-            "data_ok": int(st["status"].str.startswith("ok").sum()) if len(st) else 0,
-            "data_missing": int((st["status"] == Axis1Status.DATA_MISSING.value).sum())
-            + int((st["status"] == "missing").sum()),
-            "cpi": physical.cpi.status,
-        },
+        # 축 1 상태는 **스코어보드가 단일 출처다.** 예전에는 `physical.status_table`(시리즈를
+        # 읽었는가)로 세고 스코어보드는 `_unit_block`(판정을 낼 수 있는가)으로 채워, 10년을
+        # 못 채우는 시리즈가 머리줄에서는 "데이터 있음" 이고 표에서는 `data_missing` 이었다
+        # (2026-08-25). 같은 사실을 두 곳에서 세면 반드시 갈라진다.
+        "physical": _axis1_counts(sb.table, physical.cpi.status),
         "etf_proxy": {
             "with_proxy": int(with_proxy.sum()),
             "corr_gt_0.85_share": corr_ok_share,

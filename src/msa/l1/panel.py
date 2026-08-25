@@ -47,7 +47,7 @@ from typing import Any, cast
 
 import pandas as pd
 
-from msa.data.store import Store, StoreError
+from msa.data.store import Store, StoreError, etf_prices
 from msa.l1.cache import FingerprintCache, newest_fingerprint
 from msa.themes import Membership
 
@@ -220,6 +220,35 @@ from prices where ticker = 'SPY' and close is not null order by date
 """
 
 
+def _spy_series(store: Store) -> pd.DataFrame:
+    """SPY 일별 종가·거래대금. 스토어에 없으면 **벌크 `funds.csv.zip` 에서 읽는다.**
+
+    SPY 가 `prices` 에 있느냐는 **스토어를 어떻게 빌드했느냐에 달린 우연**이다. Sharadar 는
+    주식(`SEP`)과 펀드(`SFP`)를 다른 파일로 주고, 벌크 재빌드 경로의 테이블 매핑에는 펀드가
+    없다 — 2026-08-25 에 재빌드가 돌자 SPY 가 0행이 되어 스캔이 통째로 멈췄다. 나머지 ETF 는
+    이미 벌크에서 읽고 있었으므로(`store.etf_prices`) SPY 만 스토어에 의존할 이유가 없다.
+
+    **조용히 비우지 않는다** — 양쪽 다 없으면 예외다 (`CLAUDE.md` §2). SPY 는 RS·상대
+    거래대금의 기준이라 없으면 C 블록이 통째로 무의미해진다.
+    """
+    spy = store.query(_SPY_SQL)
+    if not spy.empty:
+        return spy
+    log.warning("SPY 가 prices 에 없다 — 벌크 funds.csv.zip 에서 읽는다 (docs/18 §6)")
+    try:
+        bulk = etf_prices(["SPY"], min_rows=1)
+    except Exception as e:  # 벌크도 없으면 사유를 그대로 올린다
+        raise StoreError(
+            f"SPY 를 prices 에서도 벌크에서도 얻지 못했다 — 상대지표를 계산할 수 없다: {e}"
+        ) from e
+    if bulk.empty:
+        raise StoreError("SPY 가 prices 에도 벌크에도 없다 — 상대지표를 계산할 수 없다.")
+    # `dv` 규약을 맞춘다: 조정 종가 × 소급 분할조정 거래량 (테마 패널과 같은 공간).
+    out = bulk.loc[:, ["date", "closeadj", "volume"]].rename(columns={"closeadj": "close"})
+    out["dv"] = out["close"] * out["volume"]
+    return out.loc[:, ["date", "close", "dv"]]
+
+
 def _panel_code_version() -> str:
     """집계 코드 자체의 버전 — 패널·SPY·재무 SQL 본문의 해시.
 
@@ -299,9 +328,7 @@ def build_panel(
         "n_capped",
     ):
         frame[c] = frame[c].fillna(0).astype("int64")
-    spy = store.query(_SPY_SQL)
-    if spy.empty:
-        raise StoreError("SPY 가 prices 에 없다 — 상대지표를 계산할 수 없다.")
+    spy = _spy_series(store)
     spy["date"] = pd.to_datetime(spy["date"])
     spy = spy.set_index("date").sort_index()
 

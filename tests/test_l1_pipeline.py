@@ -263,3 +263,31 @@ def test_scan_dirs_lists_dated_snapshots(tmp_path: Path) -> None:
     got = scan_dirs(tmp_path)
     assert [str(d) for d, _ in got] == ["2026-07-31", "2026-08-14"]
     assert got[-1][1] == tmp_path / "2026-08-14"
+
+
+def test_axis1_counts_come_from_the_scoreboard_only() -> None:
+    """축 1 상태를 두 곳에서 세면 갈라진다 — 스코어보드가 단일 출처다.
+
+    2026-08-25: `physical.status_table`(시리즈를 읽었는가)로 머리줄을 세고 표는
+    `_unit_block`(판정을 낼 수 있는가)으로 채워, 10년을 못 채우는 시리즈가 머리줄에서는
+    "데이터 있음 27" 이고 표에서는 `data_missing` 이었다.
+    """
+    import pandas as pd
+
+    from msa.l1.scan import _axis1_counts
+
+    sb = pd.DataFrame(
+        {
+            "axis1_status": [
+                "ok_external",
+                "ok_external",
+                "ok_fallback",
+                "data_missing",
+                "not_declared",
+            ]
+        }
+    )
+    got = _axis1_counts(sb, "ok")
+    assert got == {"declared": 4, "data_ok": 3, "data_missing": 1, "cpi": "ok"}
+    # `not_declared` 는 선언 수에 들어가지 않는다 — themes.yaml 에 physical_ref 가 없는 것이다
+    assert got["declared"] == got["data_ok"] + got["data_missing"]
