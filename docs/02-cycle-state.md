@@ -8,6 +8,98 @@
 
 ---
 
+## 창·지표 상수의 출처 — 2026-08-26 조사
+
+`CLAUDE.md` §1 이 요구하는 *"도메인 근거에서 오거나, 없으면 그렇다고 적는다"* 의 후자 절이다.
+**값은 하나도 바꾸지 않았다.**
+
+### `D10Y = 2520일` (10년) — 근거 있음. 그리고 **5년은 근거가 없다**
+
+사용자 질문: *"10년 너무 길지 않나"*. 문헌은 정반대를 말한다.
+
+| 출처 | 인용 | 값 |
+|---|---|---|
+| Juglar, *Des Crises commerciales et leur retour périodique* (1862) | *"a fixed investment cycle of **7 to 11 years**"* · *"one can observe oscillations of investments into fixed capital"* | **7~11년** |
+| Schumpeter, *Business Cycles* (1939) | *"shorter **Juglar cycles lasting about 9 years**"* | ≈9년 |
+| Erten & Ocampo, *Super-cycles of commodity prices since the mid-nineteenth century*, UN DESA WP 110 (2012) | *"four super-cycles during 1865-2009 ranging between **30-40 years**"* · 광업: *"it takes **up to twenty years** from the initial capital investment until the project is completed"* | 20~70년 |
+
+**10년은 Juglar 대역(7~11년)의 정중앙이다.** 그리고 원자재·광업으로 갈수록 문헌의 창은
+**더 길어진다** — 즉 문헌이 지지하는 방향은 "10년은 길다" 가 아니라 **"10년도 짧을 수 있다"** 다.
+
+**5년으로 줄이면 무엇이 빠지는가** (실측, 2026-08-24 스냅샷): 자격 통과 73 → 72.
+빠지는 것 `offshore_drilling`·`wind`, 드는 것 `hospitals_providers`.
+
+- `offshore_drilling` 의 고점은 **2014 유가 붕괴** 전이다. 5년 창(2021-08~)은 그 고점을 **못 본다**
+  — 바닥에서 오른 구간만 보고 "낙폭 얕음 = 안 잊혀짐" 이라 판정한다. **오판이다.**
+- `wind` 는 **2021 초 고점**인데 창 시작(2021-08)이 그 뒤라 고점 자체가 잘린다. 지표가 아니라
+  **창 절단 아티팩트**다.
+- 드는 `hospitals_providers` 는 **fixed-investment 사이클 산업이 아니다** — 병원·의료서비스의
+  낙폭은 정책·수가 사이클이지 설비투자 사이클이 아니다.
+
+**즉 5년 창은 자본사이클 산업을 빼고 비-자본사이클 산업을 넣는다.** §E 가 "자본 사이클 —
+이 저장소의 차별점" 이라고 선언한 것과 정면으로 어긋난다. **`D10Y` 는 유지한다.**
+
+### A 블록의 IC 가 음수인 것은 창 탓이 아니다
+
+M3.5 에서 A 블록 IC 가 전 칸 음수였다. 창을 줄여도 안 고쳐진다 — **호라이즌이 다르기 때문**이다.
+
+| 출처 | 인용 | 창 |
+|---|---|---|
+| De Bondt & Thaler (1985), George & Hwang 요약 | *"loser stocks **in the past three to five years** outperform winners by 25% **over the next three years**"* | 형성 3~5년 · **보유 3년** |
+| Ken French, Long-Term Reversal Factor | *"prior **(13-60)** returns"* | t−60 ~ t−13개월 |
+
+**장기 반전은 3~5년 형성 · 3년 보유의 현상이고, 12개월 눈금은 애초에 답을 약속하지 않는다.**
+`docs/12` §2 가 실행 **전에** 적은 문장 — *"3~12개월 호라이즌에서 낙폭은 지속되고, 장기 반전은
+3~5년 호라이즌의 현상이다"* — 을 문헌이 그대로 뒷받침한다. S2 가 A 를 가산항에서 **자격**으로
+옮긴 것은 문헌과 정합적이다.
+
+### 진짜 문제는 창 길이가 아니라 `min_periods`
+
+`blocks.py:572` — `P.rolling(D10Y, min_periods=252).max()`. **이력이 1년만 있어도 `dd_10y` 가
+나온다.** `months_since_peak` 도 `min_periods=12` 다. 즉 이력 3년짜리 테마의 `dd_10y` 는
+"10년 낙폭" 이 아니라 **있는 이력만큼의 낙폭**이고, 이름이 값을 오도한다.
+
+짧은 이력은 고점을 덜 보므로 **낙폭이 체계적으로 얕게** 나오고 → A 백분위가 낮아지고 →
+`pool` 이 낮아지고 → **자격에서 떨어진다.** 신규·신생 테마가 구조적으로 자격을 못 얻는
+편향일 수 있다. `range_compression` 에는 `short_hist` 플래그가 있는데 **`dd_10y` 에는 없다.**
+**이것이 "10년이 긴가" 보다 먼저 볼 문제다** (실측은 아직 안 했다).
+
+### `POOL_MIN = 0.5` — M3.6 은 이 값을 검정하지 않았다
+
+`docs/12` §4.1 이 직접 적었다: *"S2 의 0.5 는 **중앙값 이상이라는 무정보 컷**이다. 둘 다 여기서
+고정하고, 결과를 본 뒤 0.45 나 −0.40 으로 옮기지 않는다."* §4.4 는 *"S1·S2 의 임계를 결과를
+보고 옮기는 것"* 을 금지 목록에 넣었다.
+
+**M3.6 이 비교한 것은 구조 셋(S0·S1·S2)이고 0.5 는 S2 의 정의 안에 박힌 채 들어갔다.**
+0.4·0.5·0.6 을 비교한 칸은 어디에도 없다. **값 자체는 여전히 근거가 없다** — 있는 것은
+"고를 근거가 없으니 중앙값" 이라는 **설계 원리**뿐이고, 그건 §1 을 어긴 것이 아니라 지킨 결과다.
+
+> 부수: `S2_POOL_MIN`(`structures.py`)과 `POOL_MIN`(`scoreboard.py`)이 **같은 값을 두 곳에서
+> 따로 선언**한다. 값을 바꾸라는 뜻이 아니라 한 곳으로 모아 갈라질 수 없게 하라는 뜻이다.
+
+### VCP — 원저와 다른 곳이 있다
+
+`vendor/vcp.py` 는 사용자의 다른 저장소(`younghwan91/momentum`)에서 벤더링한 것이고,
+Minervini 원저를 어떻게 옮겼는지는 이 저장소 안에서 확인할 수 없다.
+
+| 우리 | 문헌 (2차 자료로 확인) | 대조 |
+|---|---|---|
+| `VCP_MAX_CONS = 4` | *"**two to four contractions** typical, occasionally five or six"* | **일치.** 5~6 을 자르는 것은 우리 선택이고 그 사실이 적혀 있지 않았다 |
+| `VCP_PIVOT = 5` (좌우 5일) | 원저의 pivot = *"the **high of the final contraction**"* — **가격 레벨이지 일수가 아니다** | **같은 물건이 아니다.** 이름이 원저 용어를 빌려 오해를 만든다. 게다가 벤더 원본 기본값은 **3** 인데 5 로 덮었고 그 근거가 없다 |
+| `VCP_WINDOW = 252` | 베이스 *"**4-12 weeks** from first contraction to breakout"* | **4~12배 길다.** §B 가 "지수 레벨 승격" 이라고 의도를 적었으나 **창 길이 차이 자체는 드러나지 않았다.** 252 = 1거래년(관례) |
+
+### 나머지 — 근거를 못 찾았다
+
+| 상수 | 값 | 상태 |
+|---|---|---|
+| `OWN_HIST_MIN` | 84개월 | **근거 없음.** 저장소 안 유일한 출처는 §9 의 선언이다. 외부에서 "백분위 추정 최소 표본" 의 정본을 못 찾았다 |
+| `OWN_HIST_Z_MIN` | 36개월 | **근거 없음.** 더 시급한 것은 표본 크기가 아니라 **`z → Φ` 변환이 정규성을 가정**한다는 사실이 문서 어디에도 없다는 것 — 밸류 배수(`pb`·`ev_ebitda`)는 우편향이라 이 가정이 특히 약하다 |
+| `D5Y` | 1260일 | **근거 없음.** 다만 쓰이는 자리가 망각 창이 아니라 `liquidity_decay`·`range_compression` 의 기준 분포다 |
+| `VCP_MIN_OBS` | 60일 | **근거 없음** |
+| `TTM_MAX_SPAN_DAYS` | 400일 | **출처 없음.** `docs/06` §8.2 가 이미 *"400일은 한 분기 결측을 통과시킨다"* 고 적고 "테마 합산에서 희석된다" 로 **수용된 위험**으로 처리했다 (L4 는 300 을 쓴다) |
+| `STALE_MONTHS` | 15개월 | **근거 있음 (구성적).** SEC 10-K 제출 기한 최대 90일(비가속) + 1분기 결측 허용 = 5분기. 검증: Troutman 2026 SEC Filing Deadlines |
+
+
 ## 축 1 은 발표 시차만큼 앞으로 끌어온다 (2026-08-25)
 
 **증상.** FRED 키를 넣어 참조 시계열 15개를 받았는데도 축 1 판정이 **0개**였다. 스코어보드는
