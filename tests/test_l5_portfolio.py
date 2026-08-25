@@ -936,3 +936,27 @@ def test_invalidation_action_reaches_the_plan() -> None:
     assert inv[2].startswith(f"[{ACTION_TEXT['halve']}]")
     # 모르는/빈 조치를 조용히 청산으로 만들지 않는다
     assert inv[3].startswith("[조치 미기재]")
+
+
+def test_thesis_head_shows_the_entry_condition() -> None:
+    """진입 조건은 `mechanism` **끝**에 온다 — 앞에서 자르면 배경만 남고 결론이 사라진다.
+
+    2026-08-25 실측: `shipping_container` 의 mechanism 이 "따라서 진입 조건은 … '퇴출의
+    관측'이며, **아직 관측되지 않았다**" 로 끝나는데 명단에는 그 문장이 없었고, 사람 눈에는
+    "편입 가능 0.75" 만 보였다. 사용자가 진입 시점을 차트로 판단하기로 한 이상
+    (2026-08-26 확인) 논지가 말하는 진입 조건은 명단 머리에 있어야 한다.
+    """
+    from msa.thesis import ThesisHead
+
+    head = ThesisHead(
+        theme="t",
+        claim="배경 설명",
+        mechanism="앞부분 " * 300 + "따라서 진입 조건은 퇴출의 관측이며, 아직 관측되지 않았다.",
+        invalidations=("관측 가능한 조건",),
+        portfolio_eligible=True,
+        source="state/theses/x.yaml",
+    )
+    text = "\n".join(head.lines())
+    assert "아직 관측되지 않았다" in text, "결론이 잘려나가면 안 된다"
+    assert "mechanism 결론부" in text
+    assert "…" in text, "앞이 잘렸다는 표시가 있어야 한다 (조용히 자르지 않는다)"

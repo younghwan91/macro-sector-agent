@@ -187,6 +187,12 @@ class ThesisHead:
 
     theme: str
     claim: str = ""
+    #: **진입 조건이 여기 적힌다.** `claim` 은 "무엇이 참인가" 이고 `mechanism` 은 "그래서
+    #: 무엇이 관측되면 들어가는가" 다. 2026-08-25 에 `shipping_container` 의 mechanism 이
+    #: "진입 조건은 퇴출의 관측이며 **아직 관측되지 않았다**" 로 끝나는데 명단에는 그 문장이
+    #: 실리지 않아, 편입 가능 0.75 만 보였다. 사용자가 진입 시점을 차트로 판단하기로 한 이상
+    #: (2026-08-26 확인) 논지가 말하는 진입 조건은 **명단 머리에 있어야 한다.**
+    mechanism: str = ""
     invalidations: tuple[str, ...] = ()
     horizon_months: tuple[int, ...] = ()
     cycle_confidence: float | None = None
@@ -225,6 +231,11 @@ class ThesisHead:
         if not self.found:
             return [f"논지: {NO_THESIS_NOTE}"]
         head = [f"논지: {_clip(self.claim, claim_chars) or '(claim 비어 있음)'}"]
+        if self.mechanism:
+            # **뒤에서 자른다.** mechanism 은 "…따라서 진입 조건은 X 이며 아직 관측되지
+            # 않았다" 처럼 끝에 결론이 온다. 앞에서 자르면 그 문장이 사라지고 배경만 남는다
+            # (2026-08-26 실측: shipping_container 가 정확히 그랬다).
+            head.append(f"진입 조건(mechanism 결론부): {_clip_tail(self.mechanism, claim_chars)}")
         meta = []
         if self.horizon_months:
             meta.append("지평 " + "~".join(str(h) for h in self.horizon_months) + "개월")
@@ -260,6 +271,12 @@ class ThesisHead:
         return head
 
 
+def _clip_tail(text: str, n: int) -> str:
+    """뒤에서 `n` 자. 앞이 잘렸으면 그렇다고 표시한다 — 조용히 자르지 않는다."""
+    t = (text or "").strip()
+    return t if len(t) <= n else "… " + t[-n:]
+
+
 def _clip(s: str, n: int) -> str:
     t = " ".join(str(s or "").split())
     return t if len(t) <= n else t[: n - 1].rstrip() + "…"
@@ -286,6 +303,7 @@ def thesis_head(theme_id: str, asof: str, root: Path | str | None = None) -> The
     return ThesisHead(
         theme=theme_id,
         claim=str(raw.get("claim") or ""),
+        mechanism=str(raw.get("mechanism") or ""),
         invalidations=tuple(_obs(x) for x in (raw.get("invalidations") or [])),
         horizon_months=tuple(int(h) for h in hz if isinstance(h, int | float)),
         cycle_confidence=float(conf) if isinstance(conf, int | float) else None,
