@@ -168,7 +168,12 @@ class ThesisHead:
     invalidations: tuple[str, ...] = ()
     horizon_months: tuple[int, ...] = ()
     cycle_confidence: float | None = None
+    #: `gate_result.status` — `passed`/`rejected`. **`passed` 는 "살 수 있다" 가 아니다.**
     gate: str | None = None
+    #: `gate_result.portfolio_eligible` — **이것이 편입 여부다.** 게이트 조항에 안 걸려도
+    #: 확신도가 기준선 미만이면 `passed` 이면서 `False` 다. 둘을 같은 것으로 읽으면
+    #: 탈락한 테마의 종목이 "볼 만한 것" 으로 올라온다 (2026-08-25 실측: 4테마 중 3테마).
+    portfolio_eligible: bool = False
     #: 게이트가 켠 L4 생존 플래그 (`gate_result.l4_survival_filter`). **L4 는 이것으로 종목을
     #: 자동 제외하지 않는다** — 테마 단위 판정이라 어느 종목인지 모른다. 사람이 명단의
     #: 부채 열을 직접 보라는 표시다. 예전에는 이 값이 게이트 dict 에만 남고 아무도 읽지
@@ -192,6 +197,7 @@ class ThesisHead:
             meta.append(f"확신도 {self.cycle_confidence:g}")
         if self.gate:
             meta.append(f"게이트 {self.gate}")
+        meta.append("편입 가능" if self.portfolio_eligible else "편입 불가")
         if self.l4_survival_filter:
             meta.append("축5 생존 경고")
         meta.append(self.source)
@@ -243,6 +249,7 @@ def thesis_head(theme_id: str, asof: str, root: Path | str | None = None) -> The
         horizon_months=tuple(int(h) for h in hz if isinstance(h, int | float)),
         cycle_confidence=float(conf) if isinstance(conf, int | float) else None,
         gate=gate_status(raw),
+        portfolio_eligible=bool((raw.get("gate_result") or {}).get("portfolio_eligible", False)),
         l4_survival_filter=bool((raw.get("gate_result") or {}).get("l4_survival_filter", False)),
         source=rel(f),
     )

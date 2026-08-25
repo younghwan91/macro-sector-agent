@@ -57,7 +57,7 @@ from typing import Any
 
 import pandas as pd
 
-from msa.config import paths, rel
+from msa.config import REPO_ROOT, paths, rel
 from msa.io import write_snapshot
 from msa.l1.scan import run_scan, scan_dirs
 from msa.l1.scoreboard import BLOCKS
@@ -89,7 +89,17 @@ from msa.thesis import NO_THESIS_NOTE, thesis_head
 log = logging.getLogger(__name__)
 
 #: 일간 단계 (순서 = 실행 순서 = 리포트 순서).
-DAILY_STEPS: tuple[str, ...] = ("scan", "select", "picks", "diff", "check", "digest")
+#: 단계 이름. `readme` 는 2026-08-25 에 붙었다 — README 의 "오늘의 결론" 블록 갱신.
+#: 실패해도 다이제스트를 죽이지 않지만 **단계로 세어 결과를 보고한다** (`CLAUDE.md` §2).
+DAILY_STEPS: tuple[str, ...] = (
+    "scan",
+    "select",
+    "picks",
+    "diff",
+    "check",
+    "digest",
+    "readme",
+)
 
 #: 다이제스트 머리 한 줄 — 모든 산출물(md·txt·텔레그램)이 같은 사실에서 시작한다.
 HONESTY_HEADER = (
@@ -346,6 +356,11 @@ def _theme_entry(
         "source": head.source or None,
         "claim": head.claim or None,
         "invalidations": list(head.invalidations),
+        # `gate` 와 `portfolio_eligible` 은 다른 값이다 — `passed` 이면서 편입 불가인 경우가
+        # 흔하다(확신도 기준선 미달). 둘을 같이 실어야 읽는 쪽이 혼동하지 않는다.
+        "gate": head.gate,
+        "portfolio_eligible": head.portfolio_eligible,
+        "cycle_confidence": head.cycle_confidence,
         "lines": head.lines(),
     }
     return entry
@@ -711,6 +726,28 @@ def build_digest_alert(digest: dict[str, Any], asof_d: date, *, picks_per_theme:
 # ---------------------------------------------------------------- run_daily
 
 
+def _update_readme(report: RunReport, digest: dict[str, Any], *, readme: Path | None) -> None:
+    """README 의 "오늘의 결론" 블록을 다시 쓴다 (2026-08-25 사용자 지시).
+
+    저장소를 열었을 때 가장 먼저 보이는 곳에 오늘 상태가 있어야 한다 — `state/` 를 뒤져야
+    알 수 있으면 아무도 안 본다. **실패는 다이제스트를 죽이지 않는다.** 다만 조용히 넘기지도
+    않는다: 단계 결과에 사유가 남는다 (`CLAUDE.md` §2). 커밋은 하지 않는다 — 사람이 한다.
+    """
+    from msa.ops.readme_block import MarkerMissing, render_block, update_readme
+
+    path = readme or (REPO_ROOT / "README.md")
+    t = _Timer()
+    try:
+        changed = update_readme(path, render_block(digest))
+    except MarkerMissing as e:
+        report.add(StepResult("readme", "skipped", str(e), seconds=t.seconds))
+    except OSError as e:
+        report.add(StepResult("readme", "failed", f"README 갱신 실패 — {e}", seconds=t.seconds))
+    else:
+        msg = "블록을 다시 썼다" if changed else "내용이 같아 쓰지 않았다"
+        report.add(StepResult("readme", "ok", msg, [rel(path)] if changed else [], t.seconds))
+
+
 def run_daily(
     *,
     asof: str | date | None = None,
@@ -719,6 +756,8 @@ def run_daily(
     picks_per_theme: int = 5,
     write: bool = True,
     send: bool = False,
+    update_readme: bool = True,
+    readme: Path | None = None,
 ) -> DailyResult:
     """일간 후보 다이제스트 한 번 (모듈 머리말 참조). 스캔 실패만 exit 1 — 나머지는 격리·보고."""
     if top_k < 0:
@@ -738,6 +777,7 @@ def run_daily(
             "extra_themes": [str(t) for t in extra_themes],
             "picks_per_theme": picks_per_theme,
             "send": send,
+            "update_readme": update_readme,
         },
     )
     result = DailyResult(report=report)
@@ -897,6 +937,15 @@ def run_daily(
         report.add(StepResult("digest", "ok", "", outs, t.seconds))
     else:
         report.add(StepResult("digest", "ok", "no-write — 파일을 쓰지 않았다", seconds=t.seconds))
+
+    # README 블록 — 건너뛰어도 **단계로 보고한다.** 단계가 통째로 사라지면 "안 돌았다" 와
+    # "돌았는데 할 게 없었다" 를 구분할 수 없다 (`CLAUDE.md` §2).
+    if not write:
+        report.add(StepResult("readme", "skipped", "no-write — README 를 고치지 않았다"))
+    elif not update_readme:
+        report.add(StepResult("readme", "skipped", "--no-readme"))
+    else:
+        _update_readme(report, digest, readme=readme)
 
     # 7) 텔레그램 (선택) — deliver 는 alerts.json 을 쓰는 계약이라 write=False 면 보내지 않는다
     if send:

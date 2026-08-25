@@ -160,6 +160,9 @@ def test_daily_first_run_writes_digest_and_marks_everything_new(env: dict[str, A
         "diff": "ok",
         "check": "skipped",  # positions.yaml 없음
         "digest": "ok",
+        # README 블록 갱신 — 저장소 README 에는 마커가 있으므로 ok 다. 마커가 없으면
+        # skipped 이고, 어느 쪽이든 **단계로 보고된다** (조용히 넘기지 않는다).
+        "readme": "ok",
     }
     out = env["state"] / "daily" / ASOF1
     assert res.out_dir == out
@@ -428,6 +431,7 @@ def test_cli_run_daily_registered_and_passes_options(monkeypatch: pytest.MonkeyP
         "picks_per_theme": 2,
         "write": False,
         "send": True,
+        "update_readme": True,  # 기본은 갱신 — 끄려면 --no-readme
     }
     assert "(다이제스트)" in r.output
 
