@@ -1718,12 +1718,19 @@ themes:
     industry_match: ["Resorts & Casinos", "Gambling"]
     include_tickers: []
     exclude_tickers: []
-    etf_proxy: BJK
-    etf_proxy_alt: [BETZ]
+    etf_proxy: BETZ
+    etf_proxy_alt: []
     physical_ref: null
     correlation_cluster: consumer_services
     min_constituents: 5
-    notes: 초안 한 버킷에 실제 라벨 두 개(82+74종목)가 대응한다.
+    notes: |
+      초안 한 버킷에 실제 라벨 두 개(82+74종목)가 대응한다.
+      2026-08-27: 주 프록시를 BJK → BETZ 로 바꿨다. BJK(VanEck Gaming)가 Sharadar 벌크
+      funds.csv.zip 9,808 종목에 없다 — 상장폐지다. BETZ 는 이미 etf_proxy_alt 에 선언돼
+      있던 대안이라 새로 고른 값이 아니다. 구성은 다르다(BETZ 는 스포츠베팅·iGaming 쪽이
+      무겁고 실물 카지노 비중이 낮다) — etf_corr_12m 은 자체지수 **검증 지표일 뿐 점수
+      입력이 아니므로** 선정 결과는 바뀌지 않는다. 실제로 상관을 잰 심볼은 스코어보드의
+      etf_proxy_used 열에 실린다.
 
   - id: apparel_footwear
     name_ko: 의류·신발·명품

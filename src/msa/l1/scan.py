@@ -36,7 +36,7 @@ import pandas as pd
 
 from msa.config import paths
 from msa.data.store import Store, StoreError, etf_prices_or_empty
-from msa.dates import parse_date
+from msa.dates import last_possible_us_session, parse_date
 from msa.io import write_snapshot
 from msa.l1.blocks import (
     BLOCK_INDICATORS,
@@ -139,26 +139,39 @@ def unclassified_mcap_share(
 
 def etf_proxy_corr(
     panel: ThemePanel, themes: ThemeSet, etf: pd.DataFrame, asof: pd.Timestamp
-) -> pd.Series:
-    """ETF 프록시 vs 자체 EW 지수의 최근 12M 일별 수익률 상관 (`docs/01` §5). 프록시 없으면 NaN."""
+) -> tuple[pd.Series, pd.Series]:
+    """ETF 프록시 vs 자체 EW 지수의 최근 12M 일별 수익률 상관 (`docs/01` §5).
+
+    반환 `(상관, 실제로 쓴 심볼)`. 후보는 `Theme.etf_candidates` — 주 프록시 다음에 **설정에
+    적힌** 대안 순서다. 주 프록시가 상장폐지된 테마가 있어(`casinos_gaming` 의 `BJK`) 대안을
+    쓰는데, **어느 것을 썼는지 산출물에 남긴다** — 조용히 바꿔치기하면 사람이 BJK 로 잰
+    상관이라고 읽는다 (`CLAUDE.md` §2). 후보가 하나도 없으면 둘 다 NaN·빈 문자열.
+    """
     ret = panel.wide("ret_ew")
     start = asof - pd.DateOffset(months=12)
     out: dict[str, float] = {}
+    used: dict[str, str] = {}
     if etf.empty:
-        return pd.Series({t.id: np.nan for t in themes})
+        return pd.Series({t.id: np.nan for t in themes}), pd.Series({t.id: "" for t in themes})
     e = etf.copy()
     e["date"] = pd.to_datetime(e["date"])
     px = e.pivot_table(index="date", columns="ticker", values="closeadj").sort_index()
     eret = px.pct_change(fill_method=None)
     for t in themes:
-        if t.etf_proxy is None or t.etf_proxy not in eret.columns or t.id not in ret.columns:
-            out[t.id] = np.nan
+        out[t.id], used[t.id] = np.nan, ""
+        if t.id not in ret.columns:
             continue
         a = ret[t.id].loc[start:asof]
-        b = eret[t.etf_proxy].reindex(a.index)
-        both = pd.concat([a, b], axis=1).dropna()
-        out[t.id] = float(both.iloc[:, 0].corr(both.iloc[:, 1])) if len(both) >= 120 else np.nan
-    return pd.Series(out)
+        for sym in t.etf_candidates:
+            if sym not in eret.columns:
+                continue
+            both = pd.concat([a, eret[sym].reindex(a.index)], axis=1).dropna()
+            if len(both) < 120:
+                continue
+            out[t.id] = float(both.iloc[:, 0].corr(both.iloc[:, 1]))
+            used[t.id] = sym
+            break
+    return pd.Series(out), pd.Series(used)
 
 
 def load_or_build_fund(
@@ -246,7 +259,8 @@ def prepare_inputs(
         )
 
     # ETF: 프록시 + 실물 참조를 한 번에
-    etf = etf_prices_or_empty(etf_symbols(themes))
+    # 후보에 대안이 섞여 있어 일부 결측은 예상이다 — 실제로 쓴 심볼은 `etf_proxy_used` 열에 남는다
+    etf = etf_prices_or_empty(etf_symbols(themes), absent_expected=True)
     physical = load_physical(
         themes, allow_fetch=allow_fetch, etf_prefetched=etf if not etf.empty else None
     )
@@ -302,12 +316,21 @@ def clamp_asof(asof: str | None, store_end: pd.Timestamp) -> tuple[pd.Timestamp,
     req = pd.Timestamp(asof)
     if req <= store_end:
         return req, False
-    log.warning(
+    # **스토어가 뒤진 것과 오늘이 아직 안 끝난 것은 다르다.** 이 파이프라인은 KST 에서
+    # 도는데 미 동부는 13~14시간 뒤라, 로컬 달력 날짜로 비교하면 미국 장이 열리기도 전에
+    # "하루 뒤졌다" 는 경고가 난다 — 매일 00:00~18:00 KST 18시간 동안 (2026-08-27 실측,
+    # quant-airflow 확인: 그때 동부는 8/26 오전이고 8/25 가 최신이 맞았다).
+    # 스토어가 마지막으로 존재할 수 있는 세션까지 와 있으면 이것은 정상이고, 라벨과 데이터
+    # 기준일이 갈라진다는 사실만 남기면 된다. 뒤져 있을 때만 경고다.
+    behind = store_end.date() < last_possible_us_session()
+    log.log(
+        logging.WARNING if behind else logging.INFO,
         "scan: 요청 asof %s 가 스토어 최종일 %s 보다 앞선다 — %s 데이터로 계산한다 "
-        "(미래 가격은 없다; 산출물의 날짜 라벨과 데이터 기준일이 다르다)",
+        "(미래 가격은 없다; 산출물의 날짜 라벨과 데이터 기준일이 다르다)%s",
         req.date(),
         store_end.date(),
         store_end.date(),
+        " ⚠ 스토어가 마지막 거래일보다 뒤져 있다 — 적재를 확인해라" if behind else "",
     )
     return store_end, True
 
@@ -348,9 +371,12 @@ def run_scan(
     sb = build_scoreboard(ind, themes, asof_ts, n_live=counts["n_live"])
     data_date = min(asof_ts, store_end)  # 버킷 라벨(월말)이 아니라 실제 데이터 기준일
 
-    corr = etf_proxy_corr(panel, themes, etf, sb.date)
+    corr, corr_sym = etf_proxy_corr(panel, themes, etf, sb.date)
     cov = counts.reindex(themes.ids()).copy()
+    # 선언된 주 프록시와 **실제로 상관을 잰 심볼**을 따로 싣는다. 같으면 같게 보이고,
+    # 대안으로 넘어갔으면 그 사실이 표에 남는다.
     cov["etf_proxy"] = [t.etf_proxy for t in themes]
+    cov["etf_proxy_used"] = corr_sym.reindex(cov.index).fillna("")
     cov["etf_corr_12m"] = corr.reindex(cov.index)
     cov["etf_corr_ok"] = cov["etf_corr_12m"] > ETF_CORR_MIN
     st = physical.status_table(themes)

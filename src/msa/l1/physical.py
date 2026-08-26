@@ -182,7 +182,10 @@ def load_etf_series(
         df = prefetched
     else:
         try:
-            df = etf_prices(symbols, min_rows=0)
+            # 프록시 후보에는 **대안이 섞여 있다** — 설정이 대안을 적어 둔 이유가 주 프록시를
+            # 못 읽는 경우이므로, 후보 중 일부가 벌크에 없는 것은 이상이 아니라 예상이다.
+            # 어느 심볼로 실제로 쟀는지는 스코어보드의 `etf_proxy_used` 열이 말한다 (§2).
+            df = etf_prices(symbols, min_rows=0, absent_expected=True)
         except StoreError as e:
             return {s: _missing(s, "etf", str(e)) for s in symbols}
     for sym in symbols:
@@ -200,8 +203,9 @@ def etf_symbols(themes: Iterable[Theme], *, include_proxy: bool = True) -> list[
     for t in themes:
         if t.physical_ref is not None and t.physical_ref.source == "etf":
             syms.add(t.physical_ref.symbol)
-        if include_proxy and t.etf_proxy:
-            syms.add(t.etf_proxy)
+        if include_proxy:
+            # 대안까지 같이 받는다 — 주 프록시가 상장폐지된 테마가 있다 (`Theme.etf_candidates`).
+            syms.update(t.etf_candidates)
     return sorted(syms)
 
 

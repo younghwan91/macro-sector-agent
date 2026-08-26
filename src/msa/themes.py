@@ -89,6 +89,22 @@ class Theme:
     exclude_tickers: tuple[str, ...]
     etf_proxy: str | None
     etf_proxy_alt: tuple[str, ...]
+
+    @property
+    def etf_candidates(self) -> tuple[str, ...]:
+        """프록시 후보 — 주 프록시 다음에 **선언된** 대안 순서. 중복은 뺀다.
+
+        `etf_proxy_alt` 는 2026-08-27 까지 파싱만 되고 아무 데서도 쓰이지 않았다. 그 사이
+        `casinos_gaming` 의 주 프록시 `BJK` 는 상장폐지돼 벌크에 없었고, 대안 `BETZ` 가
+        설정에 적혀 있는데도 매 실행 경고만 났다. **여기서 고르는 것이 아니라 설정에 적힌
+        순서를 따르는 것이다** (`CLAUDE.md` §1).
+        """
+        out: list[str] = []
+        for x in (self.etf_proxy, *self.etf_proxy_alt):
+            if x and x not in out:
+                out.append(x)
+        return tuple(out)
+
     physical_ref: PhysicalRef | None
     correlation_cluster: str | None
     min_constituents: int

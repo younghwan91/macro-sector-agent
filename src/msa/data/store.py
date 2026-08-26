@@ -575,6 +575,7 @@ def etf_prices(
     min_rows: int,
     raw_dir: Path | None = None,
     cache_dir: Path | None = None,
+    absent_expected: bool = False,
 ) -> pd.DataFrame:
     """ETF 일별 가격 — 벌크 원본 `funds.csv.zip` 을 직접 읽는다.
 
@@ -616,7 +617,13 @@ def etf_prices(
             df.to_parquet(cache)
         except OSError as e:  # 캐시 실패는 결과를 막지 않는다 — 다음에 다시 훑을 뿐이다
             log.warning("etf_prices: 캐시 저장 실패 %s: %s", cache, e)
-    _guard(df, f"etf_prices({zip_path.name})", min_rows=min_rows, requested=sorted(want))
+    _guard(
+        df,
+        f"etf_prices({zip_path.name})",
+        min_rows=min_rows,
+        requested=sorted(want),
+        absent_expected=absent_expected,
+    )
     return df
 
 
@@ -666,14 +673,24 @@ def _scan_funds_zip(zip_path: Path, want: set[str]) -> pd.DataFrame:
 
 
 def etf_prices_or_empty(
-    tickers: Sequence[str], *, raw_dir: Path | None = None, cache_dir: Path | None = None
+    tickers: Sequence[str],
+    *,
+    raw_dir: Path | None = None,
+    cache_dir: Path | None = None,
+    absent_expected: bool = False,
 ) -> pd.DataFrame:
     """`etf_prices(min_rows=0)` 이되 벌크를 못 읽으면(`StoreError`) **경고를 남기고** 빈 프레임.
 
     스캔·백테스트처럼 ETF 없이도 진행하는 경로용이다 — 조용히 비우지 않고 경고는 반드시 남긴다.
     """
     try:
-        return etf_prices(tickers, min_rows=0, raw_dir=raw_dir, cache_dir=cache_dir)
+        return etf_prices(
+            tickers,
+            min_rows=0,
+            raw_dir=raw_dir,
+            cache_dir=cache_dir,
+            absent_expected=absent_expected,
+        )
     except StoreError as e:
         log.warning("ETF 벌크를 읽지 못했다: %s", e)
         return empty_etf_frame()
