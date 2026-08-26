@@ -55,10 +55,6 @@ class PhysicalSeries:
         return self.status == SeriesStatus.OK and self.series is not None
 
 
-def _physical_dir() -> Path:
-    return paths().physical
-
-
 def read_date_value_csv(path: Path) -> pd.Series:
     """`date,value` CSV → 값 시리즈 (`DatetimeIndex`, 결측 제거, 오름차순). 컬럼명은 대소문자 무관.
 

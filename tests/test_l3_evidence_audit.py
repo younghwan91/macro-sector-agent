@@ -189,3 +189,56 @@ def test_trailing_zero_notation_matches() -> None:
 
     # 그래도 다른 수는 다른 수다
     assert check_one(_ev(2, "상한이 6.4%로"), lambda _u: doc).status == PARTIAL
+
+
+# ---------------------------------------------------------------- 미리 받기
+
+
+def test_prefetch_asks_once_per_url_and_skips_what_is_not_fetched() -> None:
+    """같은 URL 을 두 근거가 인용하면 한 번만 받는다 — 실제로 있는 일이다 (KFF).
+
+    그리고 `_early_verdict` 로 판정이 끝나는 것(PDF·숫자 없는 claim)은 아예 받지 않는다.
+    규칙이 `check_one` 과 한 벌이라 미리 받는 목록과 실제로 받는 목록이 어긋나지 않는다.
+    """
+    from msa.l3.evidence_audit import fetch_urls, prefetch
+
+    same = "https://example.com/kff"
+    items = [
+        _ev(1, "가입자 3,400만 명", url=same),
+        _ev(2, "가입자 3,500만 명", url=same),  # 같은 문서
+        _ev(3, "표는 PDF 에 있다 12건", url="https://example.com/a.pdf"),  # 받지 않는다
+        _ev(4, "숫자가 없는 서술", url="https://example.com/b"),  # 받지 않는다
+    ]
+    assert fetch_urls(items) == {same}
+
+    calls: list[str] = []
+
+    def fetch(u: str) -> str | None:
+        calls.append(u)
+        return "<p>34.0 million and 35.4 million</p>"
+
+    got = prefetch(items, fetch)
+    assert calls == [same], calls
+    assert set(got) == {same}
+
+
+def test_audit_uses_the_prefetched_body_not_a_second_request() -> None:
+    """실사 전체가 URL 당 한 번만 받는다 — audit_thesis 가 prefetch 를 거친다."""
+    from msa.l3.evidence_audit import audit_thesis
+
+    calls: list[str] = []
+
+    def fetch(u: str) -> str | None:
+        calls.append(u)
+        return "<p>throughput 36 million TEU</p>"
+
+    thesis = {
+        "value_trap_axes": {"A": {"evidence_refs": [1, 2]}},
+        "evidence": [
+            _ev(1, "3,600만 TEU", url="https://example.com/x"),
+            _ev(2, "3,600만 TEU", url="https://example.com/x"),
+        ],
+    }
+    res = audit_thesis(thesis, fetch)
+    assert calls == ["https://example.com/x"], calls
+    assert [c.status for c in res.checks] == [VERIFIED, VERIFIED]

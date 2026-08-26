@@ -72,7 +72,7 @@ import logging
 import math
 import os
 import sys
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -1771,9 +1771,3 @@ def write_outputs(res: L4BacktestResult, out_dir: Path) -> Path:
     dump_json(d / "trials.json", _plain(count_trials()))
     log.info("l4-backtest: 저장 %s", d)
     return d
-
-
-def theme_ids_with_enough_members(ms: Membership, ids: Iterable[str]) -> list[str]:
-    """총 구성원이 `MIN_MEMBERS_POSSIBLE` 이상인 테마만 (임계의 논리적 귀결 — §2.2)."""
-    c = {str(k): int(v) for k, v in ms.counts()["n_total"].astype(int).items()}
-    return [t for t in ids if c.get(t, 0) >= MIN_MEMBERS_POSSIBLE]

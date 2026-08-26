@@ -37,7 +37,8 @@ from __future__ import annotations
 import html
 import logging
 import re
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -231,13 +232,12 @@ def strip_html(raw: str) -> str:
     return html.unescape(body)
 
 
-def check_one(item: Mapping[str, Any], fetch: Callable[[str], str | None]) -> EvidenceCheck:
-    """증거 한 건 — claim 의 숫자가 문서에 있는가."""
-    eid = int(item.get("id", -1))
-    url = str(item.get("source_url", ""))
-    claim = str(item.get("claim", ""))
-    wanted, cut = numbers_in(claim)
+def _early_verdict(eid: int, url: str, wanted: tuple[str, ...], cut: int) -> EvidenceCheck | None:
+    """문서를 **받기 전에** 판정이 나는 경우. 받아야 하면 `None`.
 
+    `check_one` 과 `fetch_urls` 가 같은 규칙을 봐야 한다 — 규칙이 두 벌이면 미리 받는 목록과
+    실제로 받는 목록이 어긋난다.
+    """
     if not url.startswith("http"):
         return EvidenceCheck(
             eid, UNSUPPORTED, url, wanted, truncated=cut, note="HTTP URL 이 아니다"
@@ -250,6 +250,30 @@ def check_one(item: Mapping[str, Any], fetch: Callable[[str], str | None]) -> Ev
         return EvidenceCheck(
             eid, NO_NUMBERS, url, truncated=cut, note="claim 에 확인할 숫자가 없다"
         )
+    return None
+
+
+def fetch_urls(items: Iterable[Mapping[str, Any]]) -> set[str]:
+    """실제로 받아야 하는 URL 집합 — 중복은 하나다 (같은 KFF 페이지를 두 근거가 인용한다)."""
+    out: set[str] = set()
+    for item in items:
+        url = str(item.get("source_url", ""))
+        wanted, cut = numbers_in(str(item.get("claim", "")))
+        if _early_verdict(int(item.get("id", -1)), url, wanted, cut) is None:
+            out.add(url)
+    return out
+
+
+def check_one(item: Mapping[str, Any], fetch: Callable[[str], str | None]) -> EvidenceCheck:
+    """증거 한 건 — claim 의 숫자가 문서에 있는가."""
+    eid = int(item.get("id", -1))
+    url = str(item.get("source_url", ""))
+    claim = str(item.get("claim", ""))
+    wanted, cut = numbers_in(claim)
+
+    early = _early_verdict(eid, url, wanted, cut)
+    if early is not None:
+        return early
 
     raw = fetch(url)
     if raw is None:
@@ -293,10 +317,28 @@ def audit_thesis(
         wanted_ids = {r for refs in axis_refs.values() for r in refs}
 
     ev: Sequence[Mapping[str, Any]] = thesis.get("evidence") or []
-    checks = [
-        check_one(e, fetch) for e in ev if wanted_ids is None or int(e.get("id", -1)) in wanted_ids
-    ]
+    todo = [e for e in ev if wanted_ids is None or int(e.get("id", -1)) in wanted_ids]
+    cached = prefetch(todo, fetch)
+    checks = [check_one(e, lambda u: cached[u]) for e in todo]
     return AuditResult(tuple(checks), axis_refs)
+
+
+def prefetch(
+    items: Sequence[Mapping[str, Any]], fetch: Callable[[str], str | None]
+) -> dict[str, str | None]:
+    """받아야 할 문서를 **동시에** 받아 URL → 본문으로 돌려준다.
+
+    서로 다른 호스트라 한 사이트를 두드리는 것이 아니다. 같은 URL 은 한 번만 받는다 —
+    한 페이지를 두 근거가 인용하는 일이 실제로 있다 (KFF MA 등록 현황).
+
+    실패는 그대로 `None` 으로 남긴다. **여기서 삼켜 빈 문자열로 만들지 않는다** — 그러면
+    "본문에 그 숫자가 없다" 와 "문서를 못 읽었다" 가 같아진다 (`CLAUDE.md` §2).
+    """
+    urls = sorted(fetch_urls(items))
+    if not urls:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(MAX_WORKERS, len(urls))) as ex:
+        return dict(zip(urls, ex.map(fetch, urls), strict=True))
 
 
 # ---------------------------------------------------------------- 네트워크
