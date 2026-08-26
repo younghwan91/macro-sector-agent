@@ -49,14 +49,14 @@
 
 | # | 테마 | 점수 | 판별 | 명단 | 플래그 |
 |---:|---|---:|---|---:|---|
-| 1 | `media_streaming` | 0.86 | 편입 불가 · 0.45 | 22 | SECULAR — 게이트 필요 |
-| 2 | `health_it` | 0.85 | 편입 불가 · 0.45 | 37 | SECULAR — 게이트 필요 |
+| 1 | `media_streaming` | 0.86 | 편입 불가 · 0.45 | 36 | SECULAR — 게이트 필요 |
+| 2 | `health_it` | 0.85 | 편입 불가 · 0.45 | 42 | SECULAR — 게이트 필요 |
 | 3 | `offshore_drilling` | 0.78 | 편입 불가 · 0.45 | 7 | SECULAR — 게이트 필요 |
 | 4 | `shipping_container` | 0.78 | **편입 가능** · 0.75 | 6 | — |
-| 6 | `life_science_tools` | 0.75 | **판별 안 함** | 31 | — |
-| 7 | `insurance_brokers` | 0.74 | **판별 안 함** | 13 | SECULAR — 게이트 필요 |
-| 8 | `pharma_generic` | 0.70 | **판별 안 함** | 40 | — |
-| 9 | `home_improvement` | 0.69 | 편입 불가 · 0.6 | 5 | — |
+| 6 | `life_science_tools` | 0.75 | **판별 안 함** | 32 | — |
+| 7 | `insurance_brokers` | 0.74 | **판별 안 함** | 19 | SECULAR — 게이트 필요 |
+| 8 | `pharma_generic` | 0.70 | **판별 안 함** | 53 | — |
+| 9 | `home_improvement` | 0.69 | 편입 불가 · 0.6 | 6 | — |
 
 **눌린 종목** (순서 = 테마·티커 순, 볼 만한 순서가 아니다)
 
@@ -883,8 +883,11 @@ B0·B1·B2 중 **아무도 B3(동일가중)를 이기지 못했다** (셋 다 CI
 ```bash
 make install                 # uv sync — 패키지 관리는 uv. pip install 하지 않는다
 make check                   # ruff + mypy + pytest (data/net 마커 제외)
-msa data status              # 스토어 상태·결측률
-msa data audit               # 커버리지 감사 (데이터 부분)
+msa version                  # 버전 출력
+msa data status              # 스토어 상태·결측률 (--etf: ETF 벌크 커버리지)
+msa data audit               # 커버리지 감사 (데이터 부분) — --start --end
+msa data fred-lag            # FRED 시리즈 발표시차 점검 (--vintage)
+msa data fred-fetch          # FRED 시리즈 내려받기 (--force) — 네트워크
 ```
 
 데이터는 `~/data/us_micro.duckdb`(Sharadar) 이며, 없으면 `docs/08-data-contract.md` §6 부트스트랩 절차를 먼저 밟는다.
@@ -908,24 +911,26 @@ msa data audit               # 커버리지 감사 (데이터 부분)
 
 ```bash
 msa scan                     # L1 — 134 테마 스코어보드
-                             #   --asof --force --no-vcp --top N
+                             #   --asof --force --no-vcp --top N --no-write --no-fetch
                              #   → state/scans/<date>/ (scoreboard.csv·indicators.csv·coverage.csv·report.txt·meta.json)
 
 msa research <theme>         # L3 — 4역할(supply·catalyst·bear·referee) → thesis 객체
                              #   --provider claude_code (기본) — 로컬 claude CLI, 크레딧 0
                              #   --record state/fixtures 로 녹화하면 이후 --provider fixture 로 $0 재현
                              #   --dry-run (Mock) · --provider fixture|anthropic
+                             #   --asof --decision-date (증거가 미래인지 재는 날) --no-write --no-store --fixtures
                              #   → state/theses/<date>/ (<theme>.thesis.yaml·<theme>.report.md
                              #      ·rejections-pending.yaml·contested.json)
                              #   스키마 미달은 저장하지 않고 종료 코드 2. 게이트 기각은 저장한다
 
 msa picks <theme>            # L4 — 하드 제외 → **명단**(적격 전부 · 판단 재료 열과 함께, §2.1)
                              #   S·T·M 3축·종합·순위·바벨 라벨은 함께 산출되나 **관찰 지표**다
-                             #   --asof --top(관찰용 바벨 라벨 수) --no-write --no-physical
+                             #   --asof --top(관찰용 바벨 라벨 수) --no-write --no-physical --no-fetch
                              #   → state/picks/<date>/<theme>/ (ranking.csv·excluded.csv·report.txt·meta.json)
 
 msa portfolio-inputs --asof DATE --themes a,b,c
                              # 배선 — L4 picks + L3/사람 thesis → L5 입력 묶음
+                             #   --human-theses DIR(사람 논지 우선) --top --no-write
                              #   → state/portfolio_inputs/<date>/ (picks.csv·theses/·assemble_report.json·report.txt)
 
 msa portfolio --inputs <dir> # L5 — SOCP + 사다리·스탑·TP + 매매계획서
@@ -945,8 +950,12 @@ msa run monthly              # 월간 (의사결정 주기): scan → 상위 K �
                              #   단계별 ok|skipped|unavailable|failed 와 사유를 남긴다. 끝은 제안·초안
 
 msa run weekly               # 주간 (점검 주기): 전수 스캔 + msa check --weekly + weekly-report.md
-msa run daily                # 일간: 후보 다이제스트 (스캔→상위 K→테마별 L4 랭킹→직전 diff→보유 점검)
-                             #   --per-theme 5 --send → state/daily/<date>/ (digest.json·digest.md·report.txt)
+msa run daily                # 일간: 후보 다이제스트 (스캔→상위 K→테마별 L4 랭킹→직전 diff→보유 점검
+                             #   →증거 실사→README '오늘의 결론' 갱신)
+                             #   --asof --top-k 8 --themes a,b --per-theme 5 --send --no-write
+                             #   --no-audit  증거 실사 생략 (네트워크·테마당 ~35초)
+                             #   --no-readme README '오늘의 결론' 블록을 갱신하지 않는다 (기본은 갱신)
+                             #   → state/daily/<date>/ (digest.json·digest.md·report.txt)
                              #   읽기 전용 후보 뷰. 결정 케이던스는 월간 그대로다
 msa run quarterly            # 분기: ops calibration · ops rejections-update 를 나열만
 ```
@@ -955,7 +964,7 @@ msa run quarterly            # 분기: ops calibration · ops rejections-update 
 
 | | 단계 (코드 정본) | L3(LLM) | 그래서 |
 |---|---|---|---|
-| `msa run daily` | `scan · select · picks · diff · check · digest` (`daily.py` `DAILY_STEPS`) | **없다 — 한 번도 안 돈다** | 다이제스트의 테마 대부분이 **논지 없음**이고 가치함정 게이트를 통과한 적이 없다 (§2.2) |
+| `msa run daily` | `scan · select · picks · diff · check · digest · audit · readme` (`daily.py` `DAILY_STEPS`) | **없다 — 한 번도 안 돈다** | 다이제스트의 테마 대부분이 **논지 없음**이고 가치함정 게이트를 통과한 적이 없다 (§2.2) |
 | `msa run monthly` | `scan · select ·` **`research`** `· ingest · picks · assemble · portfolio · report` (`run.py` `MONTHLY_STEPS`) | **있다** — 다만 기본값 `--provider none` 은 호출하지 않고 사람 논지·직전 thesis 를 **찾기만** 한다 | 판정은 월간에서만 생기고, 그것도 **상위 K=8 테마에만** 생긴다 |
 
 **결정 케이던스는 월간 그대로다.** 일간은 읽기 전용 후보 뷰이고, 거기서 고르는 것은 사람이다.
@@ -964,17 +973,22 @@ msa run quarterly            # 분기: ops calibration · ops rejections-update 
 
 ```bash
 msa check                    # 포지션 점검 — 트리거·무효화·Tier-2·사다리·시간스탑·TP
-                             #   --asof --daily|--weekly → state/checks/<date>/ (report·alerts.json·journal-draft)
+                             #   --asof --daily|--weekly --no-write --no-send --positions FILE
+                             #   → state/checks/<date>/ (report·alerts.json·journal-draft)
                              #   주문은 내지 않는다
+msa journal template <type>     # 저널 항목 템플릿 출력
 msa journal new --from f.yaml   # 저널 항목 추가 (필수 필드 비면 거부 · 덮어쓰기 불가)
-msa journal verify           # journal/ append-only 검사 (pre-commit: scripts/journal-precommit.sh)
+msa journal verify           # journal/ append-only 검사 (--staged)
+msa journal install-hook     # 위 검사를 pre-commit 훅으로 설치 (scripts/journal-precommit.sh, --force)
 msa journal diff <theme>     # 최근 두 thesis 스냅샷 필드 diff (논지 표류 추적)
 msa ops ingest-theses --theses-dir state/theses/<date> [--scan state/scans/<date>]
                              #   L3 라운드 → 저널 기각 항목·기각 대장·관찰 목록·진입 초안
 msa ops calibration          # cycle_confidence 캘리브레이션 (N<20 → 결론 없음)
 msa ops rejections-update    # 기각 대장 r_12m/r_24m 갱신 → state/rejections-summary.md
 msa ops reproduce <date>     # state/scans/<date>/ 스냅샷만으로 리포트 재생성·대조
-msa ops schedule --print-cron   # 케이던스 → crontab/systemd 텍스트 (설치는 사람이)
+msa ops audit-evidence <theme>  # 논지의 숫자가 인용 문서에 실제로 있는지 확인 (--asof --all --no-write)
+msa ops due <cadence>           # 오늘이 그 케이던스의 실행일이면 종료코드 0 — cron 게이트용
+msa ops schedule --print-cron   # 케이던스 → crontab 텍스트 (--systemd: 타이머 유닛). 설치는 사람이
 ```
 
 ### 백테스트 — 관문이지 튜닝 루프가 아니다
@@ -985,6 +999,8 @@ msa backtest l1              # 관문 0 (M3.5) — rank-IC·스프레드·breadt
 msa backtest l1-structures   # M3.6 — 집계 구조 S0/S1/S2 (docs/12 §4 사전 등록)
 msa backtest l4              # docs/14 사전 등록의 집행 — 테마 내 rank-IC·축 단독·하드 필터
                              #   --jobs N 병렬 · 테마별 parquet 캐시라 중단해도 이어서 돈다
+                             #   --force --themes --max-months --no-write
+msa backtest l4-structures   # docs/15 사전 등록 — 선정 구조 B0~B3 대조 (플래그는 l4 와 같다)
 ```
 
 ### 실패 시 동작
