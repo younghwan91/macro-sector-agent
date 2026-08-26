@@ -84,7 +84,6 @@ import pandas as pd
 
 from msa.l1.scoreboard import xs_pct
 from msa.l4.features import FEATURE_COLUMNS
-from msa.status import FundStatus
 from msa.vendor.redflags import FINANCIAL_SECTORS
 
 # ---- 문서 선언값 (docs/06 §2)
@@ -237,6 +236,16 @@ FILTER_UNAPPLIED_SECTORS: dict[str, frozenset[str]] = {
 }
 
 FILTER_UNAPPLIED_CODES: tuple[str, ...] = ("E2", "E3")
+
+#: **생존 판정을 하지 못한** 종목의 사유 (2026-08-26 · `docs/20` §4.2-B).
+#: 제외가 아니다 — 명단에 실리되 "이 종목의 생존은 판정되지 않았다" 를 열로 말한다.
+#: 조용히 통과시키는 것과의 차이가 이것이다 (`CLAUDE.md` §2).
+SURVIVAL_UNJUDGED_CODES: tuple[str, ...] = ("E4", "E5", "E6")
+SURVIVAL_UNJUDGED_LABELS: dict[str, str] = {
+    "E4": "런웨이 판정 불가 (현금흐름표 없음 — 20-F 발행사에 흔하다)",
+    "E5": "재무 없음/낡음 (SF1 미수록 — 해외 대형사에 흔하다)",
+    "E6": "순부채/EBITDA 판정 불가 (부채·현금 또는 EBITDA·시총 없음)",
+}
 FILTER_UNAPPLIED_COLUMN: dict[str, str] = {
     "E2": "net_debt_ebitda",
     "E3": "maturity_wall_12m",
@@ -306,24 +315,36 @@ def hard_filter_flags(frame: pd.DataFrame) -> pd.DataFrame:
     has_fund = frame["fund_calendardate"].notna()
     runway = _num(frame["cash_runway_q"])
     nd = _num(frame["net_debt_ebitda"])
-    wall = _num(frame["maturity_wall_12m"])
     out = pd.DataFrame(index=frame.index)
     out["E1"] = (has_fund & (runway < RUNWAY_MIN_Q)).fillna(False).astype(bool)
     # 금융업에서는 부채 비율이 정의되지 않는다 — 제외하지 않고 `unapplied_filter_flags` 가 센다.
     fin = _sector_mask(frame, "E2")
     out["E2"] = (has_fund & ~fin & (nd > ND_EBITDA_EXCLUDE)).fillna(False).astype(bool)
-    out["E3"] = (
-        (has_fund & ~_sector_mask(frame, "E3") & (wall > MATURITY_WALL_EXCLUDE))
-        .fillna(False)
-        .astype(bool)
-    )
-    out["E4"] = (has_fund & runway.isna()).fillna(False).astype(bool)
-    out["E5"] = (~has_fund).fillna(False).astype(bool)
+    # E3 — **자르지 않는다** (2026-08-26 결정 · `docs/20` §4.3-B).
+    # 선언된 필터는 `maturity_wall_24m` 이고 이 스토어에서 **누구에게도 계산되지 않는다.**
+    # 실제로 걸리던 `maturity_wall_12m = debtc/시총` 은 선언된 적 없는 대용치이고,
+    # ①"만기부채/시총" 이라는 지표를 문헌에서 찾지 못했으며 ②분모가 시총이라 캡티브 금융을
+    # 가진 제조업(도요타·혼다·포드·스텔란티스)과 저배수 대형주(소니·SKM·LPL)를 구조적으로 잘랐다.
+    # `docs/06` §2.1.1 이 E7 을 철회할 때 쓴 논거("자른 것은 부실이 아니라 업종의 서식")가
+    # 그대로 적용된다. 값(0.5)은 옮기지 않았다 — 선언되지 않은 대용치를 강제하는 것을 멈췄다.
+    out["E3"] = pd.Series(False, index=frame.index)
+    # E4·E5 — **자르지 않는다** (2026-08-26 결정 · `docs/20` §4.2-B).
+    # 둘은 재무 위험이 아니라 **데이터 커버리지**를 잰다. 실측(2023-08 단면·24개월, 겹침 제거):
+    # E5 단독 사망률 1.4% (통과군 2.7%보다 **낮다**) · E4 는 $300M 이상 59종목이 사망 0 ·
+    # 중앙수익률 +25% 였다 (BTI +113% · CRH +109% · RELX +58% · UL +33%). 백테스트의 E4
+    # 사망률 차 CI 도 0 을 포함한다 — 여섯 중 유일하게.
+    # E4 의 원래 이유("판정 불가 종목이 순위 상위에 온다")는 `docs/15` 의 선정 규칙 폐기로
+    # 사라졌다 — 순위가 아무것도 선정하지 않는다. `docs/14` §4.2 가 "고칠 것은 임계가 아니라
+    # 서술" 이라고 지목한 경우다.
+    # **조용히 통과시키는 것이 아니다** — `survival_unjudged_flags` 가 세고 명단에 열로 실린다.
+    out["E4"] = pd.Series(False, index=frame.index)
+    out["E5"] = pd.Series(False, index=frame.index)
     # E6 — E2 의 판정 불가. `nd > 6` 은 NaN 에서 False 라 조용히 통과했다 (2026-08-24).
     # E4 와 같은 처리이고 임계는 옮기지 않았다.
     # E3 의 짝(하루 존재했던 E7)은 없다 — `wall` 결측은 제외가 아니라 **미적용**으로 센다
     # (`unapplied_filter_flags`). 근거는 모듈 docstring 의 만기벽 항목.
-    out["E6"] = (has_fund & ~fin & nd.isna()).fillna(False).astype(bool)
+    # E6 — E4·E5 와 같은 데이터 절단이므로 같이 자르지 않는다 (오늘 단독 제외가 0명이었다).
+    out["E6"] = pd.Series(False, index=frame.index)
     return out[list(HARD_REASON_CODES)]
 
 
@@ -345,6 +366,33 @@ def unapplied_filter_flags(frame: pd.DataFrame) -> pd.DataFrame:
     return out[list(FILTER_UNAPPLIED_CODES)]
 
 
+def survival_unjudged_flags(frame: pd.DataFrame) -> pd.DataFrame:
+    """**생존을 판정하지 못한** 종목의 사유별 불리언 (index ticker · 열 `SURVIVAL_UNJUDGED_CODES`).
+
+    2026-08-26 이전에는 이 셋이 하드 제외였다(E4·E5·E6). 실측에서 **재무 위험이 아니라 데이터
+    커버리지**를 재고 있었다는 것이 확인돼 제외를 멈췄다 (`docs/20` §2). 대신 여기서 세어
+    명단에 열로 싣는다 — **평가하지 못했다는 사실이 사라지면 안 된다.**
+    """
+    _check_columns(frame)
+    has_fund = frame["fund_calendardate"].notna()
+    fin = _sector_mask(frame, "E2")
+    out = pd.DataFrame(index=frame.index)
+    out["E4"] = (has_fund & _num(frame["cash_runway_q"]).isna()).fillna(False).astype(bool)
+    out["E5"] = (~has_fund).fillna(False).astype(bool)
+    out["E6"] = (has_fund & ~fin & _num(frame["net_debt_ebitda"]).isna()).fillna(False).astype(bool)
+    return out[list(SURVIVAL_UNJUDGED_CODES)]
+
+
+def survival_unjudged_reason(frame: pd.DataFrame) -> pd.Series:
+    """종목별 미판정 사유 문자열 (없으면 빈 문자열). 명단의 `survival_unjudged` 열이 된다."""
+    flags = survival_unjudged_flags(frame)
+    parts = [
+        _tagged(flags[c], pd.Series(SURVIVAL_UNJUDGED_LABELS[c], index=frame.index))
+        for c in SURVIVAL_UNJUDGED_CODES
+    ]
+    return _join_nonempty(parts, " · ")
+
+
 def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
     """하드 제외 판정. 반환 index ticker: `excluded`(bool), `reason`(str; 복수는 ' · ' 로 연결).
 
@@ -359,13 +407,8 @@ def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
     flags = hard_filter_flags(frame)
     runway = _num(frame["cash_runway_q"])
     nd = _num(frame["net_debt_ebitda"])
-    wall = _num(frame["maturity_wall_12m"])
-    no_sf1 = frame["fund_status"].astype(str) == FundStatus.NONE
     nd_unit = (frame["nd_basis"] == "ebitda").map({True: "EBITDA", False: "시총(EBITDA≤0 대체)"})
 
-    no_fund = _tagged(flags["E5"], np.where(no_sf1, _REASON_NO_SF1, _REASON_STALE))
-    runway_na = _tagged(flags["E4"], _REASON_RUNWAY_NA)
-    nd_na = _tagged(flags["E6"], _REASON_ND_NA)
     runway_low = _tagged(
         flags["E1"],
         runway.map(lambda r: f"런웨이 {r:.2f}분기 < {RUNWAY_MIN_Q:.0f}"),
@@ -380,14 +423,8 @@ def hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
             index=frame.index,
         ),
     )
-    wall_high = _tagged(
-        flags["E3"],
-        wall.map(lambda w: f"만기벽(12m 대용) {w:.2f} > {MATURITY_WALL_EXCLUDE}"),
-    )
     out = pd.DataFrame(index=frame.index)
-    out["reason"] = _join_nonempty(
-        [no_fund, runway_na, runway_low, nd_na, nd_high, wall_high], " · "
-    )
+    out["reason"] = _join_nonempty([runway_low, nd_high], " · ")
     out["excluded"] = out["reason"].str.len() > 0
     return out
 

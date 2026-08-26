@@ -94,6 +94,7 @@ SELECTION_GROUP = "ELIGIBLE"
 #: 그 지위는 그대로다 — **어떤 판정도 이 열을 읽지 않는다.** 사람이 읽을 뿐이다.
 #: `adv20_usd`·`price` 도 남는다: 감점은 꺼졌지만(`axes.PENALTY_ENABLED`) 정보는 뺀 것이 아니다.
 JUDGMENT_COLUMNS: tuple[str, ...] = (
+    "survival_unjudged",
     "name",
     "mcap",
     ENTRY_PRICE_FEATURE,
@@ -234,6 +235,11 @@ def rank_theme(
     ranking = sc.join(eligible, how="left")
     ranking.insert(0, "group", SELECTION_GROUP)
     ranking.insert(1, "barbell_obs", [bb.label(str(t)) for t in ranking.index])
+    # **생존을 판정하지 못한 종목을 명단에 표시한다** (2026-08-26 · `docs/20` §4.2-B).
+    # 예전에는 이 종목들을 하드 제외했는데, 실측에서 그것이 재무 위험이 아니라 데이터
+    # 커버리지를 자르고 있었다(유니레버·BAT·미즈호). 제외를 멈춘 대신 **평가하지 못했다는
+    # 사실이 사라지지 않게** 열로 싣는다 (`CLAUDE.md` §2).
+    ranking.insert(2, "survival_unjudged", axes.survival_unjudged_reason(eligible))
     return order_ranking_columns(ranking), excluded, bb
 
 

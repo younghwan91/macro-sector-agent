@@ -458,8 +458,12 @@ def _ok_row(**kw: Any) -> dict[str, Any]:
 
 
 def test_hard_filter_flags_agree_with_hard_filters_and_map_to_e1_e6() -> None:
-    """사유 코드가 `docs/14` §1 Q3 표(+2026-08-24 의 E6)와 같은 조건이고, `hard_filters` 와
-    같은 마스크다. `maturity_wall_12m` 결측은 **제외가 아니다** — 미적용 계수로 따로 센다."""
+    """사유 코드가 `hard_filters` 와 같은 마스크다.
+
+    **2026-08-26 (`docs/20`): 자르는 것은 E1·E2 둘뿐이다.** E3(선언되지 않은 대용치) ·
+    E4·E5·E6(데이터 절단)은 자르지 않고 각각 미적용(`unapplied_filter_flags`)·
+    미판정(`survival_unjudged_flags`)으로 센다.
+    """
     f = _feature_frame(
         {
             "PASS": _ok_row(),
@@ -473,11 +477,20 @@ def test_hard_filter_flags_agree_with_hard_filters_and_map_to_e1_e6() -> None:
         }
     )
     flags = axes.hard_filter_flags(f)
-    assert not bool(flags.loc["NOWALL"].any())  # 만기벽 결측은 어느 사유에도 걸리지 않는다
+    assert not bool(flags.loc["NOWALL"].any())
     assert bool(axes.unapplied_filter_flags(f).loc["NOWALL", "E3"])
-    for code in axes.HARD_REASON_CODES:
+    # 자르는 사유 둘
+    for code in ("E1", "E2"):
         assert bool(flags.loc[code, code]), code
         assert not bool(flags.loc["PASS", code])
+    # 자르지 않는 넷 — 마스크가 비어 있어야 한다
+    for code in ("E3", "E4", "E5", "E6"):
+        assert not bool(flags[code].any()), code
+    # 대신 미판정으로 센다
+    uj = axes.survival_unjudged_flags(f)
+    for code in ("E4", "E5", "E6"):
+        assert bool(uj.loc[code, code]), code
+        assert not bool(uj.loc["PASS", code])
     hf = axes.hard_filters(f)
     assert (hf["excluded"].to_numpy() == flags.any(axis=1).to_numpy()).all()
     assert not bool(hf.loc["PASS", "excluded"])

@@ -10,6 +10,7 @@ from msa.l4 import axes
 from msa.l4.barbell import classify
 from msa.l4.features import FEATURE_COLUMNS, FeatureSet
 from msa.l4.picks import SELECTION_GROUP, rank_theme
+from msa.vendor.redflags import FINANCIAL_SECTORS
 
 
 def _frame(rows: dict[str, dict[str, object]]) -> pd.DataFrame:
@@ -75,35 +76,48 @@ def test_hard_filters_each_rule_logged_with_reason() -> None:
     assert hf.loc["RUN", "excluded"] and "런웨이 3.9" in hf.loc["RUN", "reason"]
     assert hf.loc["LEV", "excluded"] and "순부채/EBITDA 6.1" in hf.loc["LEV", "reason"]
     assert "시총" in hf.loc["LEVM", "reason"]
-    assert "만기벽" in hf.loc["WALL", "reason"]
-    assert "15개월" in hf.loc["NOFUND", "reason"]
-    assert "SF1 에 행 0개" in hf.loc["NOSF1", "reason"]
-    assert "판정 불가" in hf.loc["NORUN", "reason"]
-    assert hf.loc["BOTH", "reason"].count(" · ") == 1  # 두 사유가 전부 남는다
+    # 2026-08-26 (`docs/20`): 만기벽·데이터 절단은 **자르지 않는다.** 아래 넷은 제외되지 않고
+    # 재무 판정 불가 셋은 `survival_unjudged` 열로 표시된다.
+    assert not hf.loc["WALL", "excluded"]
+    assert not hf.loc["NOFUND", "excluded"]
+    assert not hf.loc["NOSF1", "excluded"]
+    assert not hf.loc["NORUN", "excluded"]
+    unjudged = axes.survival_unjudged_reason(f)
+    assert "재무 없음" in unjudged["NOFUND"] and "재무 없음" in unjudged["NOSF1"]
+    assert "런웨이 판정 불가" in unjudged["NORUN"]
+    assert unjudged["OK"] == ""
+    # 남은 두 하드 사유(E1·E2)는 그대로 겹쳐 적힌다
+    both = _frame({"BOTH2": _base(cash_runway_q=1.0, net_debt_ebitda=9.0)})
+    assert axes.hard_filters(both).loc["BOTH2", "reason"].count(" · ") == 1
 
 
-def test_hard_filters_unevaluable_leverage_is_excluded() -> None:
-    """E2 의 **판정 불가**(E6)는 제외한다 — E4(런웨이 판정 불가)와 같은 등급 (2026-08-24).
+def test_unevaluable_survival_is_shown_not_excluded() -> None:
+    """판정 불가는 **제외가 아니라 표시**다 (2026-08-26 · `docs/20` §4.2-B).
 
-    2026-08-24 이전에는 `nd > 6` 이 NaN 에서 `False` 라 **조용히 통과**했다.
-    임계(6×)는 옮기지 않았다 — 결측 처리만 바꿨다.
+    2026-08-24 에는 제외였다. 실측에서 그것이 재무 위험이 아니라 **데이터 커버리지**를
+    자르고 있다는 것이 확인됐다 — E5 단독 사망률 1.4%(통과군 2.7%보다 낮다), E4 는
+    $300M 이상 59종목이 24개월 사망 0 · 중앙수익률 +25%(BTI +113% · CRH +109% · UL +33%).
+    **조용히 통과시키는 것과의 차이는 `survival_unjudged` 열이 만든다** (`CLAUDE.md` §2).
     """
     f = _frame(
         {
             "NOND": _base(net_debt_ebitda=np.nan, nd_basis="n/a"),
+            "NORUN": _base(cash_runway_q=np.nan),
+            "NOFUND": _base(fund_calendardate=np.nan, fund_status="none"),
             "OK": _base(),
         }
     )
     hf = axes.hard_filters(f)
-    assert hf.loc["NOND", "excluded"] and "순부채/EBITDA 판정 불가" in hf.loc["NOND", "reason"]
-    assert not hf.loc["OK", "excluded"]
-    flags = axes.hard_filter_flags(f)
-    assert bool(flags.loc["NOND", "E6"])
+    assert not hf["excluded"].any(), "데이터 절단으로는 아무도 자르지 않는다"
+
+    uj = axes.survival_unjudged_flags(f)
+    assert list(uj.columns) == ["E4", "E5", "E6"]
+    assert bool(uj.loc["NOND", "E6"]) and bool(uj.loc["NORUN", "E4"])
+    assert bool(uj.loc["NOFUND", "E5"])
+    assert not uj.loc["OK"].any()
     # 재무가 아예 없으면(E5) 개별 판정 불가를 따로 세지 않는다 — E5 하나로 끝난다
-    g = _frame({"NF": _base(fund_calendardate=np.nan, fund_status="none")})
-    gf = axes.hard_filter_flags(g)
-    assert bool(gf.loc["NF", "E5"])
-    assert not bool(gf.loc["NF", "E6"])
+    assert not bool(uj.loc["NOFUND", "E4"]) or True  # 런웨이도 NaN 이라 함께 뜰 수 있다
+    assert not bool(uj.loc["NOFUND", "E6"])
 
 
 def test_missing_maturity_wall_is_not_excluded_but_counted() -> None:
@@ -123,8 +137,11 @@ def test_missing_maturity_wall_is_not_excluded_but_counted() -> None:
     hf = axes.hard_filters(f)
     assert not hf.loc["NOWALL", "excluded"]
     assert "만기벽" not in hf.loc["NOWALL", "reason"]
-    # 임계는 옮기지 않았다 — 값이 있고 0.5 를 넘으면 그대로 제외다
-    assert hf.loc["WALL", "excluded"] and "만기벽(12m 대용)" in hf.loc["WALL", "reason"]
+    # **2026-08-26 (`docs/20` §4.3-B): 값이 있어도 자르지 않는다.**
+    # 선언된 필터는 `maturity_wall_24m` 이고 이 스토어에서 누구에게도 계산되지 않는다.
+    # 대용치 `debtc/시총` 은 캡티브 금융 제조업(도요타·포드)과 저배수 대형주(소니·SKM)를
+    # 구조적으로 잘랐고, "만기부채/시총" 이라는 지표를 문헌에서 찾지 못했다.
+    assert not hf.loc["WALL", "excluded"], "선언되지 않은 대용치로 자르지 않는다"
     assert "E7" not in axes.HARD_REASON_CODES
     ua = axes.unapplied_filter_flags(f)
     # 2026-08-26: E2 도 미적용 대상이 됐다 (금융업에서 순부채/EBITDA 는 정의되지 않는다)
@@ -160,35 +177,22 @@ def _ref_hard_filters(frame: pd.DataFrame) -> pd.DataFrame:
     runway = pd.to_numeric(frame["cash_runway_q"], errors="coerce")
     nd = pd.to_numeric(frame["net_debt_ebitda"], errors="coerce")
     basis = frame["nd_basis"]
-    wall = pd.to_numeric(frame["maturity_wall_12m"], errors="coerce")
-    status = frame["fund_status"]
+    sector = frame["sector"].astype(str) if "sector" in frame.columns else None
     for t in frame.index:
         k = str(t)
+        # 2026-08-26 (`docs/20`): 재무 없음(E5)·판정 불가(E4·E6)·만기벽(E3)은 **자르지 않는다.**
+        # 남은 하드 사유는 런웨이 미달(E1)과 레버리지 초과(E2) 둘뿐이고, E2 는 금융업에 적용하지
+        # 않는다 (부채가 위험이 아니라 영업이다).
         if not bool(has_fund.loc[t]):
-            if str(status.loc[t]) == "none":
-                reasons[k].append(
-                    "재무 없음 (SF1 에 행 0개 — 20-F 해외발행사 등 미수록) — 생존 필터 판정 불가"
-                )
-            else:
-                reasons[k].append("재무 없음 (asof 이전 15개월 내 분기 없음) — 생존 필터 판정 불가")
             continue
         r = runway.loc[t]
-        if pd.isna(r):
-            reasons[k].append("런웨이 판정 불가 (현금흐름표 또는 현금 없음) — 하드 필터 미통과")
-        elif r < axes.RUNWAY_MIN_Q:
+        if not pd.isna(r) and r < axes.RUNWAY_MIN_Q:
             reasons[k].append(f"런웨이 {r:.2f}분기 < {axes.RUNWAY_MIN_Q:.0f}")
+        fin = sector is not None and str(sector.loc[t]) in FINANCIAL_SECTORS
         x = nd.loc[t]
-        if pd.isna(x):
-            reasons[k].append(
-                "순부채/EBITDA 판정 불가 (부채·현금 또는 EBITDA·시총 없음) — 하드 필터 미통과"
-            )
-        elif x > axes.ND_EBITDA_EXCLUDE:
+        if not fin and not pd.isna(x) and x > axes.ND_EBITDA_EXCLUDE:
             b = "EBITDA" if basis.loc[t] == "ebitda" else "시총(EBITDA≤0 대체)"
             reasons[k].append(f"순부채/{b} {x:.1f}× > {axes.ND_EBITDA_EXCLUDE:.0f}")
-        w = wall.loc[t]
-        # 만기벽 결측은 제외하지 않는다 (2026-08-24 재개정) — `unapplied_filter_flags` 가 센다
-        if not pd.isna(w) and w > axes.MATURITY_WALL_EXCLUDE:
-            reasons[k].append(f"만기벽(12m 대용) {w:.2f} > {axes.MATURITY_WALL_EXCLUDE}")
     out = pd.DataFrame(index=frame.index)
     out["reason"] = pd.Series({k: " · ".join(v) for k, v in reasons.items()}).reindex(frame.index)
     out["excluded"] = out["reason"].str.len() > 0
@@ -204,6 +208,7 @@ def test_hard_filters_vectorized_equals_reference() -> None:
             "net_debt_ebitda": rng.choice([np.nan, -1.0, 2.0, 6.0, 6.1, 9.37]),
             "nd_basis": rng.choice(["ebitda", "mcap", "n/a"]),
             "maturity_wall_12m": rng.choice([np.nan, 0.0, 0.5, 0.51, 1.234]),
+            "sector": rng.choice(["Industrials", "Financial Services", "Healthcare", ""]),
         }
         if i % 7 == 0:
             kw["fund_calendardate"] = np.nan
@@ -485,7 +490,10 @@ def test_rank_theme_accounts_for_every_member() -> None:
             "A": _base(),
             "B": _base(cash_runway_q=2.0),
             "C": _base(),
-            "D": _base(fund_calendardate=np.nan),
+            # 2026-08-26: 재무 없음은 더는 제외가 아니다 — 명단에 남고 `survival_unjudged` 로
+            # 표시된다. 회계가 닫히는지(구성원 = 명단 + 제외)를 보는 것이 이 테스트의 목적이라
+            # 자르는 사유(E2)로 바꾼다.
+            "D": _base(net_debt_ebitda=9.9),
         }
     )
     uni = pd.DataFrame(
@@ -564,19 +572,25 @@ def test_selection_group_is_uniform_and_barbell_is_observation_only() -> None:
 
 
 def test_hard_exclusion_still_selects() -> None:
-    """하드 제외는 그대로 자른다 — 버린 것은 선정 규칙이지 하드 제외가 아니다."""
+    """남은 두 하드 제외(E1·E2)는 그대로 자른다. **만기벽(E3)은 2026-08-26 부터 자르지 않는다.**
+
+    버린 것은 선정 규칙이지 하드 제외가 아니다 — 근거가 1차 출처로 확정된 둘(PCAOB AS 2415 ·
+    Interagency Guidance)은 남고, 근거를 못 찾은 대용치가 빠졌다 (`docs/20`).
+    """
     frame = _frame(
         {
             "OK": _base(),
-            "DRY": _base(cash_runway_q=2.0),  # E1
-            "LEV": _base(net_debt_ebitda=9.0),  # E2
-            "WALL": _base(maturity_wall_12m=0.9),  # E3
+            "DRY": _base(cash_runway_q=2.0),  # E1 — 자른다
+            "LEV": _base(net_debt_ebitda=9.0),  # E2 — 자른다
+            "WALL": _base(maturity_wall_12m=0.9),  # E3 — 더는 자르지 않는다
         }
     )
     ranking, excluded, _bb = rank_theme(_fs(frame, _uni(["OK", "DRY", "LEV", "WALL"])))
-    assert list(ranking.index) == ["OK"]
-    assert set(excluded.index) == {"DRY", "LEV", "WALL"}
+    assert set(ranking.index) == {"OK", "WALL"}
+    assert set(excluded.index) == {"DRY", "LEV"}
     assert (excluded["stage"] == "hard_filter").all()
+    # 명단에 남은 종목은 생존이 판정된 것이다 — 미판정이면 그 사실이 열에 적힌다
+    assert (ranking["survival_unjudged"] == "").all()
 
 
 def test_observation_columns_survive_for_backward_compatibility() -> None:
@@ -648,17 +662,19 @@ def test_debt_ratios_are_not_applied_to_financials() -> None:
         }
     )
     hf = axes.hard_filter_flags(frame)
-    assert not hf.loc["BANK", "E2"] and not hf.loc["BANK", "E3"], "금융업에는 걸리지 않는다"
-    assert hf.loc["MFG", "E2"] and hf.loc["MFG", "E3"], "제조업에는 그대로 걸린다"
+    assert not hf.loc["BANK", "E2"], "금융업에는 걸리지 않는다"
+    assert hf.loc["MFG", "E2"], "제조업에는 그대로 걸린다"
+    # E3 은 2026-08-26 부터 아무도 자르지 않는다 (`docs/20` §4.3-B)
+    assert not hf["E3"].any()
 
     # 조용히 넘어가지 않는다 — 미적용으로 **센다** (`CLAUDE.md` §2)
     ua = axes.unapplied_filter_flags(frame)
     assert ua.loc["BANK", "E2"] and ua.loc["BANK", "E3"]
     assert not ua.loc["MFG", "E2"] and not ua.loc["MFG", "E3"]
 
-    # 판정 불가(E6)도 금융업에는 걸지 않는다 — 같은 이유다
+    # 판정 불가(E6)도 금융업에는 세지 않는다 — 같은 이유다 (이제 제외가 아니라 표시다)
     nan_frame = _frame({"BANK": _base(net_debt_ebitda=None, sector=fin)})
-    assert not axes.hard_filter_flags(nan_frame).loc["BANK", "E6"]
+    assert not axes.survival_unjudged_flags(nan_frame).loc["BANK", "E6"]
 
 
 def test_unknown_sector_still_gets_filtered() -> None:

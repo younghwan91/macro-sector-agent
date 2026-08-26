@@ -50,7 +50,9 @@ def _ranking(**rows: dict[str, Any]) -> pd.DataFrame:
 
 def test_judgment_columns_come_first_and_nothing_is_dropped() -> None:
     """판단 재료가 앞으로 온다. **열은 하나도 버리지 않는다** — 순서만 바뀐다."""
-    df = _ranking(AAA=_row()).assign(t_pct=0.3, s_inputs_missing="")
+    # `survival_unjudged` 는 2026-08-26 부터 명단의 1급 열이다 — 생존을 판정하지 못한 종목을
+    # 제외하지 않고 표시하기로 했기 때문이다 (`docs/20` §4.2-B)
+    df = _ranking(AAA=_row()).assign(t_pct=0.3, s_inputs_missing="", survival_unjudged="")
     out = picks.order_ranking_columns(df)
     assert set(out.columns) == set(df.columns)
     cols = list(out.columns)

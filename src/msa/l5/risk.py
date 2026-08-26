@@ -68,7 +68,20 @@ log = logging.getLogger(__name__)
 
 #: 선언값들 — 탐색하지 않는다 (`CLAUDE.md` §1)
 COV_LOOKBACK_MONTHS = 60
-SHRINK_DELTA = 0.5
+#: 축소 계수의 **기본값** — `None` 이면 표본에서 추정한다 (Ledoit-Wolf 최적 축소).
+#:
+#: 2026-08-26 까지 이 값은 `0.5` 고정이었고 근거가 없었다. 원논문(Ledoit & Wolf, *Honey,
+#: I Shrunk the Sample Covariance Matrix*, JPM 30(4), 2004)이 정면으로 반대한다:
+#:
+#:   "Any choice of δ strictly between 0 and 1 would yield a compromise between S and F.
+#:    But this results in **infinitely many possibilities**. Intuitively, there is an 'optimal'
+#:    shrinkage constant… **Appendix B derives a formula for estimating δ\*.**"
+#:
+#: 그 공식은 `δ̂* = max{0, min{κ̂/T, 1}}`, `κ = (π − ρ)/γ` 다 — **성과가 아니라 공분산
+#: 추정오차(Frobenius 손실)를 최소화**하는 폐형 추정량이고, 표본에서 계산된다.
+#: 따라서 이것을 쓰는 것은 `CLAUDE.md` §1 이 금지하는 "데이터에 맞춰 값을 고르는 것" 이
+#: 아니다 — 파라미터 스윕이 아니라 **논문이 계산법을 고정해 준 통계량**이다.
+SHRINK_DELTA: float | None = None
 SIMILAR_REGIME_DD = 0.50
 CASE_DEATH_FACTOR = 0.5  # 근거 없음 — docs/07 §2.4 가 그렇다고 적는다
 MONTHS_PER_YEAR = 12
@@ -153,8 +166,54 @@ def index_level(daily: pd.Series) -> pd.Series:
 # ---------------------------------------------------------------- 축소 공분산
 
 
-def shrink_constant_correlation(sample: FArray, delta: float = SHRINK_DELTA) -> FArray:
-    """상수상관 타깃으로 축소: `Σ = (1−δ)·S + δ·F`, F_ij = r̄·σ_i·σ_j (i≠j), F_ii = S_ii."""
+def optimal_shrinkage_delta(returns: FArray, sample: FArray) -> float:
+    """Ledoit-Wolf (2004) 부록 B 의 `δ̂* = max{0, min{κ̂/T, 1}}`.
+
+    `κ = (π − ρ)/γ` — `π` 는 표본 공분산의 점근 분산 합, `ρ` 는 표본과 타깃의 공분산,
+    `γ` 는 타깃과의 Frobenius 거리. **성과가 아니라 추정오차를 최소화한다.**
+
+    `T < 3` 이거나 `γ = 0`(이미 타깃과 같다)이면 `0.0` — 축소할 근거가 없다.
+    """
+    x = np.asarray(returns, dtype=np.float64)
+    t, n = x.shape
+    if t < 3 or n < 2:
+        return 0.0
+    s = np.asarray(sample, dtype=np.float64)
+    sd = np.sqrt(np.clip(np.diag(s), 0.0, None))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        corr = s / np.outer(sd, sd)
+    corr = np.where(np.isfinite(corr), corr, 0.0)
+    off = ~np.eye(n, dtype=bool)
+    rbar = float(corr[off].mean()) if off.any() else 0.0
+    target = rbar * np.outer(sd, sd)
+    np.fill_diagonal(target, np.diag(s))
+
+    xc = x - x.mean(axis=0)
+    # π̂ — Σ_ij Var(√T · s_ij) 의 표본 추정
+    y2 = xc**2
+    pi_mat = (y2.T @ y2) / t - 2.0 * (xc.T @ xc) / t * s + s**2
+    pi_hat = float(pi_mat.sum())
+    # ρ̂ — 대각 항 + 비대각 교차항 (상수상관 타깃의 경우)
+    theta_ii = ((y2 * xc).T @ xc) / t - np.diag(s)[:, None] * s
+    rho_diag = float(np.diag(pi_mat).sum())
+    with np.errstate(divide="ignore", invalid="ignore"):
+        ratio = np.outer(sd, 1.0 / sd)
+    ratio = np.where(np.isfinite(ratio), ratio, 0.0)
+    rho_off = float((rbar / 2.0 * (ratio * theta_ii.T + ratio.T * theta_ii))[off].sum())
+    rho_hat = rho_diag + rho_off
+    gamma_hat = float(((target - s) ** 2).sum())
+    if gamma_hat <= 0.0:
+        return 0.0
+    kappa = (pi_hat - rho_hat) / gamma_hat
+    return float(min(1.0, max(0.0, kappa / t)))
+
+
+def shrink_constant_correlation(sample: FArray, delta: float = 0.5) -> FArray:
+    """상수상관 타깃으로 축소: `Σ = (1−δ)·S + δ·F`, F_ij = r̄·σ_i·σ_j (i≠j), F_ii = S_ii.
+
+    `delta` 는 호출자가 준다 — 기본값 0.5 는 **직접 부르는 테스트·비교용**이고, 운영 경로는
+    `optimal_shrinkage_delta` 가 표본에서 추정한 값을 넘긴다 (`_shrunk_cov`).
+    """
     if not 0.0 <= delta <= 1.0:
         raise ValueError(f"delta 는 [0,1]: {delta}")
     s = np.asarray(sample, dtype=np.float64)
@@ -198,7 +257,7 @@ def _shrunk_cov(
     min_len: int,
     min_periods: int,
     ppy: int,
-    shrink_delta: float,
+    shrink_delta: float | None,
     source: str,
     notes: tuple[str, ...],
     unit: str,
@@ -230,6 +289,15 @@ def _shrunk_cov(
     sample = np.asarray(m.cov(min_periods=min_periods).to_numpy(), dtype=np.float64)
     if not np.all(np.isfinite(sample)):
         raise RiskInputError(f"표본 공분산에 NaN — {pair_unit} 쌍의 겹치는 관측이 부족하다")
+    # `shrink_delta=None` 이면 **표본에서 추정**한다 (Ledoit-Wolf 부록 B). 호출자가 값을 주면
+    # 그것을 쓴다 — 비교·재현용 경로다.
+    if shrink_delta is None:
+        obs = np.asarray(m.dropna().to_numpy(), dtype=np.float64)
+        shrink_delta = optimal_shrinkage_delta(obs, sample)
+        notes = (
+            *notes,
+            f"축소 계수 δ={shrink_delta:.3f} 는 표본에서 추정했다 (Ledoit-Wolf 2004 부록 B)",
+        )
     sigma = shrink_constant_correlation(sample, shrink_delta) * ppy
     return CovarianceResult(
         sigma=sigma,
@@ -249,7 +317,7 @@ def theme_covariance(
     *,
     asof: pd.Timestamp | None = None,
     lookback_months: int = COV_LOOKBACK_MONTHS,
-    shrink_delta: float = SHRINK_DELTA,
+    shrink_delta: float | None = SHRINK_DELTA,
 ) -> CovarianceResult:
     """테마 EW 월간 수익률에서 연율 축소 공분산. 룩백 안에 관측이 절반 미만인 테마는 예외 —
     조용히 0 분산으로 들어가는 것보다 낫다."""
@@ -280,7 +348,7 @@ def stock_covariance_from_returns(
     asof: pd.Timestamp | None = None,
     lookback_rows: int = 252,
     periods_per_year: int = 252,
-    shrink_delta: float = SHRINK_DELTA,
+    shrink_delta: float | None = SHRINK_DELTA,
 ) -> CovarianceResult:
     """종목 수익률(date × ticker) 에서 연율 축소 공분산 — `returns.csv` 경로."""
     return _shrunk_cov(

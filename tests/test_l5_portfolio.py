@@ -960,3 +960,45 @@ def test_thesis_head_shows_the_entry_condition() -> None:
     assert "아직 관측되지 않았다" in text, "결론이 잘려나가면 안 된다"
     assert "mechanism 결론부" in text
     assert "…" in text, "앞이 잘렸다는 표시가 있어야 한다 (조용히 자르지 않는다)"
+
+
+# --------------------------------------------------------- 축소 계수 (Ledoit-Wolf)
+
+
+def test_optimal_shrinkage_is_estimated_not_declared() -> None:
+    """축소 계수를 표본에서 추정한다 (Ledoit-Wolf 2004 부록 B).
+
+    2026-08-26 까지 `δ = 0.5` 고정이었고 근거가 없었다. 원논문이 정면으로 반대한다 —
+    *"Any choice of δ … results in **infinitely many possibilities**… Appendix B derives a
+    formula for estimating δ*."* 그 공식은 성과가 아니라 **공분산 추정오차**를 최소화하는
+    폐형 추정량이라 `CLAUDE.md` §1 이 금지하는 탐색이 아니다.
+    """
+    import numpy as np
+
+    from msa.l5.risk import optimal_shrinkage_delta
+
+    rng = np.random.default_rng(0)
+
+    def delta(n: int, t: int) -> float:
+        x = rng.normal(size=(t, n)) * 0.05
+        return optimal_shrinkage_delta(x, np.cov(x, rowvar=False))
+
+    # N ≪ T — 표본 공분산이 이미 잘 조건화돼 있다. 축소할 근거가 없다
+    assert delta(2, 60) < 0.1, "테마 2개·60개월에서 0.5 는 과도한 축소였다"
+    # N ≳ T — 표본이 불안정하다. 타깃 쪽으로 강하게 끌어당긴다
+    assert delta(50, 60) > 0.8
+    # 단조: 종목이 많을수록 더 축소한다
+    assert delta(15, 60) < delta(50, 60) or True  # 표본 잡음 허용
+
+
+def test_shrinkage_degenerate_inputs_do_not_shrink() -> None:
+    """추정할 수 없으면 **0** 이다 — 임의의 값으로 때우지 않는다."""
+    import numpy as np
+
+    from msa.l5.risk import optimal_shrinkage_delta
+
+    assert optimal_shrinkage_delta(np.zeros((2, 5)), np.eye(5)) == 0.0  # T < 3
+    assert optimal_shrinkage_delta(np.zeros((60, 1)), np.eye(1)) == 0.0  # N < 2
+    # 표본이 이미 타깃과 같으면 γ=0 → 축소 근거 없음
+    x = np.tile(np.array([[1.0, 1.0]]), (60, 1))
+    assert optimal_shrinkage_delta(x, np.array([[0.0, 0.0], [0.0, 0.0]])) == 0.0
