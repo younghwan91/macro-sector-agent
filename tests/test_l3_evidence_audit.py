@@ -158,13 +158,19 @@ def test_scaling_does_not_make_the_check_toothless() -> None:
     후보에서 1 미만과 두 자리 미만을 뺀 이유가 이것이다. `0`·`0.02` 같은 값은 아무 문서에나
     있어서 넓히려다 검사를 꺼 버린다.
     """
-    from msa.l3.evidence_audit import _alternates
+    from msa.l3.evidence_audit import _alternates, _has_number, _loose
 
-    # 어떤 후보도 한 자리이거나 1 미만이면 안 된다
+    # 1 미만 후보는 없다 — 반올림하면 `0` 이 되어 아무 문서에나 있는 값이 된다
     for raw, unit in (("2,220", "만"), ("1", "만"), ("178.8", "만"), ("2.37", "억")):
         for a in _alternates(raw, unit):
             assert float(a) >= 1.0, (raw, unit, a)
-            assert len(a.replace(".", "").lstrip("0")) >= 2, (raw, unit, a)
+
+    # 한 자리 후보는 **경계**가 지킨다 — 그래서 후보에서 뺄 필요가 없다
+    body = _loose("falls by 4 million, across 1,400 plans, with 4.7% churn and 04 codes")
+    assert _has_number(body, "4")  # `4 million`
+    assert not _has_number(body, "47")  # `4.7%` 안이 아니다
+    assert not _has_number(body, "140")  # `1,400` 안이 아니다
+    assert _has_number(body, "1400")  # 자릿점은 지운다
 
     # 원문에 없는 수치는 여전히 잡힌다 — 단위가 붙어 있어도
     doc = "<p>unrelated text with 999 and 12,345</p>"
@@ -174,3 +180,12 @@ def test_scaling_does_not_make_the_check_toothless() -> None:
     # 단위가 없는 숫자에는 후보를 만들지 않는다
     assert _alternates("2,220", "") == []
     assert _alternates("2,220", "개") == []
+
+
+def test_trailing_zero_notation_matches() -> None:
+    """claim `6.0%` 는 원문에 `6 percent` 로 있다 — 표기 차이지 다른 수가 아니다."""
+    doc = "<p>the safe harbor threshold of 6 percent falls to 3.5 percent</p>"
+    assert check_one(_ev(1, "상한이 6.0%에서 3.5%로"), lambda _u: doc).status == VERIFIED
+
+    # 그래도 다른 수는 다른 수다
+    assert check_one(_ev(2, "상한이 6.4%로"), lambda _u: doc).status == PARTIAL

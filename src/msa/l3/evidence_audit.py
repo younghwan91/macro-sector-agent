@@ -16,9 +16,12 @@
 
 ## 이 검사가 못 하는 것
 
-- **단위 변환을 못 따라간다 — 오탐의 가장 큰 원인이다.** claim 이 한국어로 "순손실
-  2,220만 달러" 라고 쓰면 영문 원문에는 `$22.2 million` 으로 있다. 숫자로는 안 맞는다.
-  `partial` 이 나왔다고 곧바로 날조가 아니다 — **못 찾은 숫자 목록을 보고 사람이 판단한다.**
+- **표기 차이는 따라간다** (2026-08-26). `만`·`억`·`조` 는 원 단위와 천·백만·십억 표기를
+  함께 찾고 (`2,220만 달러` ↔ `$22.2 million`), 꼬리 0 도 맞춘다 (`6.0%` ↔ `6 percent`).
+  자리수를 바꾼 후보는 **숫자 경계까지 본다** — `4` 가 `1,400`·`4.7` 안에서 걸리면 넓히려다
+  검사를 꺼 버리는 것이다. 실측: 두 테마 46건에서 `partial` 23 → 9, `verified` 13 → 27.
+- **반올림·근사는 여전히 남는다.** claim 의 "3,500만 명" 이 원문의 `35.4 million` 과 안 맞는다.
+  `partial` 이 곧 날조가 아니다 — **못 찾은 숫자 목록을 보고 사람이 판단한다.**
 - **문맥은 못 본다.** 숫자가 문서에 있어도 claim 이 말하는 뜻과 다를 수 있다 (예: 원문의
   "109 fewer counties" 를 "225개 철수" 로 적었는데 문서 어딘가에 225 가 있는 경우).
 - **403·페이월은 `unreachable` 이다.** 실사에서 cms.gov·SEC·Commonwealth Fund 가 전부
@@ -137,8 +140,28 @@ def numbers_in(text: str, *, limit: int = MAX_NUMBERS) -> tuple[tuple[str, ...],
 
 
 def _norm(s: str) -> str:
-    """비교용 정규화 — 쉼표·공백을 없앤다. `1,180,000` 과 `1180000` 이 같아진다."""
+    """비교용 정규화 — 쉼표·공백을 없앤다. `1,180,000` 과 `1180000` 이 같아진다.
+
+    **경계가 사라진다.** `4` 를 찾으면 `1,400` 안에서도 걸린다. 그래서 claim 에 적힌 표기를
+    그대로 찾을 때만 쓰고, 자리수를 바꿔 만든 후보는 `_has_number` 로 경계까지 본다.
+    """
     return re.sub(r"[,\s ]", "", s)
+
+
+def _loose(s: str) -> str:
+    """숫자 경계를 남긴 본문 — 자릿점만 지우고 나머지 공백은 하나로 접는다."""
+    s = re.sub(r"(?<=\d)[,\u00a0\s](?=\d\d\d(?!\d))", "", s)
+    return re.sub(r"\s+", " ", s)
+
+
+def _has_number(body: str, token: str) -> bool:
+    """`token` 이 **하나의 수로서** 본문에 있는가.
+
+    앞뒤에 다른 숫자가 붙으면 아니다 — `4` 는 `1400`·`4.7`·`04` 에서 걸리면 안 된다.
+    이것이 있어야 한 자리 후보(`400만` → 원문 `4 million` 의 `4`)를 안전하게 쓸 수 있다.
+    """
+    pat = r"(?<![\d.,])" + re.escape(token) + r"(?![\d.,]*\d)"
+    return re.search(pat, body) is not None
 
 
 #: 한글 수 단위 → 배수. **오탐의 가장 큰 원인이 이것이었다** — claim 이 "순손실 2,220만 달러"
@@ -169,17 +192,27 @@ def _alternates(raw: str, unit: str) -> list[str]:
         base = float(raw.replace(",", "")) * scale
     except ValueError:
         return []
-    cand = [base] + [base / d for d in _EN_SCALE]
     out: list[str] = []
-    for v in cand:
-        # 너무 작은 값은 후보에서 뺀다 — `0`·`0.02` 같은 것은 아무 문서에나 있어서
-        # **찾았다고 잘못 말하게** 된다. 넓히려다 검사를 무력화하면 안 된다.
+    for v in [base] + [base / d for d in _EN_SCALE]:
+        # 1 미만은 뺀다 — `0.0222` 로 적는 원문은 없고, 반올림하면 `0` 이 되어 아무 문서에나
+        # 있는 값이 된다. **넓히려다 검사를 꺼 버리면 안 된다.**
         if abs(v) < 1.0:
             continue
         for t in (_fmt_num(v), _fmt_num(round(v, 1))):
-            if len(t.replace(".", "").lstrip("0")) >= 2 and t not in out:
+            if t not in out:
                 out.append(t)
     return out
+
+
+def _plain(raw: str) -> str:
+    """꼬리 0 을 뗀 표기 — claim 의 `6.0` 은 원문에 `6 percent` 로 있다 (2026-08-26 실측).
+
+    자리수를 바꾸지 않으므로 `_has_number` 의 경계 검사만으로 안전하다.
+    """
+    try:
+        return _fmt_num(float(raw.replace(",", "")))
+    except ValueError:
+        return raw
 
 
 def _units_for(text: str, wanted: Sequence[str]) -> dict[str, str]:
@@ -228,13 +261,15 @@ def check_one(item: Mapping[str, Any], fetch: Callable[[str], str | None]) -> Ev
             truncated=cut,
             note="문서를 못 읽었다 (403·페이월·네트워크) — 맞다는 뜻도 틀리다는 뜻도 아니다",
         )
-    body = _norm(strip_html(raw))
+    text = strip_html(raw)
+    body, loose = _norm(text), _loose(text)
     units = _units_for(claim, wanted)
     missing = tuple(
         w
         for w in wanted
         if _norm(w) not in body
-        and not any(_norm(a) in body for a in _alternates(w, units.get(w, "")))
+        and not _has_number(loose, _plain(w))
+        and not any(_has_number(loose, a) for a in _alternates(w, units.get(w, "")))
     )
     status = VERIFIED if not missing else PARTIAL
     return EvidenceCheck(eid, status, url, wanted, missing, cut)
@@ -343,10 +378,11 @@ def render_audit(theme: str, res: AuditResult) -> str:
         lines.append("모든 근거의 숫자를 원문에서 찾았다.")
     lines += [
         "",
-        "이 검사는 **숫자가 문서에 있는지**만 본다. 두 가지를 못 한다:",
-        "  · 단위 변환 — 한국어 '2,220만 달러' 는 영문 원문에 `$22.2 million` 이라 안 맞는다.",
+        "이 검사는 **숫자가 문서에 있는지**만 본다. 못 하는 것:",
+        "  · 반올림·근사 — '3,500만 명' 은 원문의 `35.4 million` 과 숫자로는 안 맞는다.",
         "    `partial` 이 곧 날조라는 뜻이 아니다. 못 찾은 숫자를 보고 사람이 판단한다.",
         "  · 문맥 — 숫자가 있어도 claim 이 말하는 뜻과 다를 수 있다.",
+        "  (단위 표기 차이 '2,220만 달러' ↔ `$22.2 million` 은 처리한다.)",
         "판정을 만든 축의 근거는 결국 사람이 원문을 읽어야 한다. 이 표는 **어느 것을 먼저**",
         "열지 정해 줄 뿐이다.",
     ]
