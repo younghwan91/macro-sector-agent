@@ -353,9 +353,20 @@ def theme_panel(
     cf["error"] = cf["error"].fillna("")
     panel["theme"] = theme_id
     cf["theme"] = theme_id
-    if p_panel is not None and p_counts is not None:
+    # **한 행도 못 만든 결과는 캐시하지 않는다.** 캐시가 있으면 위에서 즉시 반환하므로,
+    # 일시적 사유(SPY 달력 가드·스토어 일시 오류)로 전 월이 실패한 테마가 이후 모든 실행에서
+    # 0 행이 된다 — 복구하려면 전체 --force 가 필요하다. 실패는 실패로 두고 다음에 다시
+    # 시도한다 (`CLAUDE.md` §2 — 조용히 빈 값을 굳히지 않는다).
+    if p_panel is not None and p_counts is not None and len(panel):
         _write_parquet_atomic(panel, p_panel)
         _write_parquet_atomic(cf, p_counts)
+    elif not len(panel):
+        log.warning(
+            "l4-backtest: %s — 패널 행이 0개다 (달 %d개 전부 실패). 캐시하지 않는다: %s",
+            theme_id,
+            len(dates),
+            "; ".join(str(c.get("error", "")) for c in counts[:3] if c.get("error")) or "사유 없음",
+        )
     return panel, cf
 
 
@@ -793,21 +804,29 @@ def theme_equal_weight(
     n_col = "n" if "n" in d.columns else None
     parts: list[pd.DataFrame] = []
 
-    def agg(x: pd.DataFrame, name: str) -> pd.DataFrame:
+    def agg(x: pd.DataFrame, full: pd.DataFrame, name: str) -> pd.DataFrame:
         g = x.groupby(["date", *keys], sort=False)
         out = g[value].mean().rename(value).reset_index()
         out["n_themes"] = g[value].size().to_numpy()
         out["n_mean"] = g[n_col].mean().to_numpy() if n_col else np.nan
+        # **값이 하나도 없던 (날짜, 키) 조합을 NaN 행으로 남긴다.** 위에서 dropna 를 먼저
+        # 하므로 그런 달은 행 자체가 사라지고, `_summarize` 의 `n_months_dropped` 가
+        # 언제나 0 이 된다 — 리포트의 "빠진 달" 열이 "아무것도 안 빠졌다" 로 읽힌다
+        # (2026-08-26 코드 리뷰). `_summarize_series` 는 dropna 하므로 통계는 그대로다.
+        want = full[["date", *keys]].drop_duplicates()
+        if len(want) > len(out):
+            out = want.merge(out, on=["date", *keys], how="left")
         out["partition"] = name
         return out
 
-    parts.append(agg(d, PARTITION_ALL))
+    parts.append(agg(d, df, PARTITION_ALL))
     if partition is not None:
+        cls_all = df["theme"].map(partition)
         cls = d["theme"].map(partition)
         for c in CYCLE_CLASSES:
             sub = d[cls == c]
             if not sub.empty:
-                parts.append(agg(sub, c))
+                parts.append(agg(sub, df[cls_all == c], c))
     return pd.concat(parts, ignore_index=True)
 
 
@@ -1528,6 +1547,11 @@ def _filter_table(res: L4BacktestResult) -> list[str]:
             f"{_fmt(dt.get('mean'), 10, 4)}{_fmt(dtc[0], 9, 4)}{_fmt(dtc[1], 9, 4)}"
             f"  {r.get('verdict', '—')}"
             + (" · 메커니즘 확인" if r.get("mechanism_confirmed") else "")
+            + (
+                " · **미적용** (자르지 않는다)"
+                if code in (set(axes.FILTER_UNAPPLIED_CODES) | set(axes.SURVIVAL_UNJUDGED_CODES))
+                else ""
+            )
         )
     out.append(
         "  나쁘지 않다면 그 필터는 알파가 아니라 그냥 표본 절단이다 (docs/14 §1 Q3). "
@@ -1601,9 +1625,21 @@ def _exclusion_lines(res: L4BacktestResult) -> list[str]:
             f" · 10거래일 내 가격 없음 {sm.get('n_no_recent_price', 0):,}"
             f" · 적격 {sm.get('n_eligible', 0):,}"
         )
+        # **"0 종목 탈락" 과 "이 사유는 걸지 않는다" 는 다른 말이다.** E3~E6 은 마스크가
+        # 항상 False 라 언제나 0 이 찍히는데, 읽는 사람은 "걸었는데 아무도 안 걸렸다" 로
+        # 읽는다 (2026-08-26 코드 리뷰) — `HARD_REASON_CODES` 주석이 E7 을 코드에서 뺀
+        # 이유와 같은 거짓말이다. 코드는 시도 수 정산에 쓰이므로 남기고, **표시를 고친다.**
+        unapplied = set(axes.FILTER_UNAPPLIED_CODES) | set(axes.SURVIVAL_UNJUDGED_CODES)
         out.append(
             "  하드 제외 사유별: "
-            + " · ".join(f"{c} {sm.get(f'n_{c}', 0):,}" for c in axes.HARD_REASON_CODES)
+            + " · ".join(
+                f"{c} 미적용" if c in unapplied else f"{c} {sm.get(f'n_{c}', 0):,}"
+                for c in axes.HARD_REASON_CODES
+            )
+        )
+        out.append(
+            "  (미적용 = 이 사유로 자르지 않는다. 0 종목이 걸렸다는 뜻이 아니다 —"
+            " E2·E3 은 금융섹터 미적용, E4~E6 은 판정 불가로 따로 표시한다.)"
         )
         out.append(
             f"  축 결측: composite_partial {sm.get('n_composite_partial', 0):,}"

@@ -236,3 +236,31 @@ def test_run_check_reports_missing_snapshot(tmp_path: Path) -> None:
         out_root=None,
     )
     assert rep.positions == [] and any("스냅샷 없음" in p for p in rep.problems)
+
+
+def test_time_stop_on_the_exact_date_is_due_not_a_warning() -> None:
+    """기한 당일은 **경과**다 (2026-08-26 코드 리뷰).
+
+    `docs/07` §4 는 "horizon_months 상한 경과" 라고 적는다 — `time_stop_date` 그날이 상한에
+    닿은 날이다. 예전에는 `0 <= days_left` 가 예고를 먼저 잡아 리포트가 `D+0 예고` 라고
+    적었다. 알림 발생 자체는 양쪽 다 같았고 문구만 달랐다.
+    """
+    pc = check_position(
+        _pos(time_stop_date=ASOF),  # 오늘이 기한
+        make_thesis(),
+        {},
+        _prices([50.0] * 60, [30.0] * 60),
+        ASOF,
+    )
+    assert pc.time_stop_due, "당일은 경과다"
+    assert not pc.time_stop_warning, "예고가 아니다"
+
+    # 하루 남았으면 여전히 예고다
+    pc = check_position(
+        _pos(time_stop_date=date(2026, 12, 16)),
+        make_thesis(),
+        {},
+        _prices([50.0] * 60, [30.0] * 60),
+        ASOF,
+    )
+    assert pc.time_stop_warning and not pc.time_stop_due

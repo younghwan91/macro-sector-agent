@@ -615,10 +615,17 @@ def price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
         sma150 = _nanmean(c[-150:]) if n >= 150 else np.nan
         sma200 = _nanmean(c[-200:]) if n >= 200 else np.nan
         sma200_prev = _nanmean(c[-221:-21]) if n >= 221 else np.nan
-        lo, hi = _nan_minmax(c) if n >= 120 else (np.nan, np.nan)
+        # 창 길이는 이름 그대로 52주 = 252 거래일이다 (`t` 가 `tail(252)`). 2026-08-26
+        # 이전 코드는 `n >= 120` 이라 120봉(약 반년)만 있어도 "52주 고점 대비" 를 냈다.
+        # 120 은 어느 문서에도 선언된 적이 없다 — 새 값을 정한 것이 아니라 **이름이 말하는
+        # 값으로 되돌린 것**이다 (`CLAUDE.md` §1, 바로 아래 `vcp_base` 와 같은 수정).
+        # 사람이 `from_52w_high` 를 손익비로 읽고 M 축이 `from_52w_low` 를 백분위로 쓰므로,
+        # 이력이 짧은 종목이 구조적으로 좁은 범위를 보이는 것은 정보가 아니라 왜곡이다.
+        full = n >= 252
+        lo, hi = _nan_minmax(c) if full else (np.nan, np.nan)
         last = float(c[-1])
-        from_low = last / lo - 1 if n >= 120 else np.nan
-        from_high = last / hi - 1 if n >= 120 else np.nan
+        from_low = last / lo - 1 if full else np.nan
+        from_high = last / hi - 1 if full else np.nan
         cols["from_52w_low"].append(from_low)
         cols["from_52w_high"].append(from_high)
         cols["above_50d"].append(bool(last > sma50) if n >= 50 else None)

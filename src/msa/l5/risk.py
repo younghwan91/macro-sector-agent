@@ -244,7 +244,12 @@ class CovarianceResult:
     lookback_months: int
     n_obs: int
     shrink_delta: float
-    window: tuple[str, str]
+    #: `δ̂ = κ̂/T` 의 T — **표본 공분산의 관측 수와 다르다.** 표본 공분산은 쌍별 완전
+    #: (`min_periods`) 인데 δ 추정은 행 전체가 채워진 달만 쓴다. 시작월이 어긋난 테마가
+    #: 섞이면 T 가 `n_obs` 보다 훨씬 작아 δ 가 1 로 붙고 Σ 가 상수상관 타깃으로 무너진다
+    #: (2026-08-26 코드 리뷰). δ 를 호출자가 준 경우 `None`.
+    shrink_n_obs: int | None = None
+    window: tuple[str, str] = ("", "")
     notes: tuple[str, ...] = ()
 
 
@@ -291,13 +296,24 @@ def _shrunk_cov(
         raise RiskInputError(f"표본 공분산에 NaN — {pair_unit} 쌍의 겹치는 관측이 부족하다")
     # `shrink_delta=None` 이면 **표본에서 추정**한다 (Ledoit-Wolf 부록 B). 호출자가 값을 주면
     # 그것을 쓴다 — 비교·재현용 경로다.
+    shrink_n_obs: int | None = None
     if shrink_delta is None:
-        obs = np.asarray(m.dropna().to_numpy(), dtype=np.float64)
+        complete = m.dropna()
+        shrink_n_obs = len(complete)
+        obs = np.asarray(complete.to_numpy(), dtype=np.float64)
         shrink_delta = optimal_shrinkage_delta(obs, sample)
         notes = (
             *notes,
-            f"축소 계수 δ={shrink_delta:.3f} 는 표본에서 추정했다 (Ledoit-Wolf 2004 부록 B)",
+            f"축소 계수 δ={shrink_delta:.3f} 는 표본에서 추정했다 (Ledoit-Wolf 2004 부록 B) — "
+            f"T={shrink_n_obs} (행 전체가 채워진 달; 표본 공분산은 쌍별 {len(m)}달)",
         )
+        if shrink_n_obs < min_len:
+            notes = (
+                *notes,
+                f"⚠ δ 추정에 쓴 T={shrink_n_obs} 가 {min_len} 미만이다 — 시작월이 어긋난 "
+                f"{pair_unit} 가 섞였다. δ 가 과하게 커져 Σ 가 상수상관 타깃 쪽으로 눌린다. "
+                "Σ 는 그대로 쓰되 이 사실을 보고 판단하라.",
+            )
     sigma = shrink_constant_correlation(sample, shrink_delta) * ppy
     return CovarianceResult(
         sigma=sigma,
@@ -306,6 +322,7 @@ def _shrunk_cov(
         lookback_months=lookback,
         n_obs=len(m),
         shrink_delta=shrink_delta,
+        shrink_n_obs=shrink_n_obs,
         window=(str(m.index[0].date()), str(m.index[-1].date())),
         notes=notes,
     )

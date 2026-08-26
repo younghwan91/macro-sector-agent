@@ -100,6 +100,26 @@ _FLOAT_COLS: tuple[str, ...] = (
 PICKS_OPTIONAL_COLUMNS: tuple[str, ...] = (*_FLOAT_COLS, "min_weight", "split_first_leg", "notes")
 
 
+#: 익절가가 진입가보다 낮으면 **손실 구간에서 매도 신호가 난다.** `positions._min_price` 가
+#: `+2R` 과 이 값 중 낮은 쪽을 TP1 로 쓰고, `ops/check` 는 `close >= t.price` 로 도달을
+#: 판정하므로 첫 점검에서 바로 `TP_MET` 이 뜬다 — 사람에게 손실 상태로 1/3 을 팔라고 한다
+#: (2026-08-26 코드 리뷰). 값을 손보지 않고 **거부한다** (`CLAUDE.md` §2).
+_TP_PRICE_COLS: tuple[str, ...] = ("tp_p50_price", "tp_p75_price")
+
+
+def _check_tp_above_entry(floats: Mapping[str, float | None], *, where: str) -> None:
+    entry = floats.get("entry_price")
+    if entry is None or entry <= 0:
+        return
+    for c in _TP_PRICE_COLS:
+        v = floats.get(c)
+        if v is not None and v <= entry:
+            raise InputError(
+                f"{where}: {c}={v:g} 가 entry_price={entry:g} 이하다 — 익절가가 진입가보다 "
+                "낮으면 첫 점검에서 손실 상태로 TP 도달 신호가 난다. 값을 고치거나 비워라."
+            )
+
+
 class InputError(RefusedInput, ValueError):
     """입력 파일이 계약을 어긴다. 조용히 건너뛰지 않고 던진다 (`CLAUDE.md` §2)."""
 
@@ -197,6 +217,7 @@ def load_picks(path: Path | str) -> list[Pick]:
             if mw < 0 or mw > 1:
                 raise InputError(f"{where}: min_weight={mw} 는 [0,1] 이어야 한다")
             floats = {c: _opt_float(row.get(c), field_name=c, where=where) for c in _FLOAT_COLS}
+            _check_tp_above_entry(floats, where=where)
             picks.append(
                 Pick(
                     theme=theme,

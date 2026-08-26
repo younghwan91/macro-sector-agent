@@ -412,8 +412,12 @@ def check_position(
 
     # 시간 스탑
     days_left = (pos.time_stop_date - asof).days
-    ts_warn = 0 <= days_left <= TIME_STOP_WARN_DAYS and t_met == 0
-    ts_due = days_left < 0 and t_met == 0
+    # **당일(`days_left == 0`)은 경과다.** `time_stop_date` 는 기한이고 `docs/07` §4 는
+    # "horizon_months 상한 경과" 라고 적는다 — 그날은 상한에 닿은 날이다. 예전에는 예고로
+    # 분류돼 리포트가 `D+0 예고` 라고 적었다 (2026-08-26 코드 리뷰). 알림 발생 자체는
+    # 양쪽 다 같았고 문구만 달랐다.
+    ts_warn = 0 < days_left <= TIME_STOP_WARN_DAYS and t_met == 0
+    ts_due = days_left <= 0 and t_met == 0
 
     # TP
     tps: list[TpStatus] = []

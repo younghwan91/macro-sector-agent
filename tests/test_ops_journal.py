@@ -318,3 +318,28 @@ def test_ops_required_fields_come_from_the_spec_file() -> None:
     del t[load_spec()["required"][0]]
     with pytest.raises(ThesisInvalid, match="필수 필드 없음"):
         validate_thesis(t)
+
+
+def test_suffix_is_sanitized_and_does_not_eat_the_snapshot_extension(tmp_path: Path) -> None:
+    """`--suffix` 도 테마와 같은 규칙으로 씻는다 (2026-08-26 코드 리뷰).
+
+    씻지 않으면 `../x` 가 journal/ 밖으로 나가고, `v1.2` 는 스냅샷 경로에서 `.2` 가 확장자로
+    먹혀 `-v1` 항목과 같은 파일을 가리킨다 — append-only 가드가 엉뚱한 파일을 본다.
+    """
+    from msa.ops.journal import _snapshot_path
+
+    # 점이 있는 suffix 가 스냅샷 이름에서 살아남는다
+    md = tmp_path / "2026-08-26-t-entry-v1.2.md"
+    assert _snapshot_path(md).name == "2026-08-26-t-entry-v1.2.thesis.yaml"
+    # `-v1` 과 `-v1.2` 는 서로 다른 스냅샷이다
+    other = tmp_path / "2026-08-26-t-entry-v1.md"
+    assert _snapshot_path(md) != _snapshot_path(other)
+
+
+def test_suffix_cannot_escape_the_journal_directory() -> None:
+    """경로 구분자·상위 참조는 파일명 토큰으로 씻긴다."""
+    from msa.ops.journal import _theme_tag
+
+    for bad in ("../etc", "a/b", "..", "x y"):
+        tag = _theme_tag(bad)
+        assert "/" not in tag and ".." not in tag, (bad, tag)

@@ -639,8 +639,26 @@ def _fills(fills: list[Fill]) -> list[str]:
 
 
 def entry_filename(rec: JournalRecord, suffix: str = "") -> str:
-    tail = f"-{suffix}" if suffix else ""
+    """저널 항목 파일명. `suffix` 도 테마와 **같은 규칙으로 씻는다.**
+
+    씻지 않으면 `--suffix ../x` 가 `journal/` 밖으로 나가고, `--suffix v1.2` 는 스냅샷 경로
+    유도(`_snapshot_path`)에서 `.2` 가 확장자로 먹혀 `-v1` 항목과 같은 파일을 가리킨다 —
+    append-only 가드가 엉뚱한 파일을 보게 된다 (2026-08-26 코드 리뷰).
+    """
+    tag = _theme_tag(suffix) if suffix else ""
+    tail = f"-{tag}" if tag else ""
     return f"{rec.date.isoformat()}-{_theme_tag(rec.theme)}-{rec.tag}{tail}.md"
+
+
+def _snapshot_path(md_path: Path) -> Path:
+    """`<이름>.md` → `<이름>.thesis.yaml`.
+
+    `with_suffix("")` 를 두 번 쓰면 이름 안의 점을 확장자로 먹는다 (`-v1.2.md` → `-v1`).
+    확장자를 문자열로 잘라 낸다.
+    """
+    name = md_path.name
+    stem = name[: -len(".md")] if name.endswith(".md") else md_path.stem
+    return md_path.with_name(stem + THESIS_SUFFIX)
 
 
 @dataclass(frozen=True)
@@ -679,7 +697,7 @@ def write_record(rec: JournalRecord, jdir: Path, *, suffix: str = "") -> Written
     snap_path: Path | None = None
     diff_text: str | None = None
     if thesis_obj is not None:
-        snap_path = md_path.with_suffix("").with_suffix(THESIS_SUFFIX)
+        snap_path = _snapshot_path(md_path)
         if snap_path.exists():
             raise JournalImmutable(f"{snap_path.name} 이 이미 있다 (append-only).")
         prev = list_snapshots(jdir, rec.theme)

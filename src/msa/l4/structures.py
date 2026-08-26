@@ -1182,11 +1182,23 @@ def run_structures(
     tag = f"{store_end.date()}-smoke" if smoke else str(store_end.date())
     # 캐시는 **docs/14 실행의 것을 그대로 재사용한다** — 여기서 새 캐시 트리를 만들지 않는다
     cache_dir = (cache_root or p.backtests_l4) / str(store_end.date()) / "cache"
-    if force and cache_dir.exists():
+    # **스모크는 그 공유 캐시를 지우지 않는다.** `--themes`·`--max-months` 로 좁혀 돌린
+    # 실행이 `--force` 하나로 전체 실행이 몇 시간 걸려 만든 패널을 날렸다
+    # (2026-08-26 코드 리뷰). 지우는 것은 전체 실행의 권한이다.
+    if force and smoke:
+        log.warning(
+            "l4-structures: --force 는 스모크에서 무시한다 — %s 는 전체 실행과 공유하는 "
+            "캐시다. 다시 만들려면 좁히지 말고 --force 로 돌려라.",
+            cache_dir,
+        )
+    elif force and cache_dir.exists():
         for f in cache_dir.glob("*.parquet"):
             f.unlink()
     cache_dir.mkdir(parents=True, exist_ok=True)
-    n_cached = len(list(cache_dir.glob("*.panel.parquet")))
+    # 이 실행의 격자에 맞는 패널만 센다 — 다른 격자의 파일까지 세면 `prewarm_rs_cache` 를
+    # 건너뛸지 판단하는 아래 조건이 부풀려진 수를 본다.
+    grid_tag = f"__{dates[0].date()}__{dates[-1].date()}__{len(dates)}__"
+    n_cached = len([f for f in cache_dir.glob("*.panel.parquet") if grid_tag in f.name])
     log.info(
         "l4-structures: 테마 %d (구성원 <%d 로 건너뜀 %d) × 월말 %d (%s~%s) · 캐시 패널 %d",
         len(ids),

@@ -284,11 +284,12 @@ def _ref_price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
         sma150 = c.tail(150).mean() if n >= 150 else np.nan
         sma200 = c.tail(200).mean() if n >= 200 else np.nan
         sma200_prev = c.iloc[:-21].tail(200).mean() if n >= 221 else np.nan
-        lo = c.min() if n >= 120 else np.nan
-        hi = c.max() if n >= 120 else np.nan
+        # 52주 = 252 거래일 (2026-08-26: 120 에서 되돌림 — 이름이 말하는 값)
+        lo = c.min() if n >= 252 else np.nan
+        hi = c.max() if n >= 252 else np.nan
         last = float(c.iloc[-1]) if n else np.nan
-        r["from_52w_low"] = last / lo - 1 if n >= 120 else np.nan
-        r["from_52w_high"] = last / hi - 1 if n >= 120 else np.nan
+        r["from_52w_low"] = last / lo - 1 if n >= 252 else np.nan
+        r["from_52w_high"] = last / hi - 1 if n >= 252 else np.nan
         r["above_50d"] = bool(last > sma50) if n >= 50 else None
         r["sma200_up_1m"] = bool(sma200 > sma200_prev) if n >= 221 else None
         r["stage2"] = (
@@ -312,10 +313,12 @@ def _ref_price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
 
 
 def test_price_features_vectorized_equals_reference() -> None:
-    """길이 혼합(300·221·120·60·30·3) · NaN 종가/거래량/시총 · 거래량 0 · 기준일 이후 행."""
+    """길이 혼합(320·300·252·251·221·220·120·119·60·30·3) · NaN 종가/거래량/시총 · 거래량 0 ·
+    기준일 이후 행."""
     rng = np.random.default_rng(3)
     parts = []
-    for i, n in enumerate((320, 300, 221, 220, 120, 119, 60, 30, 3)):
+    # 252/251 은 `from_52w_*` 의 경계다 (2026-08-26: 120 → 252 로 되돌림)
+    for i, n in enumerate((320, 300, 252, 251, 221, 220, 120, 119, 60, 30, 3)):
         df = _px(f"T{i}", n=n, trend=rng.normal(0, 0.003), seed=10 + i)
         if i == 0:  # NaN 종가·시총이 섞여도 같은 값이어야 한다
             df.loc[df.index[::37], "close"] = np.nan
