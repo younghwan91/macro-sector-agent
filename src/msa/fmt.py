@@ -46,5 +46,6 @@ def ratio(x: Any, unit: str = "", digits: int = 1) -> str:
     if math.isnan(v):
         return "n/a"
     if math.isinf(v):
-        return "∞"
+        # 부호를 지우지 않는다 — `-∞` 를 `∞` 로 적으면 방향이 반대인 값이 같아 보인다.
+        return "∞" if v > 0 else "−∞"
     return f"{v:.{digits}f}{unit}"

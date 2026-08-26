@@ -495,3 +495,85 @@ def test_missing_ebitda_is_not_reported_as_a_loss() -> None:
     # 표시 문구가 둘을 구분하고, 결측 쪽은 적자가 아님을 명시한다
     assert "적자라는 뜻이 아니다" in _ND_BASIS_TEXT["mcap_missing"]
     assert "EBITDA≤0" in _ND_BASIS_TEXT["mcap_nonpos"]
+
+
+def test_zero_or_negative_market_cap_is_missing_not_a_value() -> None:
+    """거래되는 상장사의 시총 0 은 주식 수 결측이다 (2026-08-27 실측: ZCMD).
+
+    0 을 값으로 두면 `$0` 으로 찍혀 "모른다" 와 "가치가 없다" 가 같아지고, 순부채/시총이
+    ±inf 가 된다. 음수면 더 나쁘다 — 순부채가 큰 회사가 **음수 배수**로 찍혀 `> 6` 필터를
+    그냥 통과한다.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from msa.l4.features import price_features
+
+    rows = []
+    for tk, mc in (("ZEROMC", 0.0), ("NEGMC", -5.0), ("OKMC", 1e9)):
+        for i in range(260):
+            rows.append(
+                {
+                    "ticker": tk,
+                    "date": pd.Timestamp("2025-01-01") + pd.Timedelta(days=i),
+                    "close": 10.0,
+                    "closeunadj": 10.0,
+                    "volume": 1000.0,
+                    "mcap": mc,
+                }
+            )
+    got = price_features(pd.DataFrame(rows), asof=pd.Timestamp("2026-08-27"))
+    assert np.isnan(got.loc["ZEROMC", "mcap"]), "0 은 결측이다"
+    assert np.isnan(got.loc["NEGMC", "mcap"]), "음수는 결측이다"
+    assert got.loc["OKMC", "mcap"] == 1e9
+
+    # **거슬러 올라가지 않는다** — 최근 값이 0 이면 예전 양수 값을 오늘 값인 척 쓰지 않는다
+    rows2 = [
+        {
+            "ticker": "WASOK",
+            "date": pd.Timestamp("2025-01-01") + pd.Timedelta(days=i),
+            "close": 10.0,
+            "closeunadj": 10.0,
+            "volume": 1000.0,
+            "mcap": 1e5 if i < 200 else 0.0,  # 예전엔 값이 있었고 최근은 0
+        }
+        for i in range(260)
+    ]
+    got2 = price_features(pd.DataFrame(rows2), asof=pd.Timestamp("2026-08-27"))
+    assert np.isnan(got2.loc["WASOK", "mcap"]), "예전 값으로 되돌아가면 안 된다"
+
+    # **거슬러 올라가지 않는다** — 최근 값이 0 이면 예전 양수 값을 오늘 값인 척 쓰지 않는다
+    rows2 = []
+    for i in range(260):
+        rows2.append(
+            {
+                "ticker": "WASOK",
+                "date": pd.Timestamp("2025-01-01") + pd.Timedelta(days=i),
+                "close": 10.0,
+                "closeunadj": 10.0,
+                "volume": 1000.0,
+                "mcap": 1e5 if i < 200 else 0.0,  # 예전엔 값이 있었고 최근은 0
+            }
+        )
+    got2 = price_features(pd.DataFrame(rows2), asof=pd.Timestamp("2026-08-27"))
+    assert np.isnan(got2.loc["WASOK", "mcap"]), "예전 값으로 되돌아가면 안 된다"
+
+
+def test_net_debt_over_market_cap_never_divides_by_a_nonpositive_cap() -> None:
+    """나눌 수 없으면 NaN 이다 — `∞x` 나 음수 배수를 측정값처럼 흘리지 않는다."""
+    import numpy as np
+    import pandas as pd
+
+    nd = pd.Series([100.0, 100.0, 100.0], index=["z", "n", "ok"])
+    mcap = pd.Series([0.0, -5.0, 50.0], index=["z", "n", "ok"])
+    got = nd / mcap.where(mcap > 0)
+    assert np.isnan(got["z"]) and np.isnan(got["n"])
+    assert got["ok"] == 2.0
+
+
+def test_infinity_keeps_its_sign_in_reports() -> None:
+    """`−∞` 를 `∞` 로 적으면 방향이 반대인 값이 같아 보인다."""
+    from msa.fmt import ratio
+
+    assert ratio(float("inf"), "x") == "∞"
+    assert ratio(float("-inf"), "x") == "−∞"

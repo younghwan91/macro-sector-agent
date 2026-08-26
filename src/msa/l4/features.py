@@ -457,13 +457,19 @@ def fundamental_features(
     eb = latest["ebitda_ttm"]
     eb_pos = eb > 0
     eb_missing = eb.isna()
-    f["net_debt_ebitda"] = (nd / eb).where(eb_pos, nd / f["mcap"])
+    # **0 이나 음수 시총으로 나누지 않는다.** 0 이면 ±inf 가 나와 측정값처럼 흘러가고
+    # (리포트에 `∞x`), 음수면 순부채가 큰 회사가 **음수 배수**로 찍혀 `> 6` 필터를 그냥
+    # 통과한다 — 위험한 종목이 안전해 보인다 (2026-08-27 실측: ZCMD·SXTC 시총 0).
+    # 나눌 수 없으면 NaN 이고, NaN 은 E6(판정 불가)로 세어 명단에 실린다 — 사라지지 않는다
+    # (`CLAUDE.md` §2). `nd_basis` 는 그대로 `mcap_nonpos` 라 사유도 남는다.
+    mcap_pos = f["mcap"].where(f["mcap"] > 0)
+    f["net_debt_ebitda"] = (nd / eb).where(eb_pos, nd / mcap_pos)
     f["nd_basis"] = pd.Series(
         np.where(eb_pos, "ebitda", np.where(eb_missing, "mcap_missing", "mcap_nonpos")),
         index=f.index,
     )
     f.loc[f["net_debt_ebitda"].isna(), "nd_basis"] = "n/a"
-    f["maturity_wall_12m"] = latest["debtc"] / f["mcap"]
+    f["maturity_wall_12m"] = latest["debtc"] / mcap_pos  # 같은 이유로 양수 시총만
     ic = latest["ebit_ttm"] / latest["intexp_ttm"]
     f["interest_coverage"] = ic.where(latest["intexp_ttm"] > 0, np.nan)
 
@@ -604,7 +610,16 @@ def price_features(px: pd.DataFrame, asof: pd.Timestamp) -> pd.DataFrame:
         c, cu, v = c_all[a:b], cu_all[a:b], v_all[a:b]
         tickers.append(str(tk[a]))
         mc = mc_all[a:b]
+        # **0·음수 시총은 측정값이 아니라 결측이다.** 거래되는 상장사의 시총이 0 일 수는
+        # 없다 — 주식 수가 비었을 때 곱이 0 이 된 것이다. 0 을 값으로 두면 `$0` 으로 찍혀
+        # "모른다" 와 "가치가 없다" 가 같아지고 순부채/시총이 ±inf 가 된다. NaN 이면
+        # `n/a` 로 찍히고 E6(판정 불가)로 세어 명단에 남는다 (`CLAUDE.md` §2).
+        # 결측일은 건너뛰고 **가장 최근에 보고된** 시총을 쓴다. 그 값이 0 이하면 **거슬러
+        # 올라가지 않고 결측으로 둔다** — 몇 달 전 값을 오늘 값인 척 쓰면 더 나쁘다
+        # (2026-08-27 실측: ZCMD 최근 시총 0, 그 전은 $100K, 하루 거래대금은 $3.6M).
         mc = mc[~np.isnan(mc)]
+        if mc.size and not mc[-1] > 0:
+            mc = mc[:0]
         cols["price"].append(float(cu[-1]))
         cols["mcap"].append(float(mc[-1]) if mc.size else np.nan)
         cols["last_price_date"].append(pd.Timestamp(dates[b - 1]).date())
@@ -813,6 +828,9 @@ def build_features(
         end=asof_ts.date(),
         min_rows=0,
         columns=["ticker", "date", "close", "closeunadj", "volume", "mcap"],
+        # 구성원 명단은 폐지 종목을 **일부러** 포함한다 (생존 편향 방지, `docs/01` §5).
+        # 결측은 이상이 아니라 예상이고, 아래 요약 한 줄이 그 수를 적는다.
+        absent_expected=True,
     )
     pf = price_features(px, asof_ts) if not px.empty else pd.DataFrame()
     universe = pd.DataFrame(index=pd.Index(members, name="ticker"))
@@ -850,12 +868,23 @@ def build_features(
         end=asof_ts.date(),
         min_rows=0,
         date_column="datekey",
+        # 부상장 클래스(FOX·CRD.B·HVT.A…)는 재무가 주 티커에만 실린다. 예상된 결측이고,
+        # 아래 요약 한 줄이 그 수를 적으며 명단에는 `n/a` 로 실린다.
+        absent_expected=True,
     )
     qt = (
         add_ttm(pit_quarterly(fund, asof_ts))
         if not fund.empty
         else pd.DataFrame(columns=["ticker", "calendardate", "datekey", *FUND_FIELDS])
     )
+    # 재무가 없는 상장 구성원 수를 **여기서 적는다.** 스토어 쪽 경고를 껐으므로(예상된
+    # 결측) 이 줄이 그 사실의 유일한 요약이다 — 사라지면 안 된다 (`CLAUDE.md` §2).
+    # 대부분 부상장 클래스다 (FOX·CRD.B·HVT.A — 재무는 주 티커에만 실린다).
+    n_no_fund = len(listed) - (int(fund["ticker"].nunique()) if len(fund) else 0)
+    stats["n_listed_without_fundamentals"] = n_no_fund
+    if n_no_fund:
+        log.info("%s: 상장 %d 중 재무 없음 %d", theme.id, len(listed), n_no_fund)
+
     covered = _sf1_covered(store, listed, asof_ts)
     mcap = pf["mcap"].reindex(listed)
     ff, fstats = (

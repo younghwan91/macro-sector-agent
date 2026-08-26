@@ -301,6 +301,7 @@ class Store:
         min_rows: int,
         expect_tickers: int | None = None,
         columns: Sequence[str] | None = None,
+        absent_expected: bool = False,
     ) -> pd.DataFrame:
         """일별 가격·시총. **폐지 종목을 포함한다** (생존 편향 방지, `docs/01` §5).
 
@@ -328,7 +329,14 @@ class Store:
             f"select {', '.join(cols)} from prices {where} order by ticker, date",
             params,
         )
-        _guard(df, "prices", min_rows=min_rows, expect_tickers=expect_tickers, requested=tickers)
+        _guard(
+            df,
+            "prices",
+            min_rows=min_rows,
+            expect_tickers=expect_tickers,
+            requested=tickers,
+            absent_expected=absent_expected,
+        )
         return df
 
     def tickers_meta(
@@ -380,6 +388,7 @@ class Store:
         *,
         min_rows: int,
         date_column: str = "datekey",
+        absent_expected: bool = False,
     ) -> pd.DataFrame:
         """분기 재무 (`SF1`).
 
@@ -410,7 +419,13 @@ class Store:
         df = self._df(
             f"select {select} from fundamentals {where} order by ticker, {date_column}", params
         )
-        _guard(df, "fundamentals", min_rows=min_rows, requested=tickers)
+        _guard(
+            df,
+            "fundamentals",
+            min_rows=min_rows,
+            requested=tickers,
+            absent_expected=absent_expected,
+        )
         return df
 
     def actions(
@@ -532,7 +547,13 @@ def _etf_close_from_bulk(
     if raw.empty:
         log.warning("%s: 스토어에도 벌크에도 없다", ticker)
         return pd.DataFrame(columns=["date", "close"])
-    log.warning("%s 를 스토어가 아니라 벌크 funds.csv.zip 에서 읽었다 (docs/18 §6)", ticker)
+    # 한 실행에서 티커당 한 번만, INFO 로 말한다. 이것은 **문서화된 정상 경로**다
+    # (`docs/18` §6) — Airflow DAG 의 `TABLE_KINDS` 에 `funds` 가 없어 ETF 가 `prices` 에
+    # 들어오지 않고, 벌크가 그것을 정확히 메운다. 경고로 두면 테마마다 되풀이돼 같은 사실이
+    # 9줄이 되고 그 사이의 진짜 이상이 묻힌다. 폴백이 **실패하면** 위에서 경고가 난다.
+    if ticker not in _BULK_FALLBACK_SAID:
+        _BULK_FALLBACK_SAID.add(ticker)
+        log.info("%s 를 스토어가 아니라 벌크 funds.csv.zip 에서 읽었다 (docs/18 §6)", ticker)
     out = raw.loc[:, ["date", "closeadj"]].rename(columns={"closeadj": "close"})
     d = pd.to_datetime(out["date"])
     if start is not None:
@@ -718,6 +739,14 @@ def _ticker_date_where(
     return (f"where {' and '.join(clauses)}" if clauses else ""), params
 
 
+#: 경고 한 줄에 찍는 티커 수. 나머지는 개수로 적고 DEBUG 에 전문을 남긴다 — 로그 한 줄이
+#: 수백 개로 불어나면 아무도 읽지 않는다.
+_ABSENT_LOG_LIMIT = 20
+
+#: 벌크 폴백을 이미 알린 티커 (프로세스 수명). 사실을 감추는 것이 아니라 **되풀이를** 막는다.
+_BULK_FALLBACK_SAID: set[str] = set()
+
+
 def _guard(
     df: pd.DataFrame,
     what: str,
@@ -725,6 +754,7 @@ def _guard(
     min_rows: int,
     expect_tickers: int | None = None,
     requested: Iterable[str] | None = None,
+    absent_expected: bool = False,
 ) -> None:
     """기대에 못 미치면 던진다. 빈 결과를 조용히 흘려보내지 않는다."""
     if len(df) < min_rows:
@@ -737,13 +767,25 @@ def _guard(
         got = set(df["ticker"].unique()) if "ticker" in df.columns and len(df) else set()
         absent = sorted(req - got)
         if absent:
-            log.warning(
-                "%s: 요청한 %d 종목 중 %d 종목이 결과에 없다: %s",
+            # **잘랐으면 잘랐다고 적는다** (`CLAUDE.md` §2). 예전에는 20개만 찍고 말이 없어
+            # 154개가 빠졌는데 20개가 전부인 것처럼 읽혔다.
+            shown = absent[:_ABSENT_LOG_LIMIT]
+            more = len(absent) - len(shown)
+            # `absent_expected` 는 **호출자가 결측을 세어 스스로 보고할 때**만 준다.
+            # 테마 구성원 명단은 폐지 종목과 부상장 클래스를 일부러 포함하므로(생존 편향
+            # 방지, `docs/01` §5) 여기서 매번 경고하면 진짜 이상이 그 사이에 묻힌다.
+            # **감추는 것이 아니다** — 호출자가 `구성원/상장/재무없음` 을 INFO 로 적는다.
+            log.log(
+                logging.DEBUG if absent_expected else logging.WARNING,
+                "%s: 요청한 %d 종목 중 %d 종목이 결과에 없다: %s%s",
                 what,
                 len(req),
                 len(absent),
-                absent[:20],
+                shown,
+                f" 외 {more}개 (DEBUG 로 전문)" if more else "",
             )
+            if more and not absent_expected:
+                log.debug("%s: 결과에 없는 종목 전문: %s", what, absent)
     if expect_tickers is not None:
         n = df["ticker"].nunique() if "ticker" in df.columns else 0
         if n < expect_tickers:
