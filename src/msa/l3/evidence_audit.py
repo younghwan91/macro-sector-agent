@@ -285,13 +285,12 @@ def check_one(item: Mapping[str, Any], fetch: Callable[[str], str | None]) -> Ev
             truncated=cut,
             note="문서를 못 읽었다 (403·페이월·네트워크) — 맞다는 뜻도 틀리다는 뜻도 아니다",
         )
-    text = strip_html(raw)
-    body, loose = _norm(text), _loose(text)
+    loose = _loose(strip_html(raw))
     units = _units_for(claim, wanted)
     missing = tuple(
         w
         for w in wanted
-        if _norm(w) not in body
+        if not _has_number(loose, _norm(w))
         and not _has_number(loose, _plain(w))
         and not any(_has_number(loose, a) for a in _alternates(w, units.get(w, "")))
     )

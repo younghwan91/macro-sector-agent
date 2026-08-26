@@ -242,3 +242,23 @@ def test_audit_uses_the_prefetched_body_not_a_second_request() -> None:
     res = audit_thesis(thesis, fetch)
     assert calls == ["https://example.com/x"], calls
     assert [c.status for c in res.checks] == [VERIFIED, VERIFIED]
+
+
+def test_a_number_inside_a_bigger_number_is_not_a_match() -> None:
+    """**이 모듈이 존재하는 이유가 이 사례다** (모듈 docstring: "109개 카운티" → "225개").
+
+    쉼표를 지운 본문에 부분 문자열로 찾으면 `225` 가 `34,225,000` 안에서 걸려 날조된 수치가
+    `verified` 로 통과한다. 2026-08-26 코드 리뷰에서 재현됐다 — 경계를 보는 `_has_number`
+    하나만 쓴다.
+    """
+    doc = "<p>total enrollment was 34,225,000 members</p>"
+    c = check_one(_ev(1, "UnitedHealthcare는 225개 카운티에서 철수했다"), lambda _u: doc)
+    assert c.status == PARTIAL and "225" in c.missing
+
+    # 진짜로 적혀 있으면 통과한다
+    assert check_one(
+        _ev(2, "225개 카운티 철수"), lambda _u: "<p>exited 225 counties</p>"
+    ).status == (VERIFIED)
+
+    # 자릿점이 있는 원문도 통과한다 — 경계 검사가 천 단위 구분만 지운다
+    assert check_one(_ev(3, "34,225,000명"), lambda _u: doc).status == VERIFIED
