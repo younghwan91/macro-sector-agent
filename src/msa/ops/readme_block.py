@@ -126,7 +126,7 @@ def _audit_line(digest: dict[str, Any]) -> str:
     bit = (
         f" ⚠ **판정을 만든 근거 {total}건 중 {partial}건은 원문에서 못 찾은 숫자가 있고 "
         f"{unread}건은 문서를 읽지 못했다** (`msa ops audit-evidence <theme>` 로 목록을 본다 — "
-        "단위 변환 때문에 오탐도 섞인다)."
+        "반올림·근사 때문에 오탐도 섞인다)."
     )
     if axes:
         bit += f" 확인된 근거가 하나도 없는 축: {', '.join(axes)}."
