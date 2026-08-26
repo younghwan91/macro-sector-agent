@@ -84,7 +84,7 @@ import pandas as pd
 from msa.config import paths
 from msa.data.store import Store, StoreError
 from msa.fmt import num as _fmt
-from msa.io import dump_json, write_snapshot
+from msa.io import code_fingerprint, dump_json, write_snapshot
 from msa.l1.backtest import (
     BOOT_BLOCK,
     BOOT_N,
@@ -162,6 +162,12 @@ LIMITATIONS: tuple[str, ...] = (
 )
 
 #: 테마별 특성 패널의 열 (parquet 캐시 스키마).
+#: 패널 한 칸의 값을 정하는 모듈 — 이 소스가 바뀌면 캐시 키가 바뀌어 다시 만든다.
+#: `backtest` 자신도 넣는다 (`month_panel` 이 여기 있다). 리포트 문구만 고쳐도 캐시가
+#: 무효화되지만 **그쪽으로 틀리는 편이 낫다** — 조용히 낡은 패널로 DSR·PBO 를 내는 것보다
+#: 다시 만드는 비용이 싸다 (2026-08-26 코드 리뷰).
+PANEL_CODE_MODULES: tuple[str, ...] = ("msa.l4.features", "msa.l4.axes", "msa.l4.backtest")
+
 PANEL_COLUMNS: tuple[str, ...] = (
     "date",
     "ticker",
@@ -312,9 +318,14 @@ def theme_panel(
     """한 테마의 전 월말 특성 패널 (긴 표) 과 월별 계수. parquet 으로 캐시한다.
 
     `build_features` 가 던지는 달은 **행을 만들지 않고 `error` 로 센다** — 조용히 버리지 않는다
-    (`CLAUDE.md` §2). 캐시 키는 (테마, 격자 첫·마지막 달, 달 수) 이고 파일 이름에 그대로 들어간다.
+    (`CLAUDE.md` §2). 캐시 키는 (테마, 격자 첫·마지막 달, 달 수, **특성·축 코드 지문**) 이고
+    파일 이름에 그대로 들어간다. 코드 지문이 없으면 `build_features`·`axes` 를 고쳐도 예전
+    parquet 을 그대로 읽는다 — DSR·PBO 판정이 그 숫자 위에 선다 (2026-08-26 코드 리뷰).
     """
-    tag = f"{theme_id}__{dates[0].date()}__{dates[-1].date()}__{len(dates)}"
+    tag = (
+        f"{theme_id}__{dates[0].date()}__{dates[-1].date()}__{len(dates)}"
+        f"__{code_fingerprint(*PANEL_CODE_MODULES)}"
+    )
     p_panel = cache_dir / f"{tag}.panel.parquet" if cache_dir else None
     p_counts = cache_dir / f"{tag}.counts.parquet" if cache_dir else None
     if p_panel is not None and p_counts is not None and p_panel.exists() and p_counts.exists():

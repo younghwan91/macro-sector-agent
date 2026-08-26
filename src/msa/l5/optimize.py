@@ -149,6 +149,10 @@ class Solution:
     cluster_weights: dict[str, float]
     objective: float
     binding_caps: tuple[str, ...]  # 경계에 붙은 C3/C4/C5/클러스터 상한
+    #: 종목별 허용 구간 `(하한, 상한)` — 하한은 `min_weight`, 상한은 C3 종목 상한과
+    #: C4 유동성 상한 중 **작은 쪽**. 해를 나중에 손보는 쪽(`l5.run`)이 제약을 다시
+    #: 유도하지 않게 여기서 준다 — 유도가 두 벌이면 한쪽만 갱신돼도 조용히 어긋난다.
+    bounds: dict[str, tuple[float, float]]
 
     def as_dict(self) -> dict[str, object]:
         """진단용 — `weights` 는 빼고 전부 (비중은 weights.csv·positions 가 들고 있다)."""
@@ -324,6 +328,14 @@ def _finish(
         if k.startswith(("C3", "C4", "C5", "cluster")) and abs(s) <= tol
     )
     gross = float(w.sum())
+    mw = np.asarray(p.min_weight, dtype=np.float64)
+    bounds: dict[str, tuple[float, float]] = {}
+    for i, tk in enumerate(p.tickers):
+        hi = CAP_STOCK
+        adv = p.adv20_usd[i]
+        if c4_applied and adv is not None and adv > 0 and p.capital_usd:
+            hi = min(hi, LIQ_FRACTION_OF_ADV * adv / p.capital_usd)
+        bounds[tk] = (float(mw[i]), float(hi))
     return Solution(
         weights={p.tickers[i]: float(w[i]) for i in range(p.n)},
         status=status,
@@ -344,4 +356,5 @@ def _finish(
         cluster_weights=group_sums(p.clusters),
         objective=float(np.asarray(p.coef) @ w),
         binding_caps=binding_caps,
+        bounds=bounds,
     )

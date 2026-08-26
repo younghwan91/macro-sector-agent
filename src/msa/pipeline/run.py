@@ -1265,13 +1265,24 @@ def run_cadence_check(
     return rep, info
 
 
-def run_weekly_check(asof_s: str, *, write: bool) -> tuple[CheckReport, dict[str, Any]]:
-    """`run_cadence_check(mode="weekly")` — 테스트는 이 함수를 갈아끼운다."""
-    return run_cadence_check(asof_s, mode="weekly", write=write)
+def run_weekly_check(
+    asof_s: str, *, write: bool, send: bool = False
+) -> tuple[CheckReport, dict[str, Any]]:
+    """`run_cadence_check(mode="weekly")` — 테스트는 이 함수를 갈아끼운다.
+
+    `send` 는 **호출자가 정한다.** 예전에는 `send` 를 넘기지 않아 기본값 `True` 로 흘렀고,
+    `msa run weekly` 에 끌 플래그가 없어 텔레그램이 항상 나갔다 (2026-08-26 코드 리뷰).
+    "보낼지 말지는 명령의 플래그가 정한다" (`CLAUDE.md`) — `msa run daily` 와 같은 규약이다.
+    """
+    return run_cadence_check(asof_s, mode="weekly", write=write, send=send)
 
 
 def run_weekly(
-    *, asof: str | None = None, write: bool = True, sandbox_dir: Path | None = None
+    *,
+    asof: str | None = None,
+    write: bool = True,
+    send: bool = False,
+    sandbox_dir: Path | None = None,
 ) -> WeeklyRunResult:
     """주간 케이던스 (`docs/09` §1 주간 행) = 전수 스캔(경량 갱신 대용 — 캐시 덕에 ~12 초) + 보유
     포지션 트리거·무효화 점검 + 주간 리포트. 스캔 실패는 중단(exit 1); 점검 문제는 리포트에 남기고
@@ -1311,7 +1322,7 @@ def run_weekly(
             )
             t = _Timer()
             try:
-                chk, info = run_weekly_check(asof_s, write=write)
+                chk, info = run_weekly_check(asof_s, write=write, send=send)
             except Exception as e:
                 log.warning("run weekly: check 실패 — %s", _err(e))
                 report.add(StepResult("check", "failed", _err(e), seconds=t.seconds))

@@ -1002,3 +1002,52 @@ def test_shrinkage_degenerate_inputs_do_not_shrink() -> None:
     # 표본이 이미 타깃과 같으면 γ=0 → 축소 근거 없음
     x = np.tile(np.array([[1.0, 1.0]]), (60, 1))
     assert optimal_shrinkage_delta(x, np.array([[0.0, 0.0], [0.0, 0.0]])) == 0.0
+
+
+def test_equalize_respects_the_liquidity_bound_not_just_the_cap() -> None:
+    """**동일가중이 해를 실행 불가능하게 만들면 안 된다** (2026-08-26 코드 리뷰).
+
+    종목 상한만 보면 C4 유동성 상한(`w·자본 ≤ 0.10·ADV20`)을 조용히 버린다 — ADV 때문에
+    1% 로 묶인 종목에 5% 를 쓰면서 `diagnostics.json` 은 `c4_applied: true` 라고 말한다.
+    """
+    from msa.l5.run import equalize_uninformed_themes
+
+    class _P:
+        def __init__(self, ticker: str, theme: str, idio: float | None) -> None:
+            self.ticker, self.theme, self.idio_vol_ann = ticker, theme, idio
+
+    picks = [_P("ILLIQ", "t1", None), _P("LIQ", "t1", None)]
+    w = {"ILLIQ": 0.01, "LIQ": 0.09}  # 솔버가 ADV 때문에 이렇게 놓았다
+    # 상한은 둘 다 CAP_STOCK 아래지만 ILLIQ 는 유동성으로 1% 에 묶여 있다
+    bounds = {"ILLIQ": (0.0, 0.01), "LIQ": (0.0, 0.10)}
+
+    warns: list[str] = []
+    got = equalize_uninformed_themes(w, picks, [p.idio_vol_ann for p in picks], warns, bounds)
+
+    assert got == w, "유동성 상한을 깨면서 동일가중으로 되돌리면 안 된다"
+    assert any("상한 초과 ILLIQ" in x for x in warns), warns
+
+    # 하한도 같다 — min_weight 를 밑돌면 되돌리지 않는다
+    warns2: list[str] = []
+    got2 = equalize_uninformed_themes(
+        w,
+        picks,
+        [p.idio_vol_ann for p in picks],
+        warns2,
+        {"ILLIQ": (0.08, 0.10), "LIQ": (0.0, 0.1)},
+    )
+    assert got2 == w
+    assert any("하한 미달 ILLIQ" in x for x in warns2), warns2
+
+
+def test_solution_bounds_carry_the_liquidity_limit() -> None:
+    """`Solution.bounds` 는 솔버가 실제로 건 구간이다 — 소비자가 제약을 다시 유도하지 않는다."""
+    from msa.l5.optimize import CAP_STOCK, solve
+
+    # A 는 ADV 가 작아 C4 가 종목 상한보다 낮게 묶는다
+    prob = _problem(adv20_usd=(1_000_000.0, None, None), capital_usd=10_000_000.0)
+    sol = solve(prob)
+    lo, hi = sol.bounds["A"]
+    assert lo == 0.0
+    assert hi < CAP_STOCK, "ADV 가 작은 종목의 상한은 C4 가 정한다"
+    assert sol.bounds["B"][1] == CAP_STOCK, "ADV 가 없으면 C3 상한 그대로"

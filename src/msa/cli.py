@@ -862,9 +862,14 @@ def run_monthly_cmd(
 def run_weekly_cmd(
     asof: str = typer.Option("", help="기준일 YYYY-MM-DD (기본 오늘)"),
     no_write: bool = typer.Option(False, "--no-write", help="state/ 에 아무것도 쓰지 않는다"),
+    send: bool = typer.Option(
+        False, "--send", help="점검 알림을 텔레그램으로 보낸다 (기본은 파일에만 남긴다)"
+    ),
     verbose: bool = OPT_VERBOSE,
 ) -> None:
     """주간 실행 (docs/09 §1): 전수 스캔(경량 갱신 대용) + 보유 포지션 점검 (= msa check --weekly).
+
+    --send 없이는 아무것도 발신하지 않는다 (alerts.json 에만 남는다) — msa run daily 와 같다.
 
     산출물: state/runs/<date>/weekly-report.md · run.json · state/checks/<date>/.
     """
@@ -872,7 +877,7 @@ def run_weekly_cmd(
 
     _setup_logging(verbose)
     try:
-        res = run_weekly(asof=asof or None, write=not no_write)
+        res = run_weekly(asof=asof or None, write=not no_write, send=send)
     except RunError as e:
         raise typer.BadParameter(str(e)) from e
     _echo_run_report(res.report)

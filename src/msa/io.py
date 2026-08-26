@@ -131,3 +131,26 @@ def dir_lock(directory: Path | str, name: str = ".lock") -> Iterator[None]:
             yield
         finally:
             fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+
+
+def code_fingerprint(*modules: str) -> str:
+    """모듈 소스의 짧은 해시 — **캐시 키에 코드 버전을 넣기 위한 것.**
+
+    캐시 키가 (테마, 날짜) 뿐이면 특성·축 코드를 고쳐도 예전 parquet 이 그대로 재사용된다.
+    DSR·PBO 판정이 그 숫자 위에 서 있으므로, 조용히 낡은 패널을 읽는 것이 여기서 가장 나쁜
+    실패다 (2026-08-26 코드 리뷰). 소스가 한 글자라도 바뀌면 키가 바뀌어 다시 만든다.
+
+    파일을 못 읽으면 **예외를 삼키지 않는다** — 지문을 못 만들었는데 만든 척하면 캐시가
+    다시 조용해진다 (`CLAUDE.md` §2).
+    """
+    import hashlib
+    import importlib.util
+
+    h = hashlib.sha256()
+    for name in sorted(modules):
+        spec = importlib.util.find_spec(name)
+        origin = spec.origin if spec else None
+        if origin is None:
+            raise OSError(f"코드 지문: 모듈 {name!r} 의 소스를 찾지 못했다")
+        h.update(Path(origin).read_bytes())
+    return h.hexdigest()[:12]

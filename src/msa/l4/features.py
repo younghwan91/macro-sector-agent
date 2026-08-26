@@ -90,6 +90,7 @@ from msa.config import paths
 from msa.data import pit
 from msa.data.store import Store, StoreError
 from msa.dates import months_between
+from msa.io import code_fingerprint
 from msa.l1.physical import PhysicalSeries, load_ref
 from msa.l1.scoreboard import xs_pct
 from msa.status import FundStatus
@@ -735,11 +736,15 @@ def universe_rs_cached(
     """`universe_rs` 를 `state/cache/rs_universe_<asof>_<store_end>.parquet` 에 메모한다.
 
     같은 asof 로 여러 테마를 돌릴 때 유니버스 슬라이스를 테마마다 다시 읽지 않기 위한 것이다.
-    키는 (asof, 스토어 최종일) — 스토어가 갱신되면 최종일이 바뀌어 캐시가 비껴간다.
+    키는 (asof, 스토어 최종일, **`universe_rs` 코드 지문**) — 스토어가 갱신되면 최종일이
+    바뀌어 캐시가 비껴가고, 산식을 고치면 지문이 바뀌어 다시 만든다. 지문이 없으면 코드를
+    고쳐도 예전 parquet 을 읽는다 (2026-08-26 코드 리뷰). 이 캐시는 라이브 `msa picks`
+    경로도 쓴다.
     쓰기는 임시 파일 + `os.replace` 다. 백테스트가 테마별 프로세스로 병렬로 도는데 같은 asof 를
     여러 워커가 동시에 만나므로, 직접 쓰면 반쯤 쓰인 parquet 을 다른 워커가 읽을 수 있다.
     """
-    path = paths().cache / f"rs_universe_{asof.date()}_{store_end.date()}.parquet"
+    fp = code_fingerprint("msa.l4.features")
+    path = paths().cache / f"rs_universe_{asof.date()}_{store_end.date()}_{fp}.parquet"
     if path.exists():
         return pd.read_parquet(path)["rs"]
     rs = universe_rs(store, trading_dates)

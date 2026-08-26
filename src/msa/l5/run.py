@@ -218,6 +218,7 @@ def equalize_uninformed_themes(
     picks: Sequence[Pick],
     idio_vol_ann: Sequence[float | None],
     warnings: list[str],
+    bounds: Mapping[str, tuple[float, float]] | None = None,
 ) -> dict[str, float]:
     """고유분산이 하나도 없는 테마의 종목 비중을 **테마 내 동일가중으로 되돌린다.**
 
@@ -233,7 +234,11 @@ def equalize_uninformed_themes(
 
     **탐색이 아니다.** 값을 고르는 것이 아니라, 모델이 구분하지 못한다는 사실을 그대로
     표시하는 것이다 (`CLAUDE.md` §1 은 데이터에 맞춰 값을 옮기는 것을 금지한다).
-    종목 상한(`CAP_STOCK`)을 깨는 테마는 건드리지 않고 그 사실을 적는다.
+    **해가 여전히 실행 가능해야 한다.** 종목 상한만 보고 되돌리면 C4 유동성 상한
+    (`w·자본 ≤ 0.10·ADV20`)과 `min_weight` 하한을 조용히 버리게 된다 — ADV 때문에 1% 로
+    묶인 종목에 5% 를 쓰면서 `diagnostics.json` 은 `c4_applied: true` 라고 계속 말한다
+    (2026-08-26 코드 리뷰). `bounds` 는 솔버가 실제로 건 구간이다 (`Solution.bounds`).
+    구간을 벗어나는 테마는 건드리지 않고 그 사실을 적는다.
     """
     have_idio = {p.theme for p, v in zip(picks, idio_vol_ann, strict=True) if v}
     by_theme: dict[str, list[Pick]] = {}
@@ -248,8 +253,16 @@ def equalize_uninformed_themes(
             continue
         total = sum(out.get(m.ticker, 0.0) for m in members)
         each = total / len(members)
-        if each > CAP_STOCK + 1e-12:
-            skipped.append(f"{theme}(동일가중 {each:.1%} > 상한 {CAP_STOCK:.0%})")
+        band = {m.ticker: (bounds or {}).get(m.ticker, (0.0, CAP_STOCK)) for m in members}
+        over = [t for t, (_, hi) in band.items() if each > hi + 1e-12]
+        under = [t for t, (lo, _) in band.items() if each < lo - 1e-12]
+        if over or under:
+            why = []
+            if over:
+                why.append(f"상한 초과 {', '.join(sorted(over))}")
+            if under:
+                why.append(f"하한 미달 {', '.join(sorted(under))}")
+            skipped.append(f"{theme}(동일가중 {each:.1%} — {' · '.join(why)})")
             continue
         for m in members:
             out[m.ticker] = each
@@ -436,7 +449,11 @@ def build_portfolio(
             inputs, picks, by_id=by_id, c_tilde=c_tilde, losses=losses, cov=cov, warnings=warnings
         )
         weights = equalize_uninformed_themes(
-            solution.weights, picks, [p.idio_vol_ann for p in picks], warnings
+            solution.weights,
+            picks,
+            [p.idio_vol_ann for p in picks],
+            warnings,
+            solution.bounds,
         )
     else:
         warnings.append("편입 가능한 후보가 0개 — 포트폴리오를 만들지 않았다")

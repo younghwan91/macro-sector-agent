@@ -651,3 +651,34 @@ def test_effective_sample_reports_theme_ic_and_within_theme_stock_correlation() 
     assert s["n_themes_measured"] == 3
     assert s["median_avg_corr"] > 0  # 같은 상품가 노출 → 명목 5종목이 유효 5종목이 아니다
     assert 1.0 <= s["median_n_eff_stocks"] < s["median_n_stocks"]
+
+
+def test_panel_cache_key_changes_when_the_feature_code_changes() -> None:
+    """캐시 키에 **코드 지문**이 들어간다 — 특성·축을 고치면 예전 parquet 을 읽지 않는다.
+
+    2026-08-26 코드 리뷰 지적. 키가 (테마, 날짜) 뿐이면 `build_features` 를 고쳐도 캐시가
+    그대로 맞아 DSR·PBO 가 낡은 숫자 위에 선다. 조용히 낡은 패널을 읽는 것이 여기서 가장
+    나쁜 실패다.
+    """
+    from msa.io import code_fingerprint
+    from msa.l4.backtest import PANEL_CODE_MODULES
+
+    fp = code_fingerprint(*PANEL_CODE_MODULES)
+    assert len(fp) == 12 and fp.isalnum()
+    assert "msa.l4.features" in PANEL_CODE_MODULES
+    assert "msa.l4.axes" in PANEL_CODE_MODULES
+
+    # 소스가 다르면 지문이 다르다
+    assert code_fingerprint("msa.l4.features") != code_fingerprint("msa.l4.axes")
+    # 같은 모듈 집합이면 안정적이다 (실행마다 바뀌면 캐시가 영영 안 맞는다)
+    assert code_fingerprint(*PANEL_CODE_MODULES) == fp
+
+
+def test_code_fingerprint_refuses_a_module_it_cannot_read() -> None:
+    """지문을 못 만들었는데 만든 척하면 캐시가 다시 조용해진다 (`CLAUDE.md` §2)."""
+    import pytest
+
+    from msa.io import code_fingerprint
+
+    with pytest.raises((OSError, ModuleNotFoundError)):
+        code_fingerprint("msa.does_not_exist")

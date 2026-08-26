@@ -676,7 +676,13 @@ def verdict(
     beat = [k for k, v in primary.items() if v.get("call") == "beats_B3"]
     out["beating_b3"] = beat
     out["n_beating_b3"] = len(beat)
-    out["nobody_beats_b3"] = bool(primary) and not beat
+    # **"못 쟀다" 를 "재 봤는데 졌다" 로 읽으면 안 된다.** `primary` 에는 관문 셀이 빈 쌍도
+    # `undetermined` 로 들어가므로 `bool(primary)` 는 언제나 참이다. 그것만 보고 판정하면
+    # 증거가 없을 때 §5 의 "L4 선정 규칙을 버린다" 가 발동한다 (`CLAUDE.md` §2).
+    # `backtest.verdict` 의 `q1` 이 같은 상황을 `undetermined` 로 두는 것과 맞춘다.
+    measured = [k for k, v in primary.items() if v.get("call") != "undetermined"]
+    out["n_primary_undetermined"] = len(primary) - len(measured)
+    out["nobody_beats_b3"] = bool(measured) and len(measured) == len(primary) and not beat
 
     sec: dict[str, Any] = {}
     for name, better, worse in (
@@ -902,6 +908,11 @@ def render_report(res: L4StructureResult) -> str:
         )
     if m.get("smoke"):
         L.append("  ⇒ 스모크라 §5 의 조치를 읽지 않는다. 판정은 전체 실행에서만 나온다.")
+    elif v.get("n_primary_undetermined", 0):
+        L.append(
+            f"  ⇒ 관문 셀이 빈 쌍 {v['n_primary_undetermined']}개 — **판정하지 않는다.**"
+            " 못 쟀다는 것은 졌다는 뜻이 아니다 (CLAUDE.md §2)."
+        )
     elif v.get("nobody_beats_b3"):
         L.append("  ⇒ 아무도 B3 를 이기지 못했다. §5: L4 의 선정 규칙을 버린다 (조치는 사람이).")
     elif v.get("n_beating_b3", 0) == 1 and v["beating_b3"] == ["B0-B3"]:

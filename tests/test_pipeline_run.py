@@ -473,8 +473,8 @@ def test_weekly_is_scan_plus_check(fakes: dict[str, Any], monkeypatch: pytest.Mo
 
     seen: list[Any] = []
 
-    def chk(asof_s: str, *, write: bool) -> Any:
-        seen.append((asof_s, write))
+    def chk(asof_s: str, *, write: bool, send: bool = False) -> Any:
+        seen.append((asof_s, write, send))
         from datetime import date as _d
 
         out = paths().checks / asof_s
@@ -494,7 +494,7 @@ def test_weekly_is_scan_plus_check(fakes: dict[str, Any], monkeypatch: pytest.Mo
     res = R.run_weekly(asof=ASOF)
     assert [s.name for s in res.report.steps] == list(R.WEEKLY_STEPS)
     assert res.report.statuses() == {"scan": "ok", "check": "ok", "report": "ok"}
-    assert seen == [(ASOF, True)]
+    assert seen == [(ASOF, True, False)], "--send 없이는 발신하지 않는다"
     assert res.exit_code == 0  # 점검 문제는 리포트로, 종료 코드는 스캔 중단에만
     assert any("thesis 스냅샷" in x for x in res.report.human_todo)
     assert any("미체결 제안" in x for x in res.report.human_todo)
@@ -757,3 +757,39 @@ def test_select_themes_has_no_l2_overlay() -> None:
     assert not any("hard_exclude" in n or "L2" in n for n in sel.notes)
     with pytest.raises(TypeError):
         select_themes(sb, top_k=3, hard_exclude={"b"})  # type: ignore[call-arg]
+
+
+def test_weekly_only_sends_when_asked(
+    fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`msa run weekly` 의 발신은 **플래그가 정한다** (2026-08-26 코드 리뷰).
+
+    예전에는 `run_weekly_check` 가 `send` 를 넘기지 않아 `run_cadence_check` 의 기본값
+    `True` 로 흘렀고, CLI 에 끌 방법이 없어 `MSA_TELEGRAM_*` 이 켜진 사용자에게 매주
+    알림이 나갔다. `msa run daily` 와 같은 옵트인으로 맞췄다.
+    """
+    from datetime import date as _d
+
+    from msa.ops.check import CheckReport
+
+    seen: list[bool] = []
+
+    def chk(asof_s: str, *, write: bool, send: bool = False) -> Any:
+        seen.append(send)
+        out = paths().checks / asof_s
+        out.mkdir(parents=True, exist_ok=True)
+        rep = CheckReport(
+            asof=_d.fromisoformat(asof_s),
+            mode="weekly",
+            positions=[],
+            alerts=[],
+            out_dir=out,
+            problems=[],
+            unchecked=[],
+        )
+        return rep, {"telegram": "not_configured", "lookback_days": 1}
+
+    monkeypatch.setattr(R, "run_weekly_check", chk)
+    R.run_weekly(asof=ASOF)
+    R.run_weekly(asof=ASOF, send=True)
+    assert seen == [False, True]

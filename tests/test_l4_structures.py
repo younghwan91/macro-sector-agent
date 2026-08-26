@@ -402,3 +402,19 @@ def test_run_structures_frames_end_to_end() -> None:
     assert not res.mortality_summary.empty and not res.turnover_summary.empty
     assert not res.composition.empty
     assert res.meta["limitations"] and res.meta["k"] == K
+
+
+def test_empty_gate_cells_do_not_fire_the_scrap_trigger() -> None:
+    """관문 셀이 비면 **판정하지 않는다** — 못 쟀다는 것은 졌다는 뜻이 아니다.
+
+    2026-08-26 코드 리뷰 지적. `primary` 에는 빈 쌍도 `undetermined` 로 들어가므로
+    `bool(primary)` 는 언제나 참이고, 그것만 보면 증거가 없을 때 docs/15 §5 의
+    "L4 의 선정 규칙을 버린다" 가 발동한다 (`CLAUDE.md` §2).
+    """
+    overfit = {"dsr": [], "pbo": [], "trials": count_trials()}
+    v = verdict(pd.DataFrame(), pd.DataFrame(), overfit)  # 셀이 하나도 없다
+
+    for name in PRIMARY_PAIRS:
+        assert v["primary_vs_b3_12m"][name]["call"] == "undetermined"
+    assert v["n_primary_undetermined"] == len(PRIMARY_PAIRS)
+    assert v["nobody_beats_b3"] is False, "증거 없이 폐기 트리거가 켜졌다"
