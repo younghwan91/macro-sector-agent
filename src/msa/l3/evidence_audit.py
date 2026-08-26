@@ -141,6 +141,56 @@ def _norm(s: str) -> str:
     return re.sub(r"[,\s ]", "", s)
 
 
+#: 한글 수 단위 → 배수. **오탐의 가장 큰 원인이 이것이었다** — claim 이 "순손실 2,220만 달러"
+#: 라고 쓰면 영문 원문에는 `$22.2 million` 으로 있어 숫자가 안 맞는다 (2026-08-26 실측).
+_KO_SCALE: dict[str, float] = {"만": 1e4, "억": 1e8, "조": 1e12}
+
+#: 원문이 어느 자리수로 적었는지 모르므로 **후보를 만들어 다 찾아본다.**
+_EN_SCALE: tuple[float, ...] = (1e3, 1e6, 1e9)
+
+
+def _fmt_num(x: float) -> str:
+    """정수면 정수로, 아니면 꼬리 0 을 뗀다."""
+    if abs(x - round(x)) < 1e-9:
+        return str(round(x))
+    return f"{x:.10f}".rstrip("0").rstrip(".")
+
+
+def _alternates(raw: str, unit: str) -> list[str]:
+    """`2,220` + `만` → 원문이 쓸 법한 표기 후보 (`22200000` · `22200` · `22.2`).
+
+    **찾는 쪽만 넓힌다** — claim 이 틀렸는데 맞다고 하지는 않는다. 후보 중 하나라도 본문에
+    있으면 그 숫자는 원문에 있는 것으로 본다.
+    """
+    scale = _KO_SCALE.get(unit)
+    if scale is None:
+        return []
+    try:
+        base = float(raw.replace(",", "")) * scale
+    except ValueError:
+        return []
+    cand = [base] + [base / d for d in _EN_SCALE]
+    out: list[str] = []
+    for v in cand:
+        # 너무 작은 값은 후보에서 뺀다 — `0`·`0.02` 같은 것은 아무 문서에나 있어서
+        # **찾았다고 잘못 말하게** 된다. 넓히려다 검사를 무력화하면 안 된다.
+        if abs(v) < 1.0:
+            continue
+        for t in (_fmt_num(v), _fmt_num(round(v, 1))):
+            if len(t.replace(".", "").lstrip("0")) >= 2 and t not in out:
+                out.append(t)
+    return out
+
+
+def _units_for(text: str, wanted: Sequence[str]) -> dict[str, str]:
+    """숫자 바로 뒤에 붙은 한글 수 단위 (`2,220만` → `{"2,220": "만"}`). 없으면 빈 문자열."""
+    out: dict[str, str] = {}
+    for w in wanted:
+        m = re.search(re.escape(w) + r"\s*([만억조])", text or "")
+        out[w] = m.group(1) if m else ""
+    return out
+
+
 def strip_html(raw: str) -> str:
     """태그를 걷어낸 본문. 외부 의존을 쓰지 않는다 — 숫자만 찾으면 되므로 충분하다."""
     body = re.sub(r"(?is)<(script|style|noscript)[^>]*>.*?</\1>", " ", raw)
@@ -179,7 +229,13 @@ def check_one(item: Mapping[str, Any], fetch: Callable[[str], str | None]) -> Ev
             note="문서를 못 읽었다 (403·페이월·네트워크) — 맞다는 뜻도 틀리다는 뜻도 아니다",
         )
     body = _norm(strip_html(raw))
-    missing = tuple(w for w in wanted if _norm(w) not in body)
+    units = _units_for(claim, wanted)
+    missing = tuple(
+        w
+        for w in wanted
+        if _norm(w) not in body
+        and not any(_norm(a) in body for a in _alternates(w, units.get(w, "")))
+    )
     status = VERIFIED if not missing else PARTIAL
     return EvidenceCheck(eid, status, url, wanted, missing, cut)
 

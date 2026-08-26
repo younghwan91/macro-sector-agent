@@ -128,3 +128,49 @@ def test_axis_with_no_verified_evidence_is_named() -> None:
     res = audit_thesis(_thesis(), lambda _u: "only 41.2 here")
     assert res.unverified_axes() == ["capital_cycle"]  # substitution 은 1 이 확인됐다
     assert res.counts()[VERIFIED] == 1 and res.counts()[PARTIAL] == 2
+
+
+# ---------------------------------------------------------------- 단위 변환
+
+
+def test_korean_scale_units_are_matched_against_english_notation() -> None:
+    """오탐의 가장 큰 원인이었다 — claim "2,220만 달러" vs 원문 `$22.2 million`.
+
+    2026-08-26 실측: 이 처리를 넣자 `partial` 이 23건 → 9건, `verified` 가 13건 → 27건이
+    됐다(두 테마 합계). 남은 9건이 실제로 봐야 할 것이다.
+    """
+    doc = "<p>ZIM reported a net loss of $22.2 million for the first half.</p>"
+    c = check_one(_ev(1, "ZIM 상반기 순손실 2,220만 달러"), lambda _u: doc)
+    assert c.status == VERIFIED, c.missing
+
+    # 억 단위도 같다
+    doc2 = "<p>throughput reached 237 million TEU</p>"
+    assert check_one(_ev(2, "처리량 2.37억 TEU"), lambda _u: doc2).status == VERIFIED
+
+    # 원 단위 그대로 쓴 문서도 잡는다
+    doc3 = "<p>net loss of 22,200,000 dollars</p>"
+    assert check_one(_ev(3, "순손실 2,220만 달러"), lambda _u: doc3).status == VERIFIED
+
+
+def test_scaling_does_not_make_the_check_toothless() -> None:
+    """**찾는 쪽만 넓힌다** — claim 이 틀렸는데 맞다고 하면 검사가 무의미해진다.
+
+    후보에서 1 미만과 두 자리 미만을 뺀 이유가 이것이다. `0`·`0.02` 같은 값은 아무 문서에나
+    있어서 넓히려다 검사를 꺼 버린다.
+    """
+    from msa.l3.evidence_audit import _alternates
+
+    # 어떤 후보도 한 자리이거나 1 미만이면 안 된다
+    for raw, unit in (("2,220", "만"), ("1", "만"), ("178.8", "만"), ("2.37", "억")):
+        for a in _alternates(raw, unit):
+            assert float(a) >= 1.0, (raw, unit, a)
+            assert len(a.replace(".", "").lstrip("0")) >= 2, (raw, unit, a)
+
+    # 원문에 없는 수치는 여전히 잡힌다 — 단위가 붙어 있어도
+    doc = "<p>unrelated text with 999 and 12,345</p>"
+    c = check_one(_ev(9, "세계 처리량 3,600만 TEU"), lambda _u: doc)
+    assert c.status == PARTIAL and "3,600" in c.missing
+
+    # 단위가 없는 숫자에는 후보를 만들지 않는다
+    assert _alternates("2,220", "") == []
+    assert _alternates("2,220", "개") == []
