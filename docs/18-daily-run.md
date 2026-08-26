@@ -218,7 +218,7 @@ grep -H "편입 가능\|cycle_confidence" /tmp/msa_*.log
 | | 무엇 | 어떻게 | 주기 | 없으면 |
 |---|---|---|---|---|
 | **①** | 주가·재무·상장정보 → `~/data/us_micro.duckdb` | `opt-factor ingest` (**`opt_portfolio` 저장소**) | **매일** | 스캔이 묵은 가격으로 순위를 낸다 |
-| **②** | ETF 가격 (`funds.csv.zip`) | **브라우저 로그인 · 손으로** | 분기 1회 | ETF 프록시 검증만 흐려진다 |
+| **②** | ETF 가격 (`funds.csv.zip`) | Airflow DAG 가 **매일** 받는다 (287MB) | 자동 | ETF 프록시 검증만 흐려진다 |
 | **③** | 실물 수요 지표 · CPI | `msa data fred-fetch` | **월 1회** | 축 1 이 `data_missing` |
 | **④** | 에이전트 근거 | 판별 시 자동 (웹 검색) | 매번 | — |
 
@@ -246,6 +246,17 @@ uv run opt-factor status --store ~/data/us_micro.duckdb
 >
 > **그래서 이 저장소 쪽에서 할 일은 없다.** 스토어에 ETF 를 넣고 싶다면 그것은 적재 쪽
 > 결정이다 (이 저장소는 적재하지 않는다).
+>
+> **2026-08-27 — 적재 쪽 결정이 났다: `prices` 에 ETF 를 넣지 않는다.** 벌크 폴백이
+> 임시방편이 아니라 **정식 경로**다. 근거는 ETF 행이 `prices` 에 들어가면 그 테이블을 읽는
+> **모든** 소비자의 유니버스가 바뀌기 때문이고, 한 소비자 편의로 감수할 변경이 아니다.
+> `funds.csv.zip` 은 DAG 가 매일 받으므로 폴백이 낡을 일도 없다.
+>
+> 그래서 `Store.close_series` 의 벌크 폴백 로그는 WARNING 이 아니라 **INFO** 다 — 이상이
+> 아니라 설계다. 폴백이 **실패하면** 그때는 경고가 난다.
+>
+> 나중에 `prices` 에서 ETF 가 정말 필요해지면 방향은 **별도 테이블**(`etf_prices` 같은)로
+> 합의됐다 — 기존 소비자를 건드리지 않으면서 정식 경로가 생긴다. 지금 할 일은 아니다.
 >
 > 위 `opt-factor` 명령은 `opt_portfolio/docs/factor-system/04-data-contract.md` §5 에서 옮겨
 > 적은 것이고 이 저장소에서 검증하지 않았다. 실제로 이 기계의 스토어는 그 경로가 아니라
