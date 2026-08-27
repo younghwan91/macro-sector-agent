@@ -1204,6 +1204,44 @@ def ops_schedule(
         typer.echo(cron_lines(REPO_ROOT))
 
 
+@ops_app.command("why")
+@cli_guard
+def ops_why(
+    name: str = typer.Argument("", help="상수 이름 (비우면 전체 표)"),
+    missing_only: bool = typer.Option(False, "--missing", help="근거 없는 것만"),
+    unsearched: bool = typer.Option(False, "--unsearched", help="아직 조사하지 않은 것만"),
+) -> None:
+    """필터 상수의 **근거** — 왜 그 값인가 (`msa ops why RUNWAY_MIN_Q`).
+
+    인용이면 원문과 URL 을, 근거가 없으면 **없다는 사실과 왜 없는지**를 찍는다.
+    근거 없음은 결함이 아니라 CLAUDE.md §1 이 요구하는 기록이다.
+    """
+    from msa.basis import BASES, Citation, NoBasis, render, render_table
+
+    if name:
+        typer.echo(render(name))
+        return
+    if missing_only or unsearched:
+        sel = [
+            n
+            for n, e in BASES.items()
+            if isinstance(e.basis, NoBasis) and (not e.basis.searched if unsearched else True)
+        ]
+        what = "아직 조사하지 않은" if unsearched else "근거가 없는"
+        typer.echo(f"{what} 필터 상수 {len(sel)}개\n")
+        for n in sel:
+            typer.echo(render(n) + "\n")
+        if unsearched:
+            typer.echo("→ 이 목록이 줄어드는 것이 진척이다. 조사 후 searched 날짜를 적어라.")
+        return
+    typer.echo(render_table())
+    n_cite = sum(1 for e in BASES.values() if isinstance(e.basis, Citation))
+    typer.echo(
+        f"\n인용 {n_cite}개는 원문·URL 을 들고 있다 — `msa ops why <이름>` 으로 본다.\n"
+        "근거 없음은 숨긴 것이 아니라 적은 것이다 (CLAUDE.md §1)."
+    )
+
+
 @ops_app.command("due")
 @cli_guard
 def ops_due(
