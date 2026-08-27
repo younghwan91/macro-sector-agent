@@ -126,9 +126,10 @@ def test_weakest_links_are_the_ones_that_cut_without_a_source() -> None:
     from msa.basis import weakest_links
 
     got = set(weakest_links())
-    assert got == {"POOL_MIN", "CONF_CAP_ON_DEATH", "MATURITY_WALL_EXCLUDE"}, (
-        f"약한 고리가 바뀌었다: {sorted(got)}. 근거를 찾았으면 줄고, 근거 없는 게이트를 "
-        f"새로 넣었으면 는다."
+    # 2026-08-28: CONF_CAP_ON_DEATH 를 유도(`편입선 − 마진`)로 바꿔 셋에서 둘로 줄었다.
+    assert got == {"POOL_MIN", "MATURITY_WALL_EXCLUDE"}, (
+        f"약한 고리가 바뀌었다: {sorted(got)}. 근거를 찾거나 유도로 바꾸면 줄고, "
+        f"근거 없는 게이트를 새로 넣었으면 는다."
     )
 
     # **오늘 실제로 종목을 자르는 필터는 전부 인용을 들고 있다.** E1·E2 가 그것이고,
@@ -138,3 +139,27 @@ def test_weakest_links_are_the_ones_that_cut_without_a_source() -> None:
             assert isinstance(e.basis, Citation), (
                 f"{name}: 실제로 자르는 필터인데 인용이 없다 ({type(e.basis).__name__})"
             )
+
+
+def test_values_that_must_agree_have_one_source() -> None:
+    """**같은 값이 두 곳에 살면 한쪽만 고쳐도 아무도 모른다.**
+
+    2026-08-28 에 셋을 단일 출처로 만들었다. 여기서 `is` 를 쓰는 것이 요점이다 — 값이 같은
+    것으로는 부족하고, **같은 객체**여야 따로 옮길 수 없다.
+    """
+    from msa.l1.scoreboard import POOL_MIN
+    from msa.l1.structures import S2_POOL_MIN
+    from msa.l3.gates import CONF_CAP_ON_DEATH, DEATH_MARGIN, PORTFOLIO_MIN_CONFIDENCE
+    from msa.l5.optimize import MIN_CONFIDENCE
+
+    # 구조 검정의 자격 컷은 정의상 실제 스코어보드의 자격 컷이다
+    assert S2_POOL_MIN is POOL_MIN
+
+    # C6 는 L3 가 세운 편입선을 L5 가 다시 거는 것이지 새 값이 아니다
+    assert MIN_CONFIDENCE is PORTFOLIO_MIN_CONFIDENCE
+
+    # 사망 상한은 숫자가 아니라 유도다 — 편입선을 옮기면 따라간다
+    assert CONF_CAP_ON_DEATH == PORTFOLIO_MIN_CONFIDENCE - DEATH_MARGIN
+    assert CONF_CAP_ON_DEATH < PORTFOLIO_MIN_CONFIDENCE, (
+        "사망 상한이 편입선 위로 올라가면 사망 판정이 편입을 막지 못한다"
+    )

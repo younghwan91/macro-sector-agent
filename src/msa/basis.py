@@ -146,19 +146,16 @@ BASES: dict[str, Entry] = {
         0.35,
         role="축1 또는 축3 사망 시 확신도 상한 — 편입 불가",
         tags=("gate",),
-        basis=NoBasis(
-            "**출처가 없을 뿐 아니라, 가장 가까운 권위 있는 틀이 이런 값을 만들지 말라고 "
-            "말한다** (2026-08-27 원문 확인). ICD 203 (Analytic Standards, ODNI 2015) 에 "
-            "0.35 를 품는 구간(20-45% 'improbable')이 있지만 그것은 **likelihood**(사건 발생 "
-            "확률)이고, 같은 문서 D.2(b) 가 이렇게 금지한다 — 'products that express an "
-            "analyst's confidence … must not combine a confidence level and a degree of "
-            "likelihood … in the same sentence.' 우리 0.35 는 confidence 다. 저 구간을 근거로 "
-            "대면 그 지침이 금지한 혼동을 저지르는 것이다. IPCC 도 같다 — likelihood 는 "
-            "수치 구간을 주지만 confidence 척도는 **의도적으로 비수치**다. "
-            "정직한 근거는 외부가 아니라 설계다: 0.35 는 편입선 0.50 아래로 여유(0.15)를 두고 "
-            "떨어뜨리려고 고른 값이다. **그렇다면 벌거벗은 0.35 가 아니라 그 유도를 코드에 "
-            "드러내는 것이 맞다** — 설계 질문으로 남긴다.",
-            searched="2026-08-27",
+        basis=Derived(
+            "PORTFOLIO_MIN_CONFIDENCE − DEATH_MARGIN",
+            "**외부 출처를 붙이면 안 되는 종류다.** ICD 203 (ODNI Analytic Standards) 에 "
+            "0.35 를 품는 구간(20-45% 'improbable')이 있지만 그것은 likelihood 이고, 같은 "
+            "문서 D.2(b) 가 confidence 와 likelihood 를 한 문장에 섞는 것을 금지한다 — "
+            "인용하면 그 지침이 금지한 혼동을 저지른다. IPCC 도 confidence 척도를 의도적으로 "
+            "비수치로 둔다. 진짜 근거는 설계다: 사망 판정은 편입선 아래로 확실히 떨어진다. "
+            "2026-08-28 에 벌거벗은 0.35 를 이 유도로 바꿨다(값 불변) — 편입선을 옮기면 "
+            "따라간다. `DEATH_MARGIN = 0.15` 에는 여전히 근거가 없지만, **근거 없는 값 둘이 "
+            "하나로 줄었다.** (docs/23)",
         ),
     ),
     "PORTFOLIO_MIN_CONFIDENCE": Entry(

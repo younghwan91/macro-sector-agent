@@ -38,8 +38,21 @@ from msa.thesis import AXES, AXIS_VERDICTS
 VERDICTS = AXIS_VERDICTS
 
 CONF_BASE = 0.5
-CONF_CAP_ON_DEATH = 0.35
 PORTFOLIO_MIN_CONFIDENCE = 0.5  # docs/07 C6 최소 확신도
+
+#: 사망 판정을 편입선 아래로 떨어뜨릴 **여유**. 이 값에는 근거가 없다 — 그러나 자유도가
+#: 하나이고, 그 하나는 "얼마나 여유를 둘 것인가" 라는 답할 수 있는 질문이다.
+DEATH_MARGIN = 0.15
+
+#: 축1 또는 축3 이 사망이면 확신도를 여기로 묶는다 → 편입 불가.
+#:
+#: **숫자가 아니라 유도다** (2026-08-28, `docs/23` 후보 B). 이 값의 정체는 0.35 라는 수가
+#: 아니라 "사망 판정은 편입선 아래로 확실히 떨어진다" 는 문장이다. 벌거벗은 0.35 로 두면
+#: 편입선을 옮겼을 때 조용히 어긋난다 — 0.50 을 0.40 으로 내리면 0.35 가 편입선 **위**로
+#: 올라와 사망 판정이 편입을 막지 못한다. 유도로 두면 따라간다.
+#:
+#: 값은 바뀌지 않는다: 0.50 − 0.15 = 0.35.
+CONF_CAP_ON_DEATH = PORTFOLIO_MIN_CONFIDENCE - DEATH_MARGIN
 CAPEX_BELOW1_QTRS = 8
 DEBT_24M_TO_MCAP_MAX = 0.5
 

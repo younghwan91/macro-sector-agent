@@ -41,6 +41,8 @@ import cvxpy as cp
 import numpy as np
 from numpy.typing import NDArray
 
+from msa.l3.gates import PORTFOLIO_MIN_CONFIDENCE
+
 log = logging.getLogger(__name__)
 
 FArray = NDArray[np.float64]
@@ -53,7 +55,9 @@ CAP_THEME = 0.35
 CAP_CLASS = 0.55
 LIQ_FRACTION_OF_ADV = 0.10
 CASH_FLOOR = 0.15
-MIN_CONFIDENCE = 0.50
+#: **`l3.gates.PORTFOLIO_MIN_CONFIDENCE` 를 그대로 쓴다.** C6 은 L3 가 세운 편입선을 L5 가
+#: 다시 거는 것이지 새 값이 아니다. 두 곳에 두면 한쪽만 옮겨도 조용히 갈라진다 (2026-08-28).
+MIN_CONFIDENCE = PORTFOLIO_MIN_CONFIDENCE
 LAMBDA_COMPRESS = 0.30
 MU_METHOD = "(a) 균등"
 #: 2단 완화에서 순서대로 시도하는 예산. 0.50 을 넘기지 않는다.

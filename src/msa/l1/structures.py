@@ -71,7 +71,7 @@ from msa.l1.backtest import (
 )
 from msa.l1.blocks import Indicators
 from msa.l1.panel import ThemePanel
-from msa.l1.scoreboard import BLOCKS, _weighted_score, _weights, scoreboard_history
+from msa.l1.scoreboard import BLOCKS, POOL_MIN, _weighted_score, _weights, scoreboard_history
 from msa.themes import ThemeSet
 
 log = logging.getLogger(__name__)
@@ -80,7 +80,10 @@ log = logging.getLogger(__name__)
 
 S1_DD_MAX = -0.50  # dd_10y ≤ −50%  (docs/02 §A "사용자 기준선 −50%")
 S1_MONTHS_MIN = 12  # months_since_peak ≥ 12 (docs/02 §A "6개월=패닉 … 48개월=망각" 의 하한)
-S2_POOL_MIN = 0.5  # P ≥ 0.5 — 횡단면 중앙값 이상 (무정보 컷)
+#: **`scoreboard.POOL_MIN` 을 그대로 쓴다 — 같은 값을 두 곳에 두지 않는다.**
+#: S2 구조 검정의 자격 컷은 정의상 실제 스코어보드의 자격 컷과 같아야 한다. 따로 두면
+#: 한쪽만 바꿔도 아무도 모르고, 그때 검정은 실제로 안 쓰는 규칙을 재게 된다 (2026-08-28).
+S2_POOL_MIN = POOL_MIN
 S1_BLOCKS: tuple[str, ...] = ("B", "C", "D", "E", "F")
 S2_POOL_BLOCKS: tuple[str, ...] = ("A", "B")
 S2_TIMING_BLOCKS: tuple[str, ...] = ("C", "E", "F")
