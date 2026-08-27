@@ -93,15 +93,9 @@ def test_unsearched_is_distinguishable_from_searched_and_empty() -> None:
     unsearched = sorted(
         n for n, e in BASES.items() if isinstance(e.basis, NoBasis) and not e.basis.searched
     )
-    # 이 목록이 줄어드는 것이 진척이다. 늘어나면 새 상수를 조사 없이 넣은 것이다.
-    assert unsearched == [
-        "CAPEX_BELOW1_QTRS",
-        "CASE_DEATH_FACTOR",
-        "CONF_CAP_ON_DEATH",
-        "DEBT_24M_TO_MCAP_MAX",
-        "PRICE_MIN",
-        "STREAK_YEARS",
-    ], f"미조사 목록이 바뀌었다: {unsearched}"
+    # **2026-08-27 에 전부 조사했다.** 이 목록이 비어 있는 것이 도달 상태이고, 늘어나면
+    # 새 필터 상수를 조사 없이 넣은 것이다.
+    assert unsearched == [], f"조사하지 않은 채 들어온 상수: {unsearched}"
 
 
 def test_every_citation_was_checked_against_the_source() -> None:

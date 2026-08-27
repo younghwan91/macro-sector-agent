@@ -141,7 +141,14 @@ BASES: dict[str, Entry] = {
         "msa.l3.gates",
         0.35,
         role="축1 또는 축3 사망 시 확신도 상한 — 편입 불가",
-        basis=NoBasis("출처 없음. 조사된 적 없다.", searched=""),
+        basis=NoBasis(
+            "출처 없음. **문헌이 정해 줄 물건도 아니다** — 정성 판정에 숫자를 붙이는 척도는 "
+            "있으나(Kent 의 estimative probability, IPCC 보정 언어, ICD 203), 그것들은 "
+            "'가능성' 을 말로 표현하는 규약이지 '판정이 사망이면 확신도를 얼마로 묶어라' 를 "
+            "주지 않는다. 0.35 가 하는 일은 하나다 — 편입 최소치 0.50 아래로 확실히 내리는 "
+            "것. 그 목적은 명확하고 값은 임의다.",
+            searched="2026-08-27",
+        ),
     ),
     "PORTFOLIO_MIN_CONFIDENCE": Entry(
         "msa.l3.gates",
@@ -158,15 +165,27 @@ BASES: dict[str, Entry] = {
         8,
         role="축2 확신도 +0.10 조건 (capex/D&A < 1 연속 분기)",
         basis=NoBasis(
-            "출처 없음. 조사된 적 없다 — 자본사이클 문헌에 8분기의 정본이 있는지 확인해야 한다.",
-            searched="",
+            "**방향은 확립돼 있고 기간은 아니다.** capex 가 감가상각 아래로 내려가 머무는 "
+            "것이 자본사이클 저점의 지표라는 것은 Marathon Asset Management 계열 "
+            "(Chancellor 편, *Capital Returns*, 2015)의 중심 논지이고 여러 2차 문헌이 그렇게 "
+            "요약한다. 그러나 **'몇 분기여야 하는가' 를 못박은 1차 출처를 찾지 못했다** — "
+            "8분기(2년)는 우리가 고른 값이다. 1차 자료(책 본문)를 직접 대조하지 않았으므로 "
+            "Citation 으로 올리지 않는다: 출처 이름을 아는 것과 그 문장이 거기 있는 것은 다르다.",
+            searched="2026-08-27",
         ),
     ),
     "DEBT_24M_TO_MCAP_MAX": Entry(
         "msa.l3.gates",
         0.5,
         role="축5 터미널 리스크 판정 입력",
-        basis=NoBasis("출처 없음. 조사된 적 없다.", searched=""),
+        basis=NoBasis(
+            "**분모가 다르다.** 24개월이라는 지평 자체는 관례가 있다 — 신용평가·감독 실무가 "
+            "유동성을 6·12·18·24개월 구간으로 본다 (OCC Bulletin 2024-29 등). 그러나 그들이 "
+            "재는 것은 **가용 유동성 ÷ 만기도래액**이지 **만기도래액 ÷ 시총**이 아니다. "
+            "시총을 분모로 쓴 임계의 1차 출처를 찾지 못했다 — 분모가 다르면 값이 옮겨오지 "
+            "않는다. 0.5 는 우리가 고른 값이다.",
+            searched="2026-08-27",
+        ),
     ),
     # ---------------------------------------------------------------- L4 자른다
     "RUNWAY_MIN_Q": Entry(
@@ -249,7 +268,16 @@ BASES: dict[str, Entry] = {
         2.0,
         role="감점 — **현재 꺼짐** (2026-08-24 사용자 지시)",
         tags=("off",),
-        basis=NoBasis("출처 없음. 조사된 적 없다.", searched=""),
+        basis=NoBasis(
+            "**$2 에는 출처가 없다. 그리고 이웃한 관례와 어긋난다.** 2026-08-27 원문 확인: "
+            "SEC Rule 3a51-1(d) 는 페니스톡 정의에서 빠지는 기준을 "
+            "'that has a price of five dollars or more' 로 정한다 — 규제선은 **$5** 다 "
+            "(https://www.law.cornell.edu/cfr/text/17/240.3a51-1). 학술 표본 구성에서도 "
+            "$5 또는 $1 컷이 통상이다. 우리 $2 는 그 둘 사이에 있고 어느 쪽도 아니다. "
+            "**값을 $5 로 옮기지 않는다** — 근거가 없다고 데이터를 보고 옮기는 것이 §1 이 "
+            "금지하는 탐색이고, 지금 이 감점은 꺼져 있어 아무것도 하지 않는다.",
+            searched="2026-08-27",
+        ),
     ),
     "RUNWAY_CAP_Q": Entry(
         _L4,
@@ -262,11 +290,19 @@ BASES: dict[str, Entry] = {
     "STREAK_YEARS": Entry(
         "msa.vendor.redflags",
         3,
-        role="레드플래그 — 연속 영업적자 / 연속 좀비",
-        basis=NoBasis(
-            "출처 없음. 조사된 적 없다 — BIS 좀비 정의는 '3년 연속' 을 쓰므로 "
-            "zombie_streak 쪽은 인용이 붙을 가능성이 있다. 확인 필요.",
-            searched="",
+        role="레드플래그 — 연속 영업적자 / 연속 좀비(이자보상 < 1)",
+        basis=Citation(
+            "BIS Quarterly Review 2018-09, Banerjee & Hofmann, 'The rise of zombie firms' "
+            "(Adalet McGowan, Andrews & Millot 2017 의 광의 정의를 인용)",
+            "https://www.bis.org/publ/qtrpdf/r_qt1809g.htm",
+            "identifies a firm as a zombie if its interest coverage ratio (ICR) has been "
+            "less than one for at least three consecutive years and if it is at least 10 years old",
+            "**3년 연속**은 원문 그대로다. 다만 원문에는 조건이 하나 더 있다 — **업력 10년 "
+            "이상**. 우리는 그것을 쓰지 않으므로 신생 기업이 우리 zombie_streak 에는 걸리고 "
+            "BIS 정의에는 안 걸린다. `consecutive_operating_loss` 쪽은 이 인용의 범위 밖이며 "
+            "영업이익 기준이라 별개다 — 그쪽 3년에는 여전히 출처가 없다",
+            exact=False,
+            verified="2026-08-27",
         ),
     ),
     # ---------------------------------------------------------------- L5
@@ -372,8 +408,17 @@ BASES: dict[str, Entry] = {
     "CASE_DEATH_FACTOR": Entry(
         _L5R,
         0.5,
-        role="케이스 스터디 낙폭에 곱하는 계수",
-        basis=NoBasis("출처 없음. 조사된 적 없다.", searched=""),
+        role="케이스 스터디 낙폭에 곱하는 계수 — 손실 추정을 **깎는다**",
+        basis=NoBasis(
+            "출처 없음. **그리고 가장 가까운 문헌이 반대 방향을 말한다.** 유사 사례로 미래를 "
+            "추정하는 정본은 참조군 예측(Kahneman-Tversky 의 outside view, Flyvbjerg 의 "
+            "인프라 uplift)인데, 거기서 조정은 (a) 참조군 분포에서 **실증적으로 유도**되고 "
+            "(b) 낙관 편향을 보정하려고 **올리는**(uplift) 방향이다. 우리는 임의의 0.5 로 "
+            "**내린다**. 스트레스 테스트 지침(CCAR·Basel)에도 과거 사건에 고정 계수를 곱하라는 "
+            "조항은 없다. **값을 바꾸지 않는다** — 문헌이 반대라고 데이터를 보고 옮기면 그것도 "
+            "§1 위반이다. 고칠 것은 값이 아니라 이 계수가 필요한지에 대한 설계 질문이다.",
+            searched="2026-08-27",
+        ),
     ),
 }
 
