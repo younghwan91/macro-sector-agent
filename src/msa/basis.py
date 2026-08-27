@@ -95,6 +95,9 @@ class Entry:
     basis: Basis
     #: 이 상수가 실제로 무엇을 하는가. "자른다" 와 "표시만 한다" 는 다르다.
     role: str = ""
+    #: `hard` = 종목을 자른다 · `gate` = 테마·후보를 통째로 막는다 · `off` = 지금 꺼져 있다.
+    #: **문자열 역할이 아니라 이 태그로 판별한다** — 역할 문장을 고치다가 판별이 조용히
+    #: 바뀌면 안 된다.
     tags: tuple[str, ...] = field(default_factory=tuple)
 
 
@@ -118,6 +121,7 @@ BASES: dict[str, Entry] = {
         "msa.l1.scoreboard",
         0.5,
         role="자격 관문 — 미달이면 순위 없음(관찰 목록)",
+        tags=("gate",),
         basis=NoBasis(
             "0.4·0.5·0.6 을 비교한 칸이 어디에도 없다. 있는 것은 '고를 근거가 없으니 "
             "중앙값' 이라는 설계 원리뿐이고, 그것은 §1 을 어긴 게 아니라 지킨 결과다. "
@@ -141,6 +145,7 @@ BASES: dict[str, Entry] = {
         "msa.l3.gates",
         0.35,
         role="축1 또는 축3 사망 시 확신도 상한 — 편입 불가",
+        tags=("gate",),
         basis=NoBasis(
             "출처 없음. **문헌이 정해 줄 물건도 아니다** — 정성 판정에 숫자를 붙이는 척도는 "
             "있으나(Kent 의 estimative probability, IPCC 보정 언어, ICD 203), 그것들은 "
@@ -154,6 +159,7 @@ BASES: dict[str, Entry] = {
         "msa.l3.gates",
         0.5,
         role="이 아래면 포트폴리오에 넣지 않는다",
+        tags=("gate",),
         basis=Derived(
             "CONF_BASE",
             "출발점과 같은 값 — 확신도가 오르지 않으면 편입하지 않는다는 "
@@ -165,12 +171,17 @@ BASES: dict[str, Entry] = {
         8,
         role="축2 확신도 +0.10 조건 (capex/D&A < 1 연속 분기)",
         basis=NoBasis(
-            "**방향은 확립돼 있고 기간은 아니다.** capex 가 감가상각 아래로 내려가 머무는 "
-            "것이 자본사이클 저점의 지표라는 것은 Marathon Asset Management 계열 "
-            "(Chancellor 편, *Capital Returns*, 2015)의 중심 논지이고 여러 2차 문헌이 그렇게 "
-            "요약한다. 그러나 **'몇 분기여야 하는가' 를 못박은 1차 출처를 찾지 못했다** — "
-            "8분기(2년)는 우리가 고른 값이다. 1차 자료(책 본문)를 직접 대조하지 않았으므로 "
-            "Citation 으로 올리지 않는다: 출처 이름을 아는 것과 그 문장이 거기 있는 것은 다르다.",
+            "**방향은 확립돼 있고 기간은 아니다 — 그리고 기댈 관례조차 없다** (2026-08-27). "
+            "capex 가 감가상각 아래로 내려가 머무는 것이 자본사이클 저점 지표라는 것은 "
+            "Marathon Asset Management 계열(Chancellor 편 *Capital Returns*, 2015)의 중심 "
+            "논지가 맞다. 그러나 그 프레임워크는 **정량 트리거가 없는 정성적 공급측 서사**로 "
+            "제시되며, 'N분기 연속 1.0 미만' 같은 규칙이 책에도 2차 문헌에도 없다. "
+            "학술 쪽은 더 멀다 — Cooper, Gulen & Schill (2008) 의 asset growth 는 **연간**이고 "
+            "지속 기간 창이 없다. Titman, Wei & Xie (2004) 의 abnormal capital investment 는 "
+            "과거 capex **3년** 이동평균으로 정규화하는데, 그것은 정규화 지평이지 '지속적 "
+            "과소투자' 플래그가 아니고 값도 2년이 아니다. "
+            "**8분기는 출처 없는 자유 파라미터다.** 여기 등록된 27개 중 기댈 관례조차 없는 "
+            "몇 안 되는 값이므로, 이 항이 판정에 실제로 얼마나 기여하는지 따로 봐야 한다.",
             searched="2026-08-27",
         ),
     ),
@@ -179,11 +190,16 @@ BASES: dict[str, Entry] = {
         0.5,
         role="축5 터미널 리스크 판정 입력",
         basis=NoBasis(
-            "**분모가 다르다.** 24개월이라는 지평 자체는 관례가 있다 — 신용평가·감독 실무가 "
-            "유동성을 6·12·18·24개월 구간으로 본다 (OCC Bulletin 2024-29 등). 그러나 그들이 "
-            "재는 것은 **가용 유동성 ÷ 만기도래액**이지 **만기도래액 ÷ 시총**이 아니다. "
-            "시총을 분모로 쓴 임계의 1차 출처를 찾지 못했다 — 분모가 다르면 값이 옮겨오지 "
-            "않는다. 0.5 는 우리가 고른 값이다.",
+            "**분모가 다르다 — 근접 사례를 셋 확인했는데 전부 다른 것을 잰다** (2026-08-27). "
+            "① S&P Global Ratings 유동성 기준: 24개월 **지평**은 실제 신용평가 개념이 맞다 "
+            "('our liquidity assessment looks out over two years'). 그러나 비율은 "
+            "**가용 현금 ÷ 소요 현금**이고 임계는 1.2배다. 시총은 분모로 등장하지 않는다. "
+            "② Almeida, Campello, Laranjeira & Weisbenner (2012) *Critical Finance Review* — "
+            "원문 확인: 'the fraction of long-term debt maturing within one year … is greater "
+            "than 20%'. 분모는 **총 장기부채**, 지평은 **1년**, 컷은 **20%** 로 셋 다 다르다. "
+            "만기 집중이 투자 축소를 예측한다는 **방향**의 가장 강한 증거지만 값이 안 옮겨온다. "
+            "③ He & Xiong 롤오버 리스크는 실증 컷 없는 이론 모형이다. "
+            "결론: 24개월 지평은 관례가 있고, **시총 대비 0.5 는 우리 구성물이다.**",
             searched="2026-08-27",
         ),
     ),
@@ -292,15 +308,24 @@ BASES: dict[str, Entry] = {
         3,
         role="레드플래그 — 연속 영업적자 / 연속 좀비(이자보상 < 1)",
         basis=Citation(
-            "BIS Quarterly Review 2018-09, Banerjee & Hofmann, 'The rise of zombie firms' "
-            "(Adalet McGowan, Andrews & Millot 2017 의 광의 정의를 인용)",
-            "https://www.bis.org/publ/qtrpdf/r_qt1809g.htm",
-            "identifies a firm as a zombie if its interest coverage ratio (ICR) has been "
-            "less than one for at least three consecutive years and if it is at least 10 years old",
-            "**3년 연속**은 원문 그대로다. 다만 원문에는 조건이 하나 더 있다 — **업력 10년 "
-            "이상**. 우리는 그것을 쓰지 않으므로 신생 기업이 우리 zombie_streak 에는 걸리고 "
-            "BIS 정의에는 안 걸린다. `consecutive_operating_loss` 쪽은 이 인용의 범위 밖이며 "
-            "영업이익 기준이라 별개다 — 그쪽 3년에는 여전히 출처가 없다",
+            "Adalet McGowan, Andrews & Millot (2017), 'The Walking Dead? Zombie Firms and "
+            "Productivity Performance in OECD Countries', OECD Economics Dept WP 1372 "
+            "(BIS QR 2018-09 Banerjee & Hofmann 이 이 정의를 따른다)",
+            "https://www.economic-policy.org/wp-content/uploads/2018/05/995_Walking-Dead.pdf",
+            "a firm is defined as a zombie firm in 2013 if it is aged 10 years or older in 2013 "
+            "and it had an interest coverage ratio less than one for three consecutive years",
+            "**3년 연속은 원문 그대로다. 그러나 이 인용을 곧이곧대로 읽으면 안 되는 이유가 셋 "
+            "있고, 전부 2026-08-27 에 원문에서 확인했다.** (1) 원문에는 **업력 10년 이상**이 "
+            "함께 있고 이유도 명시돼 있다 — 'The age restriction is placed in order to address "
+            "the fact that it may be difficult to distinguish real zombie firms from young "
+            "innovative startups only based on profitability measures.' 우리는 그 조건을 안 "
+            "쓰므로 **원 출처가 좀비로 보지 않을 신생 기업에 플래그가 붙는다.** (2) 저자들은 "
+            "3을 자기 도출값이 아니라 **Bank of Korea (2013)** 에 귀속시키고, 강건성 검증에서 "
+            "'persistence measures based on 4 and 5 years instead of 3 years' 를 돌린다 — "
+            "3은 최적값이 아니라 **관례**다. (3) 원문의 ICR 분자는 영업이익/EBIT 이다. "
+            "그리고 우리 `consecutive_operating_loss` 쪽 3년은 **이 인용의 범위 밖이다** — "
+            "원문은 negative-profit 변형(Bank of England 2013)에 지속 기간을 붙이지 않는다. "
+            "거기 붙은 3년은 우리가 ICR 규칙을 다른 지표로 확장한 것이고 출처가 없다.",
             exact=False,
             verified="2026-08-27",
         ),
@@ -378,6 +403,7 @@ BASES: dict[str, Entry] = {
         _L5O,
         0.50,
         role="C6 — 확신도가 이 아래면 편입하지 않는다",
+        tags=("gate",),
         basis=Derived(
             "PORTFOLIO_MIN_CONFIDENCE", "L3 의 같은 값을 L5 가 다시 건다. 한 값이 두 곳에 있다"
         ),
@@ -527,4 +553,20 @@ def render_table() -> str:
     return (
         f"필터 상수 {len(FILTER_CONSTANTS)}개 — {head}\n"
         f"  {'상수':<24}{'값':>12}  {'근거':<6}{'':<5}비고\n" + "\n".join(rows)
+    )
+
+
+def weakest_links() -> tuple[str, ...]:
+    """**판정을 만드는데 근거가 없는** 상수 — 가장 먼저 봐야 할 것.
+
+    자르거나 게이트를 쥐는 값인데 외부 출처가 없는 것들이다. 근거 없음 자체는 규칙 위반이
+    아니지만(§1 후자 절), **자르는 값이 근거가 없는 것**과 표시만 하는 값이 그런 것은 무게가
+    다르다. 2026-08-27 조사에서 나온 지적이기도 하다 — 확신도 산식이 근거 있는 항과 없는 항을
+    똑같이 더하면, 근거의 강도를 실제보다 높게 보게 된다.
+    """
+    return tuple(
+        n
+        for n, e in BASES.items()
+        if isinstance(e.basis, NoBasis)
+        if isinstance(e.basis, NoBasis) and {"hard", "gate"} & set(e.tags)
     )

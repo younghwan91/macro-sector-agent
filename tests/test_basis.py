@@ -112,3 +112,29 @@ def test_every_citation_was_checked_against_the_source() -> None:
         f"원문 대조를 안 한 인용: {unchecked}. "
         f"URL 을 열어 인용문이 실제로 있는지 확인하고 verified 날짜를 적어라."
     )
+
+
+def test_weakest_links_are_the_ones_that_cut_without_a_source() -> None:
+    """**자르는 값이 근거가 없는 것**과 표시만 하는 값이 그런 것은 무게가 다르다.
+
+    2026-08-27 조사에서 나온 지적이다 — 확신도 산식이 근거 있는 항과 없는 항을 똑같이
+    더하면, 근거의 강도를 실제보다 높게 보게 된다.
+
+    판별은 **태그로 한다.** 역할 문장(`role`)으로 문자열 매칭하면 문구를 다듬다가 판별이
+    조용히 바뀐다 — 실제로 그렇게 만들었다가 `POOL_MIN` 을 놓쳤다.
+    """
+    from msa.basis import weakest_links
+
+    got = set(weakest_links())
+    assert got == {"POOL_MIN", "CONF_CAP_ON_DEATH", "MATURITY_WALL_EXCLUDE"}, (
+        f"약한 고리가 바뀌었다: {sorted(got)}. 근거를 찾았으면 줄고, 근거 없는 게이트를 "
+        f"새로 넣었으면 는다."
+    )
+
+    # **오늘 실제로 종목을 자르는 필터는 전부 인용을 들고 있다.** E1·E2 가 그것이고,
+    # 근거 없는 하드 필터 E3 는 꺼져 있다. 이 성질이 깨지면 알아야 한다.
+    for name, e in BASES.items():
+        if "hard" in e.tags and "off" not in e.tags:
+            assert isinstance(e.basis, Citation), (
+                f"{name}: 실제로 자르는 필터인데 인용이 없다 ({type(e.basis).__name__})"
+            )

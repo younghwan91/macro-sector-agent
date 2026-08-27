@@ -1210,16 +1210,26 @@ def ops_why(
     name: str = typer.Argument("", help="상수 이름 (비우면 전체 표)"),
     missing_only: bool = typer.Option(False, "--missing", help="근거 없는 것만"),
     unsearched: bool = typer.Option(False, "--unsearched", help="아직 조사하지 않은 것만"),
+    weak: bool = typer.Option(False, "--weak", help="자르는데 근거가 없는 것만 — 가장 약한 고리"),
 ) -> None:
     """필터 상수의 **근거** — 왜 그 값인가 (`msa ops why RUNWAY_MIN_Q`).
 
     인용이면 원문과 URL 을, 근거가 없으면 **없다는 사실과 왜 없는지**를 찍는다.
     근거 없음은 결함이 아니라 CLAUDE.md §1 이 요구하는 기록이다.
     """
-    from msa.basis import BASES, Citation, NoBasis, render, render_table
+    from msa.basis import BASES, Citation, NoBasis, render, render_table, weakest_links
 
     if name:
         typer.echo(render(name))
+        return
+    if weak:
+        links = weakest_links()
+        typer.echo(
+            f"**자르거나 게이트를 쥐는데 근거가 없는 상수 {len(links)}개**\n"
+            "근거 없음 자체는 §1 위반이 아니다. 다만 자르는 값이 그런 것은 무게가 다르다.\n"
+        )
+        for n in links:
+            typer.echo(render(n) + "\n")
         return
     if missing_only or unsearched:
         sel = [
