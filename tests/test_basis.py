@@ -102,3 +102,19 @@ def test_unsearched_is_distinguishable_from_searched_and_empty() -> None:
         "PRICE_MIN",
         "STREAK_YEARS",
     ], f"미조사 목록이 바뀌었다: {unsearched}"
+
+
+def test_every_citation_was_checked_against_the_source() -> None:
+    """**출처 이름을 아는 것과 그 문장이 거기 있는 것은 다르다.**
+
+    2026-08-27 에 인용 7건을 전부 원문 대조했다. 그 과정에서 `MDD_K` 의 URL 이 **완전히
+    다른 논문**(Hubbard 모형 물리학 arXiv)을 가리키고 있는 것을 잡았다 — 대조하지 않았으면
+    그대로 실렸을 것이다. 새 인용을 대조 없이 추가하면 여기서 막힌다.
+    """
+    unchecked = sorted(
+        n for n, e in BASES.items() if isinstance(e.basis, Citation) and not e.basis.verified
+    )
+    assert unchecked == [], (
+        f"원문 대조를 안 한 인용: {unchecked}. "
+        f"URL 을 열어 인용문이 실제로 있는지 확인하고 verified 날짜를 적어라."
+    )

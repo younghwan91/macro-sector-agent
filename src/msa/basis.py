@@ -59,6 +59,11 @@ class Citation:
     match: str
     #: 인용문의 값과 우리 값이 **정확히** 같은가. 다르면 왜 다른지 `match` 에 적는다.
     exact: bool = True
+    #: **원문에서 이 인용문을 실제로 확인한 날.** 비어 있으면 인용을 적기만 하고 대조하지
+    #: 않았다는 뜻이다 — 출처 이름을 아는 것과 그 문장이 거기 있는 것은 다르다.
+    #: 2026-08-27 실측: 인용 6건을 자동 대조했더니 PDF 4건이 "못 찾음" 으로 나왔는데,
+    #: `pdftotext` 로 손대조하니 원문에 그대로 있었다. **자동 실패가 인용 오류가 아니다.**
+    verified: str = ""
 
 
 @dataclass(frozen=True)
@@ -174,6 +179,7 @@ BASES: dict[str, Entry] = {
             "https://pcaobus.org/oversight/standards/auditing-standards/details/AS2415",
             "not to exceed one year beyond the date of the financial statements",
             "12개월 = 4분기. 감사인이 계속기업을 판단하는 지평과 같다",
+            verified="2026-08-27",
         ),
     ),
     "ND_EBITDA_EXCLUDE": Entry(
@@ -186,6 +192,7 @@ BASES: dict[str, Entry] = {
             "https://www.federalreserve.gov/supervisionreg/srletters/sr1303a1.pdf",
             "in excess of 6X Total Debt/EBITDA raises concerns",
             "감독기관이 '우려' 라고 부르는 지점과 같은 값",
+            verified="2026-08-27",
         ),
     ),
     "MATURITY_WALL_EXCLUDE": Entry(
@@ -205,6 +212,7 @@ BASES: dict[str, Entry] = {
             "https://www.federalreserve.gov/supervisionreg/srletters/sr1303a1.pdf",
             "exceed 4.0X EBITDA",
             "같은 문서의 leveraged transaction 정의",
+            verified="2026-08-27",
         ),
     ),
     "INTEREST_COVERAGE_MIN": Entry(
@@ -216,6 +224,7 @@ BASES: dict[str, Entry] = {
             "https://www.bis.org/publ/qtrpdf/r_qt1809g.htm",
             "interest coverage ratio … less than one",
             "좀비 기업 정의의 임계와 정확히 같다",
+            verified="2026-08-27",
         ),
     ),
     "DILUTION_MAX": Entry(
@@ -278,11 +287,12 @@ BASES: dict[str, Entry] = {
         basis=Citation(
             "Magdon-Ismail, Atiya, Pratap, Abu-Mostafa (2004) JAP 41(1), "
             "'On the Maximum Drawdown of a Brownian Motion'",
-            "https://doi.org/10.1239/jap/1077134672",
-            "E[MDD] = 2γσ√T, γ = √(π/8) ≈ 0.6267",
+            "https://www.cs.rpi.edu/~magdon/ps/journal/drawdown_journal.pdf",
+            "γ = √(π/8) ≈ 0.6267 is a constant … = 2γσ√T",
             "문헌의 **기대치는 1.2533** 이다. 우리 2.2 는 기대치가 아니라 T=1 의 95분위이며 "
             "그 차이(+76%)가 docs/07 §2.4 에 정정으로 기록돼 있다",
             exact=False,
+            verified="2026-08-27",
         ),
     ),
     "CAP_STOCK": Entry(
@@ -319,6 +329,7 @@ BASES: dict[str, Entry] = {
             "this model can be used to give quantitatively accurate pre-trade cost estimates",
             "값은 같다. 다만 이것은 '안전한 비율' 이 아니라 **임팩트를 예측할 수 있는 마지막 "
             "지점**이다 — 그 위로는 저자들이 자기 모형을 못 믿겠다고 적었다",
+            verified="2026-08-27",
         ),
     ),
     "CASH_FLOOR": Entry(
@@ -344,6 +355,7 @@ BASES: dict[str, Entry] = {
             "https://www.ledoit.net/honey.pdf",
             "we use the last T = 60 monthly returns",
             "정확히 같다",
+            verified="2026-08-27",
         ),
     ),
     "SIMILAR_REGIME_DD": Entry(
