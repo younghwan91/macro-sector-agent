@@ -82,8 +82,11 @@ COV_LOOKBACK_MONTHS = 60
 #: 따라서 이것을 쓰는 것은 `CLAUDE.md` §1 이 금지하는 "데이터에 맞춰 값을 고르는 것" 이
 #: 아니다 — 파라미터 스윕이 아니라 **논문이 계산법을 고정해 준 통계량**이다.
 SHRINK_DELTA: float | None = None
-SIMILAR_REGIME_DD = 0.50
-CASE_DEATH_FACTOR = 0.5  # 근거 없음 — docs/07 §2.4 가 그렇다고 적는다
+# `SIMILAR_REGIME_DD`(−50%)와 `CASE_DEATH_FACTOR`(0.5)는 2026-08-28 에 **없앴다.**
+# 둘 다 근거가 없었고(`docs/21`·`docs/22`), 문헌은 사례 감액을 반대했다. 값을 고른 것이
+# 아니라 **질문을 맞춰서** 사라졌다 — 두 항이 이제 같은 기준점(`current_drawdown`)에서
+# "여기서부터 얼마나 더" 를 묻는다. `similar_regime_drawdown` 의 `threshold` 는 상수가
+# 아니라 호출자가 넘기는 현재 낙폭이다.
 MONTHS_PER_YEAR = 12
 
 FArray = NDArray[np.float64]
@@ -487,8 +490,42 @@ class HistoricalDrawdown:
         }
 
 
+def current_drawdown(level: pd.Series) -> float | None:
+    """지금 이 테마가 **누적 고점 대비 어디에 서 있는가** (0.45 = −45%). 이력이 없으면 None.
+
+    이것이 `scenario_loss` 두 항의 **공통 기준점**이다. 예전에는 두 항이 서로 다른 질문에
+    답했다 — 하나는 "−50% 에서 더 빠진 폭"(조건부), 다른 하나는 "고점 대비 총 낙폭"(무조건).
+    단위가 다른 둘을 `max` 로 묶느라 한쪽에 0.5 를 곱해 스케일을 맞췄고, 그 0.5 와 그
+    −50% 가 각각 근거 없는 상수였다 (`docs/21`·`docs/22`). 기준점을 하나로 하면 둘 다
+    사라진다 — **값을 고르는 것이 아니라 질문을 맞추는 것이다** (`CLAUDE.md` §1).
+    """
+    x = level.dropna()
+    if x.empty:
+        return None
+    px = x.to_numpy(dtype=np.float64)
+    peak = float(np.maximum.accumulate(px)[-1])
+    if not peak > 0:
+        return None
+    return float(1.0 - px[-1] / peak)
+
+
+def further_loss_from(case_drawdown: float, entry_drawdown: float) -> float:
+    """사례가 바닥까지 갔을 때, **우리가 선 자리에서** 남은 하락폭.
+
+    고점 100 · 사례 저점 `100(1−c)` · 우리 진입 `100(1−e)` 이면 남은 하락은
+    `1 − (1−c)/(1−e)` 다. 산술이지 파라미터가 아니다.
+
+    - `e = 0` (고점): 사례 낙폭 그대로 — 맞다.
+    - `e ≥ c` (이미 사례 저점보다 아래): 0 으로 자른다. **사례가 더 내려갈 근거가 아니다.**
+      음수를 돌려주면 "여기서 오른다" 는 예측이 되는데, 이 함수는 손실 추정이지 예측이 아니다.
+    """
+    if not 0.0 <= entry_drawdown < 1.0 or not 0.0 <= case_drawdown < 1.0:
+        return 0.0
+    return max(0.0, 1.0 - (1.0 - case_drawdown) / (1.0 - entry_drawdown))
+
+
 def similar_regime_drawdown(
-    level: pd.Series, *, theme: str = "", threshold: float = SIMILAR_REGIME_DD
+    level: pd.Series, *, theme: str = "", threshold: float
 ) -> HistoricalDrawdown:
     """테마 지수 수준 시계열에서 "유사 국면" 에피소드를 찾고 진입 후 최대 추가 손실을 잰다.
 
@@ -544,7 +581,9 @@ class ScenarioLoss:
     theme: str
     hist_term: float | None  # 과거 유사 국면 최대 낙폭
     case_raw: float | None  # 사망 사례 낙폭 (× 0.5 전)
-    case_factor: float
+    #: 두 항의 **공통 기준점** — 지금 고점 대비 어디에 서 있는가. 예전 `case_factor`(0.5)를
+    #: 대신한다: 사례를 임의로 깎는 것이 아니라 **여기서부터 남은 하락**을 잰다.
+    entry_drawdown: float | None
     case_term: float | None  # case_raw × factor
     case_id: str | None
     value: float | None  # max(hist, case_term) — 둘 다 있을 때만
@@ -565,9 +604,21 @@ def scenario_loss(
     cluster: str | None,
     hist: HistoricalDrawdown | None,
     cases: CaseTable,
-    case_factor: float = CASE_DEATH_FACTOR,
+    entry_drawdown: float | None = None,
 ) -> ScenarioLoss:
-    """`L_i = max(과거 유사 국면 최대 낙폭, 사망 사례 낙폭 × 0.5)`. 한 항이라도 없으면 None."""
+    """`L_i = max(과거 유사 국면 추가 손실, 사망 사례의 **여기서부터** 남은 하락)`.
+
+    **두 항이 같은 질문에 답한다** (2026-08-28, `docs/21`·`docs/22` 결정). 기준점은 하나 —
+    `entry_drawdown`, 즉 지금 이 테마가 고점 대비 어디에 서 있는가.
+
+    예전에는 달랐다. `hist` 는 "−50% 에서 더 빠진 폭"(조건부)이고 `case` 는 "고점 대비 총
+    낙폭"(무조건)이었다. 단위가 다른 둘을 `max` 로 묶느라 사례 쪽에 0.5 를 곱해 스케일을
+    맞췄다 — 그 0.5(`CASE_DEATH_FACTOR`)와 그 −50%(`SIMILAR_REGIME_DD`)가 각각 근거 없는
+    상수였고, 문헌은 감액을 반대했다. **기준점을 맞추자 둘 다 사라졌다.**
+
+    `entry_drawdown` 이 없으면 사례 항을 만들지 않는다 — 어디서부터인지 모르면 "여기서부터
+    얼마" 를 말할 수 없다. 조용히 고점 기준으로 대체하지 않는다 (`CLAUDE.md` §2).
+    """
     reasons: list[str] = []
     hist_term: float | None = None
     if hist is None or hist.history is None:
@@ -603,7 +654,21 @@ def scenario_loss(
             best = max(usable, key=lambda c: c.drawdown_peak_to_trough or 0.0)
             case_raw = best.drawdown_peak_to_trough
             case_id = best.id
-    case_term = None if case_raw is None else case_raw * case_factor
+    if case_raw is None:
+        case_term = None
+    elif entry_drawdown is None:
+        case_term = None
+        reasons.append(
+            "사례 항 없음 — 현재 낙폭을 모른다 (테마 지수 이력 없음). 어디서부터인지 "
+            "모르면 '여기서부터 얼마' 를 말할 수 없다"
+        )
+    else:
+        case_term = further_loss_from(case_raw, entry_drawdown)
+        if case_term == 0.0:
+            reasons.append(
+                f"사례 항 0 — 이미 사례 저점(−{case_raw:.0%})보다 아래에 있다 "
+                f"(현재 −{entry_drawdown:.0%}). 사례가 더 내려갈 근거가 아니다"
+            )
 
     value: float | None = None
     binding: str | None = None
@@ -616,7 +681,7 @@ def scenario_loss(
         theme=theme,
         hist_term=hist_term,
         case_raw=case_raw,
-        case_factor=case_factor,
+        entry_drawdown=entry_drawdown,
         case_term=case_term,
         case_id=case_id,
         value=value,
@@ -637,10 +702,16 @@ def scenario_losses_for_themes(
     out: dict[str, ScenarioLoss] = {}
     for t in themes:
         hist: HistoricalDrawdown | None = None
+        entry_dd: float | None = None
         if daily_ew is not None and t in daily_ew.columns:
             ser = daily_ew[t]
             if asof is not None:
                 ser = ser.loc[: pd.Timestamp(asof)]
-            hist = similar_regime_drawdown(index_level(ser), theme=t)
-        out[t] = scenario_loss(t, cluster=clusters.get(t), hist=hist, cases=cases)
+            level = index_level(ser)
+            entry_dd = current_drawdown(level)
+            # 유사 국면의 조건점도 **지금 우리가 선 자리**다 — 임의의 −50% 가 아니다.
+            hist = similar_regime_drawdown(level, theme=t, threshold=entry_dd or 0.0)
+        out[t] = scenario_loss(
+            t, cluster=clusters.get(t), hist=hist, cases=cases, entry_drawdown=entry_dd
+        )
     return out

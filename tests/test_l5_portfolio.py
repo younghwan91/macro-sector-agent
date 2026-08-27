@@ -312,7 +312,7 @@ def test_similar_regime_drawdown_finds_episode() -> None:
         index=pd.date_range("2020-01-31", periods=12, freq="ME"),
         dtype=float,
     )
-    h = risk.similar_regime_drawdown(lvl, theme="x")
+    h = risk.similar_regime_drawdown(lvl, theme="x", threshold=0.50)
     assert len(h.episodes) == 1
     e = h.episodes[0]
     # −50% 최초 도달 = 50 (2020-04), 최저 20 → 진입 후 손실 0.6
@@ -326,12 +326,12 @@ def test_similar_regime_drawdown_finds_episode() -> None:
         index=pd.date_range("2020-01-31", periods=5, freq="ME"),
         dtype=float,
     )
-    assert risk.similar_regime_drawdown(flat).max_loss is None
-    assert risk.similar_regime_drawdown(flat.iloc[:0]).history is None
+    assert risk.similar_regime_drawdown(flat, threshold=0.50).max_loss is None
+    assert risk.similar_regime_drawdown(flat.iloc[:0], threshold=0.50).history is None
 
 
 def _ref_similar_regime_drawdown(
-    level: pd.Series, *, theme: str = "", threshold: float = risk.SIMILAR_REGIME_DD
+    level: pd.Series, *, theme: str = "", threshold: float = 0.50
 ) -> risk.HistoricalDrawdown:
     """벡터화 전의 중첩 while 구현 (참조)."""
     s = level.dropna()
@@ -394,8 +394,8 @@ def test_similar_regime_vectorized_equals_reference(daily_ew: pd.DataFrame) -> N
         series.append(lvl)
     n_episodes = 0
     for lvl in series:
-        got = risk.similar_regime_drawdown(lvl, theme="x")
-        assert got == _ref_similar_regime_drawdown(lvl, theme="x")
+        got = risk.similar_regime_drawdown(lvl, theme="x", threshold=0.50)
+        assert got == _ref_similar_regime_drawdown(lvl, theme="x", threshold=0.50)
         n_episodes += len(got.episodes)
     assert n_episodes >= 10  # 비교가 빈 에피소드끼리만은 아니다
 
@@ -404,20 +404,58 @@ def test_similar_regime_ongoing_episode_counts() -> None:
     lvl = pd.Series(
         [100, 50, 40, 45], index=pd.date_range("2020-01-31", periods=4, freq="ME"), dtype=float
     )
-    h = risk.similar_regime_drawdown(lvl)
+    h = risk.similar_regime_drawdown(lvl, threshold=0.50)
     assert h.episodes[0].ongoing and h.max_loss == pytest.approx(0.2)
 
 
-def test_scenario_loss_formula_and_binding() -> None:
+def test_scenario_loss_both_terms_answer_the_same_question() -> None:
+    """**두 항이 같은 기준점에서 '여기서부터 얼마나 더' 를 묻는다** (2026-08-28).
+
+    예전에는 `hist` 가 조건부 추가 손실이고 `case` 가 고점 대비 총 낙폭이었다. 단위가 다른
+    둘을 `max` 로 묶느라 사례 쪽에 0.5 를 곱해 스케일을 맞췄고, 그 0.5 와 −50% 임계가 각각
+    근거 없는 상수였다 (`docs/21`·`docs/22`). 기준점을 하나로 하자 둘 다 사라졌다.
+    """
     hist = risk.HistoricalDrawdown("u", 0.5, 0.42, (), ("2000-01-01", "2026-01-01"))
-    cases = _cases_verified("u", 0.78)
-    sl = risk.scenario_loss("u", cluster=None, hist=hist, cases=cases)
+
+    # 사례는 −78% 까지 갔고 우리는 지금 −45% 다 → 남은 하락 = 1 − 0.22/0.55 = 0.60
+    sl = risk.scenario_loss(
+        "u", cluster=None, hist=hist, cases=_cases_verified("u", 0.78), entry_drawdown=0.45
+    )
     assert sl.computable
-    assert sl.case_term == pytest.approx(0.39) and sl.value == pytest.approx(0.42)
-    assert sl.binding == "hist" and sl.case_id == "death_u"
-    # 사망 사례 × 0.5 가 더 크면 그쪽이 구속
-    sl2 = risk.scenario_loss("u", cluster=None, hist=hist, cases=_cases_verified("u", 0.95))
-    assert sl2.binding == "case" and sl2.value == pytest.approx(0.475)
+    assert sl.case_term == pytest.approx(0.60)
+    assert sl.value == pytest.approx(0.60) and sl.binding == "case"
+    assert sl.case_id == "death_u" and sl.entry_drawdown == pytest.approx(0.45)
+
+    # 고점에 있으면 사례 낙폭 그대로다 — 감액하지 않는다
+    at_peak = risk.scenario_loss(
+        "u", cluster=None, hist=hist, cases=_cases_verified("u", 0.78), entry_drawdown=0.0
+    )
+    assert at_peak.case_term == pytest.approx(0.78)
+
+
+def test_case_term_is_zero_below_the_case_trough_not_negative() -> None:
+    """이미 사례 저점보다 아래면 **사례가 더 내려갈 근거가 아니다** — 0 이고 사유를 남긴다.
+
+    음수를 돌려주면 "여기서 오른다" 는 예측이 된다. 이 함수는 손실 추정이지 예측이 아니다.
+    """
+    hist = risk.HistoricalDrawdown("u", 0.5, 0.42, (), ("2000-01-01", "2026-01-01"))
+    sl = risk.scenario_loss(
+        "u", cluster=None, hist=hist, cases=_cases_verified("u", 0.64), entry_drawdown=0.80
+    )
+    assert sl.case_term == pytest.approx(0.0)
+    assert any("이미 사례 저점" in r for r in sl.reasons), sl.reasons
+    # 사례 항이 0 이면 hist 가 구속한다
+    assert sl.binding == "hist" and sl.value == pytest.approx(0.42)
+
+
+def test_case_term_needs_a_reference_point_and_says_so_when_absent() -> None:
+    """어디서부터인지 모르면 '여기서부터 얼마' 를 말할 수 없다 — 조용히 고점으로 대체하지 않는다."""
+    hist = risk.HistoricalDrawdown("u", 0.5, 0.42, (), ("2000-01-01", "2026-01-01"))
+    sl = risk.scenario_loss(
+        "u", cluster=None, hist=hist, cases=_cases_verified("u", 0.78), entry_drawdown=None
+    )
+    assert sl.case_term is None and sl.value is None
+    assert any("현재 낙폭을 모른다" in r for r in sl.reasons), sl.reasons
 
 
 def test_scenario_loss_missing_case_is_visible_not_silent() -> None:

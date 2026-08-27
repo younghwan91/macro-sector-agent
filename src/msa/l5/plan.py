@@ -39,7 +39,8 @@ def _loss_line(sl: ScenarioLoss) -> str:
         which = "과거 국면이 구속" if sl.binding == "hist" else "사망 사례 × 0.5 가 구속"
         return (
             f"  L = {sl.value:.2f}  (과거 유사 국면 {sl.hist_term:.2f} / 사망 사례 "
-            f"{sl.case_raw:.2f} × {sl.case_factor} = {sl.case_term:.2f} [{sl.case_id}] → {which})"
+            f"사례 −{sl.case_raw:.0%} · 현재 −{(sl.entry_drawdown or 0):.0%} → "
+            f"남은 {sl.case_term:.2f} [{sl.case_id}] → {which})"
         )
     parts: list[str] = []
     parts.append("과거 유사 국면 " + ("—" if sl.hist_term is None else f"{sl.hist_term:.2f}"))
@@ -48,7 +49,10 @@ def _loss_line(sl: ScenarioLoss) -> str:
         + (
             "—"
             if sl.case_term is None
-            else f"{sl.case_raw:.2f} × {sl.case_factor} = {sl.case_term:.2f} [{sl.case_id}]"
+            else (
+                f"사례 −{sl.case_raw:.0%} · 현재 −{(sl.entry_drawdown or 0):.0%} → "
+                f"남은 {sl.case_term:.2f} [{sl.case_id}]"
+            )
         )
     )
     return (
