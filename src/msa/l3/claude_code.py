@@ -228,12 +228,22 @@ class ClaudeCodeProvider:
     # ------------------------------------------------------------ 실행
 
     def _work_dir(self) -> Path:
-        """중립 작업 디렉터리. 저장소에서 돌리면 CLAUDE.md 가 자동으로 실려 역할을 오염시킨다."""
-        if self._cwd is not None:
-            return self._cwd
-        if self._tmp is None:
-            self._tmp = tempfile.TemporaryDirectory(prefix="msa-l3-")
-        return Path(self._tmp.name)
+        """중립 작업 디렉터리. 저장소에서 돌리면 CLAUDE.md 가 자동으로 실려 역할을 오염시킨다.
+
+        **매번 존재를 확인한다.** `TemporaryDirectory` 의 수명에 기대면 안 된다 —
+        2026-08-29 실측: 판별이 277초 돌다 `FileNotFoundError: /tmp/msa-l3-qblaldbk` 로
+        죽었다. 라운드가 몇 분이라 그 사이 파이널라이저·시스템 청소·프로세스 복제 등
+        무엇이든 지울 수 있고, 그러면 **끝나가던 작업을 디렉터리 하나 때문에 버린다.**
+        없으면 다시 만든다 — 중립 디렉터리라 내용이 없어도 잃을 것이 없다.
+        """
+        d = self._cwd
+        if d is None:
+            if self._tmp is None:
+                self._tmp = tempfile.TemporaryDirectory(prefix="msa-l3-")
+            d = Path(self._tmp.name)
+        if not d.is_dir():
+            d.mkdir(parents=True, exist_ok=True)
+        return d
 
     def _argv(self, request: CompletionRequest, prompt: str) -> list[str]:
         argv = [

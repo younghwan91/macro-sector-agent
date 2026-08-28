@@ -335,3 +335,25 @@ def test_parallel_rejections_do_not_clobber_each_other(tmp_path: Path) -> None:
 
     rows = yaml.safe_load((d / "rejections-pending.yaml").read_text(encoding="utf-8"))
     assert sorted(r["theme"] for r in rows) == sorted(themes)
+
+
+def test_work_dir_survives_being_deleted_mid_round() -> None:
+    """**라운드가 몇 분이라 그 사이 작업 디렉터리가 사라질 수 있다.**
+
+    2026-08-29 실측: 판별이 277초 돌다 `FileNotFoundError: /tmp/msa-l3-...` 로 죽었다.
+    중립 디렉터리라 내용이 없으므로, 없으면 다시 만들면 된다 — 끝나가던 작업을 디렉터리
+    하나 때문에 버리지 않는다.
+    """
+    import shutil
+
+    from msa.l3.claude_code import ClaudeCodeProvider
+
+    p = ClaudeCodeProvider(theme_id="t")
+    first = p._work_dir()
+    assert first.is_dir()
+
+    shutil.rmtree(first)  # 누가 지웠다
+    assert not first.exists()
+
+    again = p._work_dir()
+    assert again.is_dir(), "지워졌으면 다시 만든다"
