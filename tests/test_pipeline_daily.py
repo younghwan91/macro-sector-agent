@@ -475,7 +475,11 @@ def test_daily_smoke_on_real_cache(tmp_path: Path) -> None:
     for name in D.DAILY_STEPS:
         step = res.report.step(name)
         assert step is not None and (step.status == "ok" or step.reason), name
-    assert len(res.digest["themes"]) <= 2
+    # `top_k` 는 **스코어보드에서 몇 개를 볼지**이지 다이제스트의 총 개수가 아니다.
+    # 편입 가능·지정 테마는 순위 밖이어도 실린다 — 그것이 실릴 이유가 순위가 아니기
+    # 때문이다. 총 개수로 재면 편입 가능이 하나 늘 때마다 테스트가 깨진다 (2026-08-29 실측).
+    ranked = [t for t in res.digest["themes"] if t["source"] == "scoreboard"]
+    assert len(ranked) <= 2
     for t in res.digest["themes"]:
         # 2026-08-24: `picks` 는 **적격 전부**다. `--per-theme` 은 표시 컷이지
         # 명단을 자르는 값이 아니다 (docs/06 §5.1 — 선정 규칙을 버렸다).
@@ -656,3 +660,19 @@ def test_already_judged_themes_are_never_researched_again() -> None:
     """편입 불가로 판별된 것을 다시 돌리지 않는다 — 시간만 쓰고 답이 같다."""
     d = _digest([("rejected", 0.95), ("eligible", 0.60)], {"rejected": False, "eligible": True})
     assert D.unjudged_above_best(d) == []
+
+
+def test_readme_lists_the_real_daily_steps() -> None:
+    """**문서는 드리프트한다** — `docs/24` §0 이 이미 같은 사고를 기록했다.
+
+    2026-08-29 실측: `research` 단계를 넣었는데 README 의 케이던스 표는 그대로였다.
+    코드가 아니라 표를 읽는 사람은 판별이 자동으로 도는 것을 모른다. 값을 두 곳에 적어야
+    한다면 최소한 어긋났을 때 시끄러워야 한다.
+    """
+    from pathlib import Path
+
+    from msa.pipeline.daily import DAILY_STEPS
+
+    want = " · ".join(DAILY_STEPS)
+    readme = Path(__file__).resolve().parents[1] / "README.md"
+    assert want in readme.read_text(), f"README 의 `msa run daily` 단계 목록이 낡았다 — {want}"

@@ -41,7 +41,7 @@
 
 > **차트 확인 대상 3종목 — 편입 가능 `shipping_container` · `managed_care` 의 명단 15 중**
 >
-> **`ALHC` -45% · ⚠`CLOV` -22% · ⚠`MOH` -18%**. 그중 **레드플래그·감점이 붙은 것 2종목**. 나머지는 52주 고점 −15%(선언값) 이내라 지금 자리가 아니다. ⚠ **판정을 만든 근거 46건 중 13건은 원문에서 못 찾은 숫자가 있고 7건은 문서를 읽지 못했다.** 그중 **먼저 열 것 6건** — `managed_care` [1] · [8] · [17] / `shipping_container` [46] · [49] · [50]. URL 과 무엇을 찾을지는 `msa ops audit-evidence managed_care` · `msa ops audit-evidence shipping_container` 가 적어 준다. **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.
+> **`ALHC` -45% · ⚠`CLOV` -22% · ⚠`MOH` -18%**. 그중 **레드플래그·감점이 붙은 것 2종목**. 나머지는 52주 고점 −15%(선언값) 이내라 지금 자리가 아니다. ⚠ **판정을 만든 근거 46건 중 13건은 원문에서 못 찾은 숫자가 있고 7건은 문서를 읽지 못했다.** 그중 **먼저 열 것 7건** — `managed_care` [1] · [10] · [17] / `shipping_container` [12] · [46] · [49] · [50]. URL 과 무엇을 찾을지는 `msa ops audit-evidence managed_care` · `msa ops audit-evidence shipping_container` 가 적어 준다. **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.
 
 <sub>`msa run daily` 가 자동으로 다시 쓴다. 스캔 기준일 **2026-08-27** · 가격 스토어 마지막 날 **2026-08-27** (최신 — 미 거래일 기준이다. KST 달력 날짜와 다른 것은 정상이다). 성과 수치는 없다 — 측정값과 판정뿐이다 (`CLAUDE.md` §7).</sub>
 
@@ -50,7 +50,7 @@
 | 1 | `health_it` | 0.88 | 편입 불가 · 0.45 | 42 | SECULAR — 게이트 필요 |
 | 2 | `media_streaming` | 0.86 | 편입 불가 · 0.45 | 37 | SECULAR — 게이트 필요 |
 | 3 | `offshore_drilling` | 0.80 | 편입 불가 · 0.45 | 7 | SECULAR — 게이트 필요 |
-| 5 | `life_science_tools` | 0.78 | **판별 안 함** | 32 | — |
+| 5 | `life_science_tools` | 0.78 | 편입 불가 · 0.45 | 32 | — |
 | 6 | `shipping_container` | 0.77 | **편입 가능** · 0.75 | 6 | — |
 | 7 | `home_improvement` | 0.71 | 편입 불가 · 0.6 | 6 | — |
 | 8 | `it_services` | 0.69 | **판별 안 함** | 56 | SECULAR — 게이트 필요 |
@@ -994,7 +994,7 @@ msa run quarterly            # 분기: ops calibration · ops rejections-update 
 
 | | 단계 (코드 정본) | L3(LLM) | 그래서 |
 |---|---|---|---|
-| `msa run daily` | `scan · select · picks · diff · check · digest · audit · readme` (`daily.py` `DAILY_STEPS`) | **없다 — 한 번도 안 돈다** | 다이제스트의 테마 대부분이 **논지 없음**이고 가치함정 게이트를 통과한 적이 없다 (§2.2) |
+| `msa run daily` | `scan · select · picks · diff · check · digest · research · audit · readme` (`daily.py` `DAILY_STEPS`) | **없다 — 한 번도 안 돈다** | 다이제스트의 테마 대부분이 **논지 없음**이고 가치함정 게이트를 통과한 적이 없다 (§2.2) |
 | `msa run monthly` | `scan · select ·` **`research`** `· ingest · picks · assemble · portfolio · report` (`run.py` `MONTHLY_STEPS`) | **있다** — 다만 기본값 `--provider none` 은 호출하지 않고 사람 논지·직전 thesis 를 **찾기만** 한다 | 판정은 월간에서만 생기고, 그것도 **상위 K=8 테마에만** 생긴다 |
 
 **결정 케이던스는 월간 그대로다.** 일간은 읽기 전용 후보 뷰이고, 거기서 고르는 것은 사람이다.
