@@ -162,7 +162,7 @@ def env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> dict[str, Any]:
 
 
 def test_daily_first_run_writes_digest_and_marks_everything_new(env: dict[str, Any]) -> None:
-    res = D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     assert res.exit_code == 0
     assert [s.name for s in res.report.steps] == list(D.DAILY_STEPS)
     assert res.report.statuses() == {
@@ -172,6 +172,8 @@ def test_daily_first_run_writes_digest_and_marks_everything_new(env: dict[str, A
         "diff": "ok",
         "check": "skipped",  # positions.yaml 없음
         "digest": "ok",
+        # 합성 데이터에는 판별할 미판별 상위 테마가 없다 — research=False 로 껐다
+        "research": "skipped",
         # 증거 실사 — 편입 가능 테마가 없으면 건너뛴다 (합성 테마엔 논지가 없다)
         "audit": "skipped",
         # README 블록 갱신 — 저장소 README 에는 마커가 있으므로 ok 다. 마커가 없으면
@@ -217,13 +219,13 @@ def test_daily_first_run_writes_digest_and_marks_everything_new(env: dict[str, A
 
 
 def test_daily_diff_against_previous_digest(env: dict[str, Any]) -> None:
-    D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"])
+    D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     data = env["data"]
     # 다음 날: t_c 가 t_b 를 제치고 2위(t_b 는 K 밖으로), t_a 상위에 NEW 진입 + 신규 통과/하드 제외
     data["sb"] = [("t_a", 0.9, True), ("t_c", 0.85, True), ("t_b", 0.8, True)]
     data["rank"]["t_a"] = ["NEW1", "AAA", "BBB", "CCC"]  # NEW1 이 1위로 등장
     data["hard"]["t_a"] = ["XXX", "CCC2"]  # CCC2 신규 하드 제외
-    res = D.run_daily(asof=ASOF2, top_k=2, picks_per_theme=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF2, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     diff = res.digest["diff"]
     assert not diff["first_run"] and diff["prev_asof"] == ASOF1
     assert diff["themes_entered"] == ["t_c"] and diff["themes_left"] == ["t_b"]
@@ -243,16 +245,16 @@ def test_daily_diff_against_previous_digest(env: dict[str, Any]) -> None:
 
 
 def test_daily_rank_moves_are_reported(env: dict[str, Any]) -> None:
-    D.run_daily(asof=ASOF1, top_k=3, picks_per_theme=2, readme=env["readme"])
+    D.run_daily(asof=ASOF1, top_k=3, picks_per_theme=2, readme=env["readme"], research=False)
     env["data"]["sb"] = [("t_b", 0.9, True), ("t_a", 0.8, True), ("t_c", 0.7, True)]
-    res = D.run_daily(asof=ASOF2, top_k=3, picks_per_theme=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF2, top_k=3, picks_per_theme=2, readme=env["readme"], research=False)
     assert res.digest["diff"]["rank_moves"] == {"t_a": -1, "t_b": 1}
     assert "순위 이동: t_b ▲1" in res.digest_md and "순위 이동: t_a ▼1" in res.digest_md
 
 
 def test_daily_no_write_leaves_state_untouched(env: dict[str, Any]) -> None:
     before = {x.name for x in env["state"].iterdir()}
-    res = D.run_daily(asof=ASOF1, top_k=2, write=False, readme=env["readme"])
+    res = D.run_daily(asof=ASOF1, top_k=2, write=False, readme=env["readme"], research=False)
     after = {x.name for x in env["state"].iterdir()}
     assert after == before and res.out_dir is None
     assert res.digest["themes"] and res.digest_md  # 산출물은 객체로 돌아온다
@@ -262,7 +264,7 @@ def test_daily_no_write_leaves_state_untouched(env: dict[str, Any]) -> None:
 
 def test_daily_picks_failure_is_isolated(env: dict[str, Any]) -> None:
     env["data"]["boom"]["t_a"] = RuntimeError("store down for t_a")
-    res = D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     assert res.exit_code == 0
     by = {t["theme"]: t for t in res.digest["themes"]}
     assert "store down for t_a" in (by["t_a"]["picks_error"] or "")
@@ -278,7 +280,7 @@ def test_daily_scan_failure_stops_with_exit_1(
         raise RuntimeError("커버리지 감사 실패")
 
     monkeypatch.setattr(D, "run_scan", boom)
-    res = D.run_daily(asof=ASOF1, readme=env["readme"])
+    res = D.run_daily(asof=ASOF1, readme=env["readme"], research=False)
     assert res.exit_code == 1 and res.report.stopped
     assert res.report.step("scan").status == "failed"  # type: ignore[union-attr]
     assert not (env["state"] / "daily").exists()
@@ -287,7 +289,7 @@ def test_daily_scan_failure_stops_with_exit_1(
 
 def test_daily_check_runs_only_when_positions_exist(env: dict[str, Any]) -> None:
     paths().positions.write_text("positions: []", encoding="utf-8")
-    res = D.run_daily(asof=ASOF1, top_k=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF1, top_k=2, readme=env["readme"], research=False)
     # --send 없이 돌았으므로 점검 알림도 발신 금지로 내려간다 (발신은 --send 가 지배한다)
     assert env["calls"]["check"] == [(ASOF1, {"mode": "daily", "write": True, "send": False})]
     assert res.report.statuses()["check"] == "ok"
@@ -306,7 +308,7 @@ def test_daily_check_failure_reported_not_fatal(
         raise RuntimeError("positions.yaml 깨짐")
 
     monkeypatch.setattr(D, "run_cadence_check", boom)
-    res = D.run_daily(asof=ASOF1, top_k=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF1, top_k=2, readme=env["readme"], research=False)
     assert res.exit_code == 0 and res.report.statuses()["check"] == "failed"
     assert res.digest["positions_check"] is None
 
@@ -319,21 +321,23 @@ def test_daily_send_without_env_is_not_configured(
 ) -> None:
     monkeypatch.delenv("MSA_TELEGRAM_TOKEN", raising=False)
     monkeypatch.delenv("MSA_TELEGRAM_CHAT_ID", raising=False)
-    res = D.run_daily(asof=ASOF1, top_k=2, send=True, readme=env["readme"])
+    res = D.run_daily(asof=ASOF1, top_k=2, send=True, readme=env["readme"], research=False)
     assert res.telegram == "not_configured"
     assert (env["state"] / "daily" / ASOF1 / "alerts.json").exists()  # 기록은 파일이다
 
 
 def test_daily_send_requires_write(env: dict[str, Any]) -> None:
-    res = D.run_daily(asof=ASOF1, top_k=2, send=True, write=False, readme=env["readme"])
+    res = D.run_daily(
+        asof=ASOF1, top_k=2, send=True, write=False, readme=env["readme"], research=False
+    )
     assert res.telegram is None
     assert any("--send" in n and "no-write" in n for n in res.report.notes)
 
 
 def test_digest_alert_passes_wording_rule_and_caps_length(env: dict[str, Any]) -> None:
-    D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"])
+    D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     env["data"]["rank"]["t_a"] = [f"T{i:03d}" for i in range(300)]  # 새 항목 폭탄
-    res = D.run_daily(asof=ASOF2, top_k=2, picks_per_theme=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF2, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     a = D.build_digest_alert(res.digest, _d.fromisoformat(ASOF2))
     assert_wording_ok(a.text)
     assert len(a.text) <= D.TELEGRAM_MAX_CHARS
@@ -349,9 +353,9 @@ def test_digest_alert_passes_wording_rule_and_caps_length(env: dict[str, Any]) -
 
 def test_daily_broken_baseline_is_not_reported_as_first_run(env: dict[str, Any]) -> None:
     """깨진 직전 다이제스트는 "첫 실행" 이 아니다 — 산출물·알림에 손상 사실이 남는다 (4번)."""
-    D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"])
+    D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     (paths().daily / ASOF1 / "digest.json").write_text("{ 깨짐", encoding="utf-8")
-    res = D.run_daily(asof=ASOF2, top_k=2, picks_per_theme=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF2, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     diff = res.digest["diff"]
     assert not diff["first_run"] and diff["baseline_broken"]
     assert diff["themes_entered"] == [] and diff["rank_moves"] == {}
@@ -370,7 +374,7 @@ def test_daily_small_sample_demotion_is_named_in_digest_and_alert(env: dict[str,
     """스코어보드 1위가 소표본으로 빠지면 그 사실이 파일·알림에 남는다 (5번)."""
     env["data"]["sb"] = [("t_a", 0.9, True), ("t_b", 0.8, True), ("t_c", 0.7, True)]
     env["data"]["small"] = {"t_a"}
-    res = D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     assert res.digest["demoted"] == [{"theme": "t_a", "rank": 1}]
     assert [t["theme"] for t in res.digest["themes"]] == ["t_b", "t_c"]
     assert "소표본이라 뒤로 밀려" in res.digest_md and "t_a" in res.digest_md
@@ -385,7 +389,7 @@ def test_daily_without_send_delivers_nothing_at_all(
     monkeypatch.setenv("MSA_TELEGRAM_TOKEN", "t")
     monkeypatch.setenv("MSA_TELEGRAM_CHAT_ID", "42")
     paths().positions.write_text("positions: []", encoding="utf-8")
-    res = D.run_daily(asof=ASOF1, top_k=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF1, top_k=2, readme=env["readme"], research=False)
     assert res.telegram is None  # 다이제스트를 만들지도 않았다
     assert env["calls"]["check"][0][1]["send"] is False
     assert not (env["state"] / "daily" / ASOF1 / "alerts.json").exists()
@@ -395,11 +399,11 @@ def test_run_daily_rejects_bad_args(env: dict[str, Any]) -> None:
     from msa.pipeline.run import RunError
 
     with pytest.raises(RunError):
-        D.run_daily(asof=ASOF1, top_k=-1, readme=env["readme"])
+        D.run_daily(asof=ASOF1, top_k=-1, readme=env["readme"], research=False)
     with pytest.raises(RunError):
-        D.run_daily(asof=ASOF1, picks_per_theme=0, readme=env["readme"])
+        D.run_daily(asof=ASOF1, picks_per_theme=0, readme=env["readme"], research=False)
     with pytest.raises(RunError):
-        D.run_daily(asof="2026/08/21", readme=env["readme"])
+        D.run_daily(asof="2026/08/21", readme=env["readme"], research=False)
 
 
 # ---------------------------------------------------------------- CLI
@@ -446,6 +450,8 @@ def test_cli_run_daily_registered_and_passes_options(monkeypatch: pytest.MonkeyP
         "write": False,
         "send": True,
         "audit": True,  # 기본은 실사 — 끄려면 --no-audit
+        # 기본은 판별 — 편입 가능이 나올 때까지 위에서부터. 끄려면 --no-research
+        "research": True,
         "update_readme": True,  # 기본은 갱신 — 끄려면 --no-readme
     }
     assert "(다이제스트)" in r.output
@@ -552,7 +558,7 @@ def test_tests_never_touch_the_repository_readme(env: dict[str, Any]) -> None:
 
     real = REPO_ROOT / "README.md"
     before = hashlib.md5(real.read_bytes()).hexdigest()
-    D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"])
+    D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     assert hashlib.md5(real.read_bytes()).hexdigest() == before, "테스트가 저장소 README 를 고쳤다"
     # 대신 넘긴 쪽은 갱신됐다 — 기능이 죽은 것이 아니라 격리된 것이다
     assert "오늘의 결론" in env["readme"].read_text(encoding="utf-8")
@@ -568,7 +574,7 @@ def test_digest_says_when_asof_was_clamped_to_store_end(env: dict[str, Any]) -> 
     수치는 하나도 바뀌지 않는다 — 표시 문구뿐이다.
     """
     env["data"]["scan_meta"] = {"asof_requested": ASOF2, "asof_clamped": True}
-    res = D.run_daily(asof=ASOF2, top_k=2, picks_per_theme=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF2, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     assert res.exit_code == 0
 
     step = next(s for s in res.report.steps if s.name == "scan")
@@ -588,9 +594,65 @@ def test_digest_says_when_asof_was_clamped_to_store_end(env: dict[str, Any]) -> 
 
 def test_digest_stays_quiet_when_asof_is_within_the_store(env: dict[str, Any]) -> None:
     """내리지 않았으면 아무 말도 하지 않는다 — 없는 경고를 만들지 않는다."""
-    res = D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"])
+    res = D.run_daily(asof=ASOF1, top_k=2, picks_per_theme=2, readme=env["readme"], research=False)
     assert res.exit_code == 0
     step = next(s for s in res.report.steps if s.name == "scan")
     assert "스토어 최종일" not in step.reason
     md = (env["state"] / "daily" / ASOF1 / "digest.md").read_text(encoding="utf-8")
     assert "스토어 최종일" not in md.split("## 상위 K", 1)[0]
+
+
+# ------------------------------------------------- 어느 테마를 판별할 것인가
+
+
+def _digest(themes: list[tuple[str, float]], judged: dict[str, bool]) -> dict[str, Any]:
+    return {
+        "themes": [{"theme": t, "score": s} for t, s in themes],
+        "judged": [{"theme": t, "portfolio_eligible": e} for t, e in judged.items()],
+    }
+
+
+def test_only_unjudged_themes_above_the_best_eligible_are_researched() -> None:
+    """**134개 전수가 아니라, 답을 바꿀 수 있는 것만 판별한다.**
+
+    사용자가 원하는 것은 "최고의 섹터 중 편입 가능한 것" 하나다 (2026-08-29). 그러면 지금
+    최선의 편입 가능 테마보다 **위에 있는** 미판별 테마만 보면 된다 — 그 아래는 판별해도
+    답이 안 바뀐다.
+
+    2026-08-29 실측이 정확히 이 모양이었다: `life_science_tools`(0.78)가 편입 가능
+    `shipping_container`(0.77) 위에서 판별을 안 받은 상태였다.
+    """
+    d = _digest(
+        [
+            ("health_it", 0.88),
+            ("life_science_tools", 0.78),
+            ("shipping_container", 0.77),
+            ("pharma_generic", 0.69),
+        ],
+        {"health_it": False, "shipping_container": True},
+    )
+    assert D.unjudged_above_best(d) == ["life_science_tools"], (
+        "0.69 는 편입 가능(0.77) 아래라 판별해도 답을 못 바꾼다"
+    )
+
+
+def test_higher_unjudged_themes_come_first() -> None:
+    """위에서부터 본다 — 첫 편입 가능이 나오면 멈추므로 순서가 곧 결과다."""
+    d = _digest(
+        [("a", 0.90), ("b", 0.85), ("c", 0.80), ("eligible", 0.70)],
+        {"eligible": True},
+    )
+    assert D.unjudged_above_best(d) == ["a", "b", "c"]
+
+
+def test_with_no_eligible_theme_every_unjudged_one_is_a_candidate() -> None:
+    """편입 가능이 하나도 없으면 비교할 바닥이 없다 — 전부 후보다."""
+    d = _digest([("a", 0.9), ("b", 0.5)], {"a": False})
+    assert D.unjudged_above_best(d) == ["b"]
+    assert D.unjudged_above_best(_digest([("a", 0.9), ("b", 0.5)], {})) == ["a", "b"]
+
+
+def test_already_judged_themes_are_never_researched_again() -> None:
+    """편입 불가로 판별된 것을 다시 돌리지 않는다 — 시간만 쓰고 답이 같다."""
+    d = _digest([("rejected", 0.95), ("eligible", 0.60)], {"rejected": False, "eligible": True})
+    assert D.unjudged_above_best(d) == []

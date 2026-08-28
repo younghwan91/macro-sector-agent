@@ -921,6 +921,11 @@ def run_daily_cmd(
         "--no-readme",
         help="README.md 의 '오늘의 결론' 블록을 갱신하지 않는다 (기본은 갱신 — 커밋은 사람이)",
     ),
+    no_research: bool = typer.Option(
+        False,
+        "--no-research",
+        help="미판별 상위 테마 판별을 건너뛴다 (기본은 편입 가능이 나올 때까지 위에서부터)",
+    ),
     verbose: bool = OPT_VERBOSE,
 ) -> None:
     """일간 후보 다이제스트 (docs/09 §1 일간 행): 스캔(캐시) → 상위 K → 테마별 L4 랭킹 →
@@ -945,6 +950,7 @@ def run_daily_cmd(
             send=send,
             audit=not no_audit,
             update_readme=not no_readme,
+            research=not no_research,
         )
     except RunError as e:
         raise typer.BadParameter(str(e)) from e

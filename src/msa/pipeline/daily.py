@@ -98,6 +98,9 @@ DAILY_STEPS: tuple[str, ...] = (
     "diff",
     "check",
     "digest",
+    # 판별은 다이제스트 **뒤**에 온다 — 무엇을 판별할지는 순위와 기존 판정이 다 나와야
+    # 정해지기 때문이다. 새로 편입 가능이 나오면 판정을 갱신하고 다이제스트를 다시 쓴다.
+    "research",
     "audit",
     "readme",
 )
@@ -791,6 +794,117 @@ def build_digest_alert(digest: dict[str, Any], asof_d: date, *, picks_per_theme:
 # ---------------------------------------------------------------- run_daily
 
 
+def unjudged_above_best(digest: dict[str, Any]) -> list[str]:
+    """**편입 가능한 것보다 순위가 높은데 판별을 안 받은 테마** — 점수 높은 순.
+
+    사용자가 원하는 것은 134개 전수 판별이 아니라 *"최고의 섹터 중 편입 가능한 것"* 이다
+    (2026-08-29). 그러려면 **지금 최선의 편입 가능 테마보다 위에 있는 미판별 테마**만
+    보면 된다. 그 아래는 봐도 답을 바꾸지 못한다.
+
+    편입 가능이 하나도 없으면 미판별 전부가 후보다 — 비교할 바닥이 없기 때문이다.
+
+    실제로 2026-08-29 에 `life_science_tools`(0.78)가 편입 가능 `shipping_container`(0.77)
+    **위에** 있으면서 판별을 안 받은 상태였다. 그것이 편입 가능이면 오늘의 답이 바뀐다.
+    """
+    themes = digest.get("themes") or []
+    judged = {str(j["theme"]): j for j in (digest.get("judged") or [])}
+    scored = [
+        (float(t.get("score") or 0.0), str(t["theme"]))
+        for t in themes
+        if t.get("score") is not None
+    ]
+    best = max(
+        (sc for sc, th in scored if judged.get(th, {}).get("portfolio_eligible")),
+        default=None,
+    )
+    out = [
+        th
+        for sc, th in sorted(scored, reverse=True)
+        if th not in judged and (best is None or sc > best)
+    ]
+    return out
+
+
+def _research_until_eligible(
+    report: RunReport, digest: dict[str, Any], asof_s: str, *, enabled: bool, write: bool
+) -> tuple[str, ...]:
+    """미판별 테마를 **위에서부터** 판별하고 **편입 가능이 나오면 멈춘다**.
+
+    왜 멈추나: 목적이 "최고의 섹터 중 편입 가능한 것" 하나이기 때문이다. 그것을 찾은 뒤의
+    판별은 답을 바꾸지 못하면서 시간만 쓴다 — 한 테마가 4역할 × 웹검색이라 몇 분이다.
+
+    구독 CLI(`--provider claude_code`)로 돈다 — **크레딧 0.** 느린 대신 공짜이고, 하루에
+    한둘이면 감당된다. 실패는 다이제스트를 죽이지 않고 단계로 보고한다 (`CLAUDE.md` §2).
+    """
+    t = _Timer()
+    if not enabled:
+        report.add(StepResult("research", "skipped", "--no-research", seconds=t.seconds))
+        return ()
+    # **없는 것과 실패한 것은 다르다.** 구독 CLI 가 안 깔린 환경(CI·합성 테스트)에서
+    # 판별을 시도하면 매번 "failed" 가 뜬다 — 그것은 고장이 아니라 전제 미충족이다.
+    import shutil
+
+    if shutil.which("claude") is None:
+        report.add(
+            StepResult(
+                "research",
+                "skipped",
+                "`claude` CLI 가 없다 — 구독 경로로 판별할 수 없다",
+                seconds=t.seconds,
+            )
+        )
+        return ()
+
+    todo = unjudged_above_best(digest)
+    if not todo:
+        report.add(
+            StepResult(
+                "research",
+                "skipped",
+                "편입 가능 테마보다 위에 있는 미판별 테마가 없다",
+                seconds=t.seconds,
+            )
+        )
+        return ()
+
+    from msa.l3.contracts import assemble_inputs
+    from msa.l3.pipeline import run_research
+    from msa.l3.providers import make_provider
+
+    p = paths()
+    done: list[str] = []
+    found: str | None = None
+    err: str | None = None
+    for theme in todo:
+        try:
+            inputs = assemble_inputs(theme, state_dir=p.state, asof=asof_s)
+            res = run_research(
+                inputs,
+                make_provider("claude_code", theme_id=theme),
+                theses_root=p.theses,
+                write=write,
+            )
+        except Exception as e:  # 판별 실패가 다이제스트를 죽이지 않게
+            err = f"{theme}: {_err(e)}"
+            break
+        done.append(theme)
+        if res.gate.portfolio_eligible:
+            found = theme
+            break
+
+    bit = f"판별 {len(done)}/{len(todo)}"
+    if found:
+        bit += f" · **{found} 편입 가능 — 여기서 멈췄다**"
+    elif done:
+        bit += " · 전부 편입 불가"
+    if err:
+        bit += f" · 중단: {err}"
+    report.add(
+        StepResult("research", "failed" if err and not done else "ok", bit, seconds=t.seconds)
+    )
+    return tuple(done)
+
+
 def _audit_eligible(
     report: RunReport, digest: dict[str, Any], asof_s: str, *, enabled: bool
 ) -> None:
@@ -903,6 +1017,7 @@ def run_daily(
     write: bool = True,
     send: bool = False,
     audit: bool = True,
+    research: bool = True,
     update_readme: bool = True,
     readme: Path | None = None,
 ) -> DailyResult:
@@ -1116,6 +1231,44 @@ def run_daily(
         report.add(StepResult("digest", "ok", "", outs, t.seconds))
     else:
         report.add(StepResult("digest", "ok", "no-write — 파일을 쓰지 않았다", seconds=t.seconds))
+
+    # 오늘 새로 판별한 것이 있으면 **다이제스트의 판정을 갱신한다.** 안 하면 방금 편입
+    # 가능이 된 테마가 오늘 리포트에는 여전히 "판별 안 함" 으로 남는다.
+    newly = _research_until_eligible(report, digest, asof_s, enabled=research, write=write)
+    if newly:
+        digest["judged"] = [
+            {
+                "theme": h.theme,
+                "portfolio_eligible": h.eligible,
+                "trusted": h.trusted,
+                "cycle_confidence": h.cycle_confidence,
+                "gate": h.gate,
+                "source": h.source,
+                "in_top_k": h.theme in {t.get("theme") for t in digest.get("themes") or []},
+            }
+            for h in all_theses(asof_s)
+        ]
+        for entry in digest.get("themes") or []:
+            if entry.get("theme") in newly:
+                head = thesis_head(str(entry["theme"]), asof_s)
+                entry["thesis"] = {
+                    "found": head.found,
+                    "source": head.source or None,
+                    "claim": head.claim or None,
+                    "invalidations": list(head.invalidations),
+                    "gate": head.gate,
+                    "portfolio_eligible": head.eligible,
+                    "trusted": head.trusted,
+                    "cycle_confidence": head.cycle_confidence,
+                    "lines": head.lines(),
+                }
+        result.digest_md = render_digest_md(digest)
+        if write and out_dir is not None:
+            write_snapshot(
+                out_dir,
+                texts={"digest.md": result.digest_md, "report.txt": result.digest_md},
+                jsons={"digest.json": digest},
+            )
 
     _audit_eligible(report, digest, asof_s, enabled=audit and write)
     if write and out_dir is not None and digest.get("evidence_audit"):
