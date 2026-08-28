@@ -116,9 +116,21 @@ def _parse_json(text: str) -> Any:
     except json.JSONDecodeError as e:
         # 앞뒤 서술이 붙은 경우 — 첫 '{' 부터 마지막 '}' 까지
         i, j = t.find("{"), t.rfind("}")
-        if i >= 0 and j > i:
+        cand = t[i : j + 1] if i >= 0 and j > i else t
+        if cand is not t:
             try:
-                return json.loads(t[i : j + 1])
+                return json.loads(cand)
+            except json.JSONDecodeError:
+                pass
+        # 꼬리 쉼표 — `,}` · `,]`. **모델이 흔히 내는 표기 사고이고 데이터는 모호하지 않다.**
+        # 2026-08-29 실측: `life_science_tools` 판별이 12분 돌다 referee 의 trailing comma
+        # 하나로 두 번 다 죽었다. 내용이 아니라 문법 장식 때문에 라운드를 버리는 것은
+        # 아깝고, 이것을 고쳐도 **잘못된 값을 받아들이는 것이 아니다** — 쉼표를 지운 뒤에도
+        # 나머지가 유효한 JSON 이어야 통과한다.
+        fixed = re.sub(r",(\s*[}\]])", r"\1", cand)
+        if fixed != cand:
+            try:
+                return json.loads(fixed)
             except json.JSONDecodeError:
                 pass
         raise ProviderError(f"응답을 JSON 으로 읽지 못했다: {e}") from e

@@ -157,7 +157,9 @@ def test_store_lag_is_visible() -> None:
     d = _digest([_theme("live", picks=[_pick("A", -0.3)])])
     d["scan"]["store_end"] = "2026-08-14"
     block = render_block(d, today=date(2026, 8, 25))
-    assert "11일 전" in block
+    # **KST 달력 일수가 아니라 거래일 기준이다** (2026-08-29). 달력으로 빼면 스토어가
+    # 최신일 때도 "2일 낡음" 이 나와 멀쩡한 데이터를 낡았다고 말한다.
+    assert "뒤처짐" in block and "미 거래일 기준" in block
 
 
 # ---------------------------------------------------------------- 파일 교체
@@ -245,7 +247,7 @@ def test_stale_price_warning_sits_in_the_conclusion() -> None:
     d = _digest([_theme("t", picks=[_pick("A", -0.3)])])
     block = render_block(d, today=date(2026, 8, 25))
     head = block.split("| # |")[0]
-    assert "11일 낡음" in head
+    assert "마지막 거래일보다 뒤처졌다" in head and "적재를 확인해라" in head
 
 
 def test_flags_are_not_python_literals() -> None:

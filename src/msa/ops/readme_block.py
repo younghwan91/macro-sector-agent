@@ -21,6 +21,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+from msa.dates import last_possible_us_session
+
 BEGIN = "<!-- MSA:LATEST -->"
 END = "<!-- /MSA:LATEST -->"
 
@@ -281,11 +283,21 @@ def render_block(digest: dict[str, Any], *, today: date | None = None) -> str:
     now = (today or date.today()).isoformat()
     themes = list(digest.get("themes") or [])
 
+    # **KST 달력 날짜에서 미 거래일을 빼면 안 된다.** KST 는 동부보다 13~14시간 앞서고
+    # 벤더는 세션 다음날 낮에 데이터를 올린다. 그래서 스토어가 최신일 때도 달력으로는
+    # 이틀 차이가 나고, 그것을 "2일 낡음" 이라고 적으면 멀쩡한 데이터를 낡았다고 말한다.
+    # 2026-08-29 실측: 스토어 08-27 = 그 시점에 **존재 가능한 마지막 세션**이었는데
+    # 문구는 "2일 낡음" 이었다. 나도 그 문구에 두 번 속아 크론을 옮길 뻔했다.
+    #
+    # 기준은 달력이 아니라 `last_possible_us_session()` 이다 (`docs/18`).
     lag = "—"
-    lag_days = 0
+    behind = False
     with suppress(ValueError):
-        lag_days = (date.fromisoformat(now) - date.fromisoformat(store_end)).days
-        lag = f"{lag_days}일 전"
+        newest = last_possible_us_session()
+        se = date.fromisoformat(store_end)
+        behind = se < newest
+        gap = (newest - se).days
+        lag = "최신" if not behind else f"거래일 {gap}일 뒤처짐"
 
     verdict, detail = _headline(digest)
     assert "**" not in verdict, "결론 줄은 렌더러가 굵게 만든다 — 안에서 다시 굵게 하지 않는다"
@@ -298,16 +310,17 @@ def render_block(digest: dict[str, Any], *, today: date | None = None) -> str:
         ">",
         f"> {detail}",
     ]
-    if lag_days:
+    if behind:
         out += [
             ">",
-            f"> ⚠ **가격은 {store_end} 기준({lag_days}일 낡음)이다.** 위아래의 52주 고점 대비도 "
-            "그 날짜 값이라, 그 사이 회복했을 수 있다.",
+            f"> ⚠ **가격 스토어가 {store_end} 에서 멈춰 있다 — 마지막 거래일보다 뒤처졌다.** "
+            "적재를 확인해라. 52주 고점 대비도 그 날짜 값이다.",
         ]
     out += [
         "",
         f"<sub>`msa run daily` 가 자동으로 다시 쓴다. 스캔 기준일 **{asof}** · "
-        f"가격 스토어 마지막 날 **{store_end}** ({lag}). "
+        f"가격 스토어 마지막 날 **{store_end}** ({lag} — 미 거래일 기준이다. "
+        f"KST 달력 날짜와 다른 것은 정상이다). "
         "성과 수치는 없다 — 측정값과 판정뿐이다 (`CLAUDE.md` §7).</sub>",
         "",
         "| # | 테마 | 점수 | 판별 | 명단 | 플래그 |",
