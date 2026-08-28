@@ -190,3 +190,22 @@ def test_duplicate_with_same_verdict_is_just_deduped() -> None:
     }
     (t,) = parse_triage(payload, AXES)
     assert t.verdict == LIKELY_ROUNDING and "흔들" not in t.why
+
+
+def test_urls_sit_next_to_their_item_not_at_the_end() -> None:
+    """끝에 몰아 찍으면 "나머지 N건" 줄 아래 붙어 **그것들의 URL 처럼 보인다**.
+
+    2026-08-29 실측 — 사람이 열어야 할 문서와 안 열어도 되는 문서의 링크가 뒤섞였다.
+    """
+    items = (
+        Triage(17, OPEN_FIRST, "셋 다 없다", "$340B", ("terminal_risk",)),
+        Triage(8, LIKELY_ROUNDING, "반올림", ""),
+    )
+    lines = render_triage(
+        items, total_partial=2, urls={17: "https://cwf.org/c", 8: "https://kff.org/b"}
+    )
+    i_item = next(i for i, x in enumerate(lines) if "[17]" in x)
+    i_url = next(i for i, x in enumerate(lines) if "cwf.org" in x)
+    i_rest = next(i for i, x in enumerate(lines) if "나머지" in x)
+    assert i_item < i_url < i_rest, "URL 이 항목 바로 아래, '나머지' 앞에 와야 한다"
+    assert not any("kff.org" in x for x in lines), "곁가지의 URL 은 찍지 않는다"

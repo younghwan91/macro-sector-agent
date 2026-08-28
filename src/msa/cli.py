@@ -1185,13 +1185,11 @@ def ops_audit_evidence(
         if why:
             typer.echo(f"(분류가 기계 순서로 내려갔다 — {why})")
         for line in render_triage(
-            items, total_partial=sum(1 for c in res.checks if c.status == PARTIAL)
+            items,
+            total_partial=sum(1 for c in res.checks if c.status == PARTIAL),
+            urls={c.evidence_id: c.url for c in res.checks},
         ):
             typer.echo(line)
-        by_id = {c.evidence_id: c for c in res.checks}
-        for x in items:
-            if x.first and (c := by_id.get(x.evidence_id)):
-                typer.echo(f"       {c.url}")
     if not no_write:
         out = write_snapshot(
             p.state / "audits" / asof_s,

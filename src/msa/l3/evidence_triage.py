@@ -63,6 +63,17 @@
 > 그래서 이 모듈은 **판정을 바꾸지 않고 순서만 정한다** — 흔들려도 잃는 것은 사람이 문서를
 > 하나 더 열거나 덜 여는 것뿐이고, 편입 가능 여부는 그대로다.
 
+## 흔들리는 것이 하나 더 있다 — **출처 쪽이다**
+
+2026-08-29 실측: `healthcaredive.com` 이 간헐적으로 403 을 낸다. 5회 연속 시도에서 0/5 성공.
+그런데 몇 분 전 같은 실행에서는 읽혔다. 그래서 **같은 증거가 어제는 `unreachable`, 오늘은
+`partial` 로 나온다** — 트리아지 목록이 모델 때문이 아니라 **문서를 그날 읽었느냐** 때문에
+바뀐다.
+
+읽힌 날 잡힌 것이 `[2]` 였고, 그것이 이 검사가 존재하는 이유로 모듈 docstring 에 적어 둔
+바로 그 사례다 — 원문 *"109 fewer counties"* 를 *"225개 카운티에서 철수"* 로 적은 것.
+**읽을 수 있을 때만 잡힌다.**
+
 ## 비용
 
 haiku 4.5 · 검색 없음. 실측 견적: 테마당 입력 ~3,100 · 출력 ~1,000 토큰 → **약 $0.008**.
@@ -304,8 +315,17 @@ def _weight(t: Triage) -> int:
     return {OPEN_FIRST: 2, MINOR: 1, LIKELY_ROUNDING: 0}.get(t.verdict, 0)
 
 
-def render_triage(items: Sequence[Triage], *, total_partial: int) -> list[str]:
-    """리포트 줄 — **먼저 열 것만 이름으로 적고 나머지는 수로 적는다.**"""
+def render_triage(
+    items: Sequence[Triage],
+    *,
+    total_partial: int,
+    urls: Mapping[int, str] | None = None,
+) -> list[str]:
+    """리포트 줄 — **먼저 열 것만 이름으로 적고 나머지는 수로 적는다.**
+
+    `urls` 를 주면 각 항목 **바로 아래**에 찍는다. 목록 끝에 몰아 찍으면 "나머지 N건" 줄
+    아래 붙어 그것들의 URL 처럼 보인다 (2026-08-29 실측).
+    """
     if not items:
         return []
     first = [t for t in items if t.first]
@@ -320,6 +340,8 @@ def render_triage(items: Sequence[Triage], *, total_partial: int) -> list[str]:
     for t in first:
         ax = f" · {'·'.join(t.axes)} 근거" if t.axes else ""
         out.append(f"  [{t.evidence_id}] {t.why}{ax}")
+        if u := (urls or {}).get(t.evidence_id):
+            out.append(f"       {u}")
         if t.look_for:
             out.append(f"       → {t.look_for}")
     if rest:
