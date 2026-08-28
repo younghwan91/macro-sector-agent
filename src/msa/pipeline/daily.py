@@ -813,6 +813,7 @@ def _audit_eligible(
         return
 
     from msa.l3.evidence_audit import audit_thesis, http_fetch
+    from msa.l3.evidence_triage import run_triage
     from msa.thesis import find_thesis, read_thesis_yaml
 
     p = paths()
@@ -828,19 +829,41 @@ def _audit_eligible(
         except Exception as e:  # 네트워크 사고가 다이제스트를 죽이지 않게
             out[theme] = {"error": f"{type(e).__name__}: {e}"}
             continue
+        # **어느 것을 먼저 열지**까지 정한다 (`l3.evidence_triage`). 목록만 내면 사람이
+        # 13건을 매일 손으로 훑어야 하고, 그러면 아무도 안 본다. 에이전트가 실패하면
+        # 기계 순서로 내려가되 그 사실을 적는다 (`CLAUDE.md` §2).
+        thesis = read_thesis_yaml(path)
+        items, why = run_triage(theme, res.checks, thesis.get("evidence") or [], res.axis_refs)
         out[theme] = {
             "counts": res.counts(),
             "unverified_axes": res.unverified_axes(),
             "checked": len(res.checks),
+            "triage": [
+                {
+                    "evidence_id": x.evidence_id,
+                    "verdict": x.verdict,
+                    "why": x.why,
+                    "look_for": x.look_for,
+                    "axes": list(x.axes),
+                    "url": next((c.url for c in res.checks if c.evidence_id == x.evidence_id), ""),
+                }
+                for x in items
+            ],
+            "triage_fallback": why,
         }
     digest["evidence_audit"] = out
     bad = sum(v.get("counts", {}).get("partial", 0) for v in out.values() if "counts" in v)
     n = sum(v.get("checked", 0) for v in out.values() if "checked" in v)
+    first = sum(
+        1 for v in out.values() for x in (v.get("triage") or []) if x["verdict"] == "open_first"
+    )
+    fell_back = [k for k, v in out.items() if v.get("triage_fallback")]
+    note = f" · 기계 순서로 내려감 {fell_back}" if fell_back else ""
     report.add(
         StepResult(
             "audit",
             "ok",
-            f"{len(out)}테마 · 근거 {n}건 · 원문에서 못 찾은 숫자가 있는 것 {bad}건",
+            f"{len(out)}테마 · 근거 {n}건 · 못 찾은 숫자 {bad}건 · **먼저 열 것 {first}건**{note}",
             seconds=t.seconds,
         )
     )

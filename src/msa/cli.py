@@ -1171,8 +1171,27 @@ def ops_audit_evidence(
             f"{theme}: {asof_s} 이하의 논지가 없다 — `msa research {theme}` 를 먼저", err=True
         )
         raise typer.Exit(code=1)
-    res = audit_thesis(read_thesis_yaml(path), http_fetch, only_axis_refs=not all_evidence)
+    thesis = read_thesis_yaml(path)
+    res = audit_thesis(thesis, http_fetch, only_axis_refs=not all_evidence)
     typer.echo(render_audit(theme, res))
+
+    # **어느 것을 먼저 열지**까지 적는다 — 목록만 내면 사람이 매번 손으로 훑는다.
+    from msa.l3.evidence_audit import PARTIAL
+    from msa.l3.evidence_triage import render_triage, run_triage
+
+    items, why = run_triage(theme, res.checks, thesis.get("evidence") or [], res.axis_refs)
+    if items:
+        typer.echo("")
+        if why:
+            typer.echo(f"(분류가 기계 순서로 내려갔다 — {why})")
+        for line in render_triage(
+            items, total_partial=sum(1 for c in res.checks if c.status == PARTIAL)
+        ):
+            typer.echo(line)
+        by_id = {c.evidence_id: c for c in res.checks}
+        for x in items:
+            if x.first and (c := by_id.get(x.evidence_id)):
+                typer.echo(f"       {c.url}")
     if not no_write:
         out = write_snapshot(
             p.state / "audits" / asof_s,

@@ -123,11 +123,38 @@ def _audit_line(digest: dict[str, Any]) -> str:
     if not total:
         return ""
     axes = sorted({a for v in audit.values() for a in (v.get("unverified_axes") or [])})
+    # **먼저 열 것을 이름으로 짚는다.** 숫자만 적으면 "13건 이상" 이 겁만 주고 사람이
+    # 무엇을 할지 모른다 (2026-08-29). 분류는 `l3.evidence_triage` 가 한다.
+    # **테마별로 묶는다.** 증거 id 는 테마마다 따로라 `[1]` 이 두 테마에 다 있을 수 있다.
+    # 섞어서 나열하면 어느 문서를 열어야 하는지 알 수 없다 (2026-08-29).
+    by_theme: list[tuple[str, list[int]]] = []
+    for th, v in sorted(audit.items()):
+        ids = [
+            int(x["evidence_id"])
+            for x in (v.get("triage") or [])
+            if x.get("verdict") == "open_first"
+        ]
+        if ids:
+            by_theme.append((th, sorted(ids)))
+    first = [i for _, ids in by_theme for i in ids]
+    fell_back = any(v.get("triage_fallback") for v in audit.values())
     bit = (
         f" ⚠ **판정을 만든 근거 {total}건 중 {partial}건은 원문에서 못 찾은 숫자가 있고 "
-        f"{unread}건은 문서를 읽지 못했다** (`msa ops audit-evidence <theme>` 로 목록을 본다 — "
-        "반올림·근사 때문에 오탐도 섞인다)."
+        f"{unread}건은 문서를 읽지 못했다.**"
     )
+    if first:
+        src = " (기계 순서 — 분류 실패)" if fell_back else ""
+        parts = [f"`{th}` {' · '.join(f'[{i}]' for i in ids)}" for th, ids in by_theme]
+        cmds = " · ".join(f"`msa ops audit-evidence {th}`" for th, _ in by_theme)
+        bit += (
+            f" 그중 **먼저 열 것 {len(first)}건**{src} — {' / '.join(parts)}. "
+            f"URL 과 무엇을 찾을지는 {cmds} 가 적어 준다."
+        )
+    else:
+        bit += (
+            " 먼저 열 것으로 분류된 것은 없다 — 전부 반올림·곁가지다 "
+            "(`msa ops audit-evidence <theme>` 로 전문)."
+        )
     if axes:
         bit += f" 확인된 근거가 하나도 없는 축: {', '.join(axes)}."
     return bit
