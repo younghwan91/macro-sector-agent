@@ -273,15 +273,16 @@ uv run opt-factor status --store ~/data/us_micro.duckdb
 
 **현재 상태 확인**은 `msa data status` — `prices`·`fundamentals` 의 `end` 가 스토어의 마지막 날이다.
 
-### ② Sharadar 벌크 CSV — 손으로, 분기 1회
+### ② Sharadar 벌크 CSV — **Airflow DAG 가 매일 받는다** (2026-08-27 정정)
 
 `~/data/sharadar/*.csv.zip` (3.4GB). `msa` 는 이 중 `funds.csv.zip` 을 ETF 일별 가격으로 직접
-읽는다 (`store.etf_prices()`) — 스토어에 적재된 ETF 는 하나뿐이다.
+읽는다 (`store.etf_prices()`) — 스토어의 `prices` 에는 ETF 가 들어 있지 않다.
 
-> **API 키로는 받을 수 없다 — 브라우저 로그인 세션이 필요해서 손으로 받아야 한다**
-> (`~/data/sharadar/README.md`). **지우지 마라.** 재취득 비용이 용량보다 비싸다.
+> **이전 판은 "브라우저 로그인으로 손으로, 분기 1회" 라고 적었는데 사실이 아니었다.**
+> quant-airflow 의 일간 DAG 가 `funds.csv.zip`(287MB)을 매일 받는다. 사람이 할 일은 없다.
+> **지우지 마라** — DAG 가 다시 받지만 그동안 ETF 프록시 검증이 빈다.
 
-ETF 는 L1 검증용 프록시라 며칠 묵어도 테마 순위가 흔들리지 않는다. 분기 1회로 충분하다.
+그래서 `Store.close_series` 의 벌크 폴백은 임시방편이 아니라 **정식 경로**다 (§6 아래 인용).
 
 ### ③ FRED — 월 1회
 

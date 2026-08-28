@@ -39,44 +39,42 @@
 
 ## 오늘의 결론 · 2026-08-28
 
-> **차트 확인 대상 4종목 — 편입 가능 `shipping_container` · `managed_care` 의 명단 15 중**
+> **차트 확인 대상 3종목 — 편입 가능 `shipping_container` · `managed_care` 의 명단 15 중**
 >
-> **`ALHC` -43% · ⚠`CLOV` -21% · ⚠`MOH` -17% · `CMRE` -16%**. 그중 **레드플래그·감점이 붙은 것 2종목**. 나머지는 52주 고점 −15%(선언값) 이내라 지금 자리가 아니다. ⚠ **판정을 만든 근거 46건 중 13건은 원문에서 못 찾은 숫자가 있고 7건은 문서를 읽지 못했다** (`msa ops audit-evidence <theme>` 로 목록을 본다 — 반올림·근사 때문에 오탐도 섞인다). **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.
+> **`ALHC` -45% · ⚠`CLOV` -22% · ⚠`MOH` -18%**. 그중 **레드플래그·감점이 붙은 것 2종목**. 나머지는 52주 고점 −15%(선언값) 이내라 지금 자리가 아니다. ⚠ **판정을 만든 근거 46건 중 13건은 원문에서 못 찾은 숫자가 있고 7건은 문서를 읽지 못했다** (`msa ops audit-evidence <theme>` 로 목록을 본다 — 반올림·근사 때문에 오탐도 섞인다). **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.
 >
-> ⚠ **가격은 2026-08-26 기준(2일 낡음)이다.** 위아래의 52주 고점 대비도 그 날짜 값이라, 그 사이 회복했을 수 있다.
+> ⚠ **가격은 2026-08-27 기준(1일 낡음)이다.** 위아래의 52주 고점 대비도 그 날짜 값이라, 그 사이 회복했을 수 있다.
 
-<sub>`msa run daily` 가 자동으로 다시 쓴다. 스캔 기준일 **2026-08-26** · 가격 스토어 마지막 날 **2026-08-26** (2일 전). 성과 수치는 없다 — 측정값과 판정뿐이다 (`CLAUDE.md` §7).</sub>
+<sub>`msa run daily` 가 자동으로 다시 쓴다. 스캔 기준일 **2026-08-27** · 가격 스토어 마지막 날 **2026-08-27** (1일 전). 성과 수치는 없다 — 측정값과 판정뿐이다 (`CLAUDE.md` §7).</sub>
 
 | # | 테마 | 점수 | 판별 | 명단 | 플래그 |
 |---:|---|---:|---|---:|---|
-| 1 | `health_it` | 0.86 | 편입 불가 · 0.45 | 42 | SECULAR — 게이트 필요 |
+| 1 | `health_it` | 0.88 | 편입 불가 · 0.45 | 42 | SECULAR — 게이트 필요 |
 | 2 | `media_streaming` | 0.86 | 편입 불가 · 0.45 | 37 | SECULAR — 게이트 필요 |
-| 4 | `offshore_drilling` | 0.78 | 편입 불가 · 0.45 | 7 | SECULAR — 게이트 필요 |
-| 5 | `shipping_container` | 0.77 | **편입 가능** · 0.75 | 6 | — |
-| 6 | `pharma_generic` | 0.76 | **판별 안 함** | 53 | — |
-| 7 | `insurance_brokers` | 0.74 | **판별 안 함** | 19 | SECULAR — 게이트 필요 |
-| 8 | `home_improvement` | 0.71 | 편입 불가 · 0.6 | 6 | — |
-| 9 | `staffing_consulting` | 0.70 | **판별 안 함** | 44 | — |
+| 3 | `offshore_drilling` | 0.80 | 편입 불가 · 0.45 | 7 | SECULAR — 게이트 필요 |
+| 5 | `life_science_tools` | 0.78 | **판별 안 함** | 32 | — |
+| 6 | `shipping_container` | 0.77 | **편입 가능** · 0.75 | 6 | — |
+| 7 | `home_improvement` | 0.71 | 편입 불가 · 0.6 | 6 | — |
+| 8 | `it_services` | 0.69 | **판별 안 함** | 56 | SECULAR — 게이트 필요 |
+| 9 | `pharma_generic` | 0.69 | **판별 안 함** | 53 | — |
 
 **눌린 종목** (순서 = 테마·티커 순, 볼 만한 순서가 아니다)
 
 **52주 고점 대비**
 
 ```
-ALHC      -43%  ████████████████████████
-CLOV      -21%  ███████████▉
-MOH       -17%  █████████▎
-CMRE      -16%  ████████▉
+ALHC      -45%  ████████████████████████
+CLOV      -22%  ███████████▊
+MOH       -18%  █████████▊
 ```
 
 <sub>막대는 크기만 — 부호는 숫자가 든다. 순서는 테마·티커 순이지 우선순위가 아니다.</sub>
 
 | 종목 | 테마 | 52wH | 가격 | ADV20 | 비고 |
 |---|---|---:|---:|---:|---|
-| `ALHC` | `managed_care` | -43% | $13.90 | $82.9M | — |
-| ⚠ `CLOV` | `managed_care` | -21% | $4.25 | $18.8M | consecutive_operating_loss |
-| ⚠ `MOH` | `managed_care` | -17% | $202 | $108.3M | interest_coverage_lt1 |
-| `CMRE` | `shipping_container` | -16% | $14.84 | $4.8M | — |
+| `ALHC` | `managed_care` | -45% | $13.56 | $82.4M | — |
+| ⚠ `CLOV` | `managed_care` | -22% | $4.23 | $18.9M | consecutive_operating_loss |
+| ⚠ `MOH` | `managed_care` | -18% | $199 | $106.1M | interest_coverage_lt1 |
 
 <sub>상위 8개만 싣는다. 전문·제외 사유·판단 재료 열은 `state/daily/2026-08-28/digest.md`. **순위가 높다 = 오래 잊혀졌다** 이지 사라는 뜻이 아니다 — 판별(`msa research`)을 거치지 않은 테마는 후보가 아니다.</sub>
 
@@ -1120,6 +1118,7 @@ msa backtest l4-structures   # docs/15 사전 등록 — 선정 구조 B0~B3 대
 | [14-l4-backtest-preregistration](docs/14-l4-backtest-preregistration.md) | **L4 백테스트 사전 등록** — Q1~Q4 · 합격 기준 숫자 · 결과별 조치 · 시도 수. **적은 뒤에 돌린다** |
 | [15-l4-selection-structure-preregistration](docs/15-l4-selection-structure-preregistration.md) | **L4 선정 구조 사전 등록** — B0~B3 후보 · §4 판정(아무도 B3 를 못 이김) · §5 미리 고정한 조치 · §6 못 재는 것 여덟 |
 | [16-module-audit-2026-08-24](docs/16-module-audit-2026-08-24.md) | 계층별 모듈 감사 — 결함 목록(심각 2 · 높음 8 · 중간 37) · §7 수정 우선순위(**제안이지 결정이 아니다**). `vcp_base` 결함(#P2)이 여기 있다 |
+| [24-basis-registry](docs/24-basis-registry.md) | **왜 그 값인가** — 필터 상수 25개 전부의 근거를 코드에 두고 테스트가 강제한다. §1 막는 것 넷(**값만 바꾸고 근거 안 고침**이 핵심) · §3 인용 8건 원문 대조 · §4 못 찾은 것이 더 유용했던 사례(상수 셋이 조사 뒤 없어지거나 유도로 바뀌었다) · §5 남은 약한 고리 2개 · §7 **근거 ≠ 검증** |
 | [23-design-question-confidence-cap](docs/23-design-question-confidence-cap.md) | **설계 질문 8** — 확신도 상한 `0.35` 를 숫자로 쓸 것인가 유도로 쓸 것인가. §1 ICD 203 이 **confidence 와 likelihood 를 섞지 말라고 금지**한다(인용하면 우리 편이 아니다) · §2 진짜 근거는 `편입선 − 마진` · §5 **오늘 이 상한은 안 걸렸다** — 편입 불가를 만든 것은 `secular_risk` 였다 |
 | [22-design-question-case-haircut](docs/22-design-question-case-haircut.md) | **설계 질문 7** — 사례 손실을 왜 절반으로 깎는가. §1 관련 문헌 **셋이 전부 반대 방향**(참조군 예측은 올리고, K&T 는 내부관점을 수축시키고, 연준은 하한을 덧붙인다) · §3 후보 · §4 `docs/21` 과 **함께** 결정한다 |
 | [21-design-question-similar-regime](docs/21-design-question-similar-regime.md) | **설계 질문 6** — "유사 국면" 을 50% 낙폭으로 정의할 근거가 있는가. §1 오늘은 무해함을 실측 확인(`binding=None`) · §2 이 시스템은 국면을 낙폭이 아니라 밸류 백분위로 정의한다 · §3 후보 |

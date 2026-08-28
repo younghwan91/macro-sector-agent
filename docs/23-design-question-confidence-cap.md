@@ -88,6 +88,8 @@ CONF_CAP_ON_DEATH = PORTFOLIO_MIN_CONFIDENCE - DEATH_MARGIN
 
 ## 5. 결정 — 후보 B (2026-08-28)
 
+근거 레지스트리에 `Derived` 로 실린다 (`docs/24`).
+
 **유도로 바꿨다. 값은 바뀌지 않았다.**
 
 ```python
