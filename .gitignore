@@ -22,6 +22,7 @@ state/theses/
 # LLM 산출물 — 다시 돌리면 나온다 (state/theses/ 와 같은 취급)
 state/regime/
 state/stock_notes/
+state/balance/
 # state/evidence_resolutions/ 는 **일부러 뺐다** — 사람이 원문을 열어 만든 기록이라
 # 다시 돌려서 나오지 않는다. journal/ 과 같은 무게이므로 커밋한다.
 state/picks/
