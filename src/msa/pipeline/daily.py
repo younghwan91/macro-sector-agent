@@ -1079,6 +1079,27 @@ def _regime_block(digest: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _stock_notes_block(digest: dict[str, Any]) -> dict[str, float]:
+    """티커 → `J_ticker` 성분 (P3, 설계 §9.2).
+
+    **노트가 없는 종목은 키가 없다** — 그러면 `J = J_theme` 이 되어 오늘의 식이 그대로
+    특수해가 된다. 없음을 0 으로 채우면 분석가를 안 부른 종목이 "재무가 무너지는 종목" 과
+    같은 값을 받는다 (`CLAUDE.md` §2).
+    """
+    from msa.l4 import analyst as stock_analyst
+
+    tickers = [
+        str(p.get("ticker"))
+        for e in (digest.get("themes") or [])
+        for p in (e.get("picks") or [])
+    ]
+    try:
+        return stock_analyst.load_all(paths().stock_notes, tickers)
+    except Exception:  # 노트 디렉터리 사고가 다이제스트를 죽이지 않게
+        log.warning("종목 노트를 읽지 못했다 — J 는 테마 성분만으로 간다", exc_info=True)
+        return {}
+
+
 def build_triage_block(
     digest: dict[str, Any], *, resolutions_root: Path | None = None
 ) -> dict[str, Any]:
@@ -1436,6 +1457,9 @@ def run_daily(
     # (`docs/25` §4.3). 없으면 계수가 전부 1.0 이고, 그 사실을 리포트가 적는다.
     digest["regime"] = _regime_block(digest)
     digest["regime_tilts"] = digest["regime"]["tilts"]
+    # 종목 노트(P3) — **읽기만 한다. 여기서 분석가를 부르지 않는다.** 온디맨드 케이던스를
+    # 일간이 대신 돌리면 같은 종목의 판정이 매일 흔들려 사람이 무엇을 믿을지 모르게 된다.
+    digest["stock_notes"] = _stock_notes_block(digest)
     digest["triage"] = build_triage_block(
         digest, resolutions_root=paths().evidence_resolutions
     )

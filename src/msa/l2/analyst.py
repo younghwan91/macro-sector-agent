@@ -18,6 +18,7 @@ from collections.abc import Iterable, Mapping
 from typing import Any
 
 from msa.l2.regime import CYCLE_CLASSES, VERDICTS
+from msa.l3 import roles as _roles
 from msa.l3.providers import CompletionRequest, LLMProvider
 
 #: 각 칸이 무엇에 걸린 테마 묶음인지 — 프롬프트에 그대로 싣는다. 분석가가 `credit_rate` 를
@@ -163,3 +164,26 @@ def summarize(doc: Mapping[str, Any] | None) -> str:
             counts[v] += 1
     parts = " · ".join(f"{k} {counts[k]}" for k in VERDICTS)
     return f"매크로 레짐 {doc.get('week')} — {parts} (읽는 순서만 민다)"
+
+
+#: `--dry-run`(MockProvider) 용 결정론 응답. **합성이라는 것이 mechanism 에 적혀 있다.**
+MOCK_OUTPUT: dict[str, Any] = {
+    "classes": {
+        name: {
+            "verdict": "neutral",
+            "mechanism": "합성 응답(--dry-run) — 실제 판정이 아니다. 경로 검증용이다.",
+            "invalidations": ["합성 응답이므로 무효화 조건도 합성이다"],
+            "evidence": [
+                {
+                    "claim": "합성 증거 — 실제 출처가 아니다",
+                    "source_url": "https://example.invalid/mock",
+                    "date": "2026-01-01",
+                    "reliability": "low",
+                }
+            ],
+        }
+        for name in CYCLE_CLASSES
+    }
+}
+
+_roles.register_mock_output("macro_strategist", MOCK_OUTPUT)

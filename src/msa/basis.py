@@ -429,6 +429,19 @@ BASES: dict[str, Entry] = {
             verified="2026-08-27",
         ),
     ),
+    "NOTE_TRUST": Entry(
+        "msa.l4.analyst",
+        {"intact": 1.00, "strained": 0.60, "breaking": 0.20},
+        role=(
+            "종목 분석가 판정 → 트리아지 J 축의 종목 성분. 노트가 없으면 J = J_theme. "
+            "아무것도 자르지 않는다"
+        ),
+        basis=NoBasis(
+            "선언값이고 근거가 없다 (설계 §9.2). 'intact 는 그대로, breaking 은 크게 "
+            "내린다' 는 서술을 숫자로 옮긴 것이고 0.60·0.20 이어야 할 문헌은 없다.",
+            searched="2026-08-29",
+        ),
+    ),
     "REGIME_TILT": Entry(
         "msa.l2.regime",
         {"tailwind": 1.00, "neutral": 0.85, "headwind": 0.70},
@@ -540,6 +553,7 @@ def missing() -> tuple[str, ...]:
 FILTER_CONSTANTS: tuple[str, ...] = (
     # 트리아지 — 읽는 순서만 정한다 (자르지 않는다, 2026-08-29)
     "REGIME_TILT",
+    "NOTE_TRUST",
     "PULLBACK_MARK",
     "EVIDENCE_CAP",
     "EVIDENCE_CAP_REFUTED",

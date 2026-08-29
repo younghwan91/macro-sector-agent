@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from msa.l2 import regime as _regime
+from msa.l4 import analyst as _l4_analyst
 from msa.ops.readme_block import PULLBACK_MARK
 
 #: 축 가중치 — 선언값. 결과를 보고 옮기지 않는다 (`CLAUDE.md` §1 · 스펙 §4.2).
@@ -233,6 +234,18 @@ class TriageRow:
     note: str = ""
 
 
+def blend_ticker_trust(theme_trust_value: float, ticker_trust: float | None) -> float:
+    """J = 0.5·J_theme + 0.5·J_ticker (P3, 설계 §9.2).
+
+    **노트가 없으면 `J = J_theme` 이다** — 오늘의 식이 이 확장의 특수해가 된다. 없음을
+    0 이나 0.5 로 채우면 분석가를 안 부른 종목이 "재무가 무너지는 종목" 과 섞인다
+    (`CLAUDE.md` §2).
+    """
+    if ticker_trust is None:
+        return theme_trust_value
+    return 0.5 * theme_trust_value + 0.5 * ticker_trust
+
+
 def score_digest(
     digest: Mapping[str, Any],
     resolutions: Mapping[str, Sequence[Any]] | None = None,
@@ -251,6 +264,8 @@ def score_digest(
     # 매크로 레짐 계수 (P2). **구획 계산 전에 읽지 않는다** — 구획은 판별과 낙폭이 정하고
     # 매크로는 둘 다에 발언권이 없다 (`docs/25` §3.3).
     tilts: Mapping[str, float] = digest.get("regime_tilts") or {}
+    # 종목 노트 (P3). **키가 없는 종목은 노트가 없다는 뜻**이고, 그러면 J = J_theme 이다.
+    notes: Mapping[str, float] = digest.get("stock_notes") or {}
 
     staged: list[tuple[dict[str, Any], str, str, float | None, float, str]] = []
     for entry in digest.get("themes") or []:
@@ -269,7 +284,12 @@ def score_digest(
             note = f"`{theme}` 의 증거 실사 결과가 없다 — J 계산 불가"
         for pick in entry.get("picks") or []:
             part = partition(jrow, pick)
-            staged.append((dict(pick), theme, part, j_value, clarity(pick), note))
+            j_pick = (
+                None
+                if j_value is None
+                else blend_ticker_trust(j_value, notes.get(str(pick.get("ticker"))))
+            )
+            staged.append((dict(pick), theme, part, j_pick, clarity(pick), note))
 
     # 낙폭 백분위의 모집단은 **구획**이다 (스펙 §5.3). 테마 안에서 재면 낙폭이 얕은
     # 테마의 종목이 상위 백분위를 받는다 (2026-08-29 실측).
@@ -338,6 +358,10 @@ def declared_constants() -> dict[str, Any]:
             "from_52w_low",
             "vcp_base",
         ],
+        "note_trust": dict(_l4_analyst.NOTE_TRUST),
+        "note_trust_source": (
+            "msa.l4.analyst.NOTE_TRUST — 설계 §9.2. 노트가 없으면 J = J_theme (특수해)"
+        ),
         "regime_tilt": dict(_regime.REGIME_TILT),
         "regime_tilt_source": (
             "msa.l2.regime.REGIME_TILT — docs/25 §3.4 선언값. R 축에만 곱한다"

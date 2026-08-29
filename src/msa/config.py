@@ -77,6 +77,14 @@ class Paths:
         return self.state / "runs"
 
     @property
+    def stock_notes(self) -> Path:
+        """P3 종목 분석가 노트 (`state/stock_notes/<TICKER>.yaml`, `msa stock-notes`).
+
+        트리아지 J 축의 종목 성분으로만 쓰인다 — 노트가 없으면 `J = J_theme` 이다.
+        """
+        return self.state / "stock_notes"
+
+    @property
     def regime(self) -> Path:
         """주간 매크로 레짐 (`state/regime/<YYYY-Www>.yaml`, `msa regime`, `docs/25`).
 

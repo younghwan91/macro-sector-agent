@@ -912,10 +912,25 @@ def _extract(text: str, pattern: str) -> str | None:
     return m.group(1) if m else None
 
 
+def register_mock_output(role: str, output: dict[str, Any]) -> None:
+    """L3 밖의 역할(P2 매크로 · P3 종목 분석가)이 자기 mock 응답을 등록하는 자리.
+
+    `MockProvider` 를 `--dry-run` 으로 돌릴 때 쓰인다. **L3 가 L2·L4 를 임포트하지 않게**
+    하려고 등록 방향을 뒤집었다 — 계층 간 결합은 파일 스키마로만 한다는 `docs/08` 의
+    정신과 같다.
+    """
+    if role in MOCK_OUTPUTS:
+        raise ValueError(f"이미 등록된 역할: {role}")
+    MOCK_OUTPUTS[role] = output
+
+
 def default_mock_output(request: CompletionRequest) -> dict[str, Any]:
     """`MOCK_OUTPUTS[role]` 의 사본에 테마 이름·기준일을 채운다 — 프롬프트에서 읽는다."""
     if request.role not in MOCK_OUTPUTS:
-        raise ValueError(f"알 수 없는 역할: {request.role}")
+        raise ValueError(
+            f"알 수 없는 역할: {request.role} — L3 밖의 역할이면 "
+            "`roles.register_mock_output` 으로 등록한다"
+        )
     text = request.as_text()
     asof = _extract(text, r"기준일 (\d{4}-\d{2}-\d{2})") or "2026-01-01"
     theme = _extract(text, r"# 테마: (.+?) \(`") or "테마"

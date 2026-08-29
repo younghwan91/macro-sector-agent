@@ -549,6 +549,104 @@ def backtest_l4_structures(
     _echo_saved(res.out_dir)
 
 
+@app.command("stock-notes")
+@cli_guard
+def stock_notes(
+    asof: str = typer.Option("", help="기준일 YYYY-MM-DD — 그 날 다이제스트를 읽는다. 기본 = 최신"),
+    top_n: int = typer.Option(
+        5, "--top-n", help="구획 I-A 의 triage 상위 몇 종목에 분석가를 붙일지"
+    ),
+    provider: str = typer.Option(
+        "claude_code", "--provider", help="claude_code | anthropic | mock | fixture"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="MockProvider 로 경로만 검증"),
+    no_write: bool = _no_write_option("state/stock_notes/"),
+    refresh: bool = typer.Option(
+        False, "--refresh", help="노트가 이미 있어도 다시 부른다 (기본은 새 종목만)"
+    ),
+    fixtures: str = typer.Option("", help="--provider fixture 의 루트"),
+    show: bool = typer.Option(False, "--show", help="호출하지 않고 가진 노트만 보여준다"),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """P3 종목 분석가 — "이 회사의 재무가 무너지고 있는가" (설계 §9.2).
+
+    **후보는 코드가 정한다** — 구획 I-A 의 triage 상위 N. LLM 은 명단을 만들지 않고 받는다
+    (CLAUDE.md §4). 질문은 하나뿐이고 '살 만한가' 를 묻지 않는다 — 스키마에 그 답을 담을 칸이
+    없다.
+
+    **온디맨드다.** 기본은 노트가 없는 종목만 부른다 (--refresh 로 강제). 매일 전부 부르면
+    같은 종목의 판정이 매일 흔들려 사람이 무엇을 믿을지 모르게 된다.
+
+    산출물 state/stock_notes/<TICKER>.yaml → 다음 `msa run daily` 의 J 축에 반영된다.
+    """
+    import json as _json
+
+    from msa.config import paths as _paths
+    from msa.l3.providers import make_provider as _make
+    from msa.l4 import analyst as _sa
+
+    p = _paths()
+    root = p.stock_notes
+    if show:
+        have = sorted(x.stem for x in root.glob("*.yaml")) if root.exists() else []
+        notes = [n for t in have if (n := _sa.read(root, t)) is not None]
+        typer.echo(_sa.summarize(notes))
+        for n in notes:
+            typer.echo(f"  {n['ticker']:8} {n.get('verdict'):10} {n.get('theme')}")
+        raise typer.Exit(0)
+
+    days = sorted(x.name for x in p.daily.iterdir()) if p.daily.exists() else []
+    if asof:
+        days = [d for d in days if d <= asof]
+    if not days:
+        typer.echo("다이제스트가 없다 — `msa run daily` 를 먼저 돌린다", err=True)
+        raise typer.Exit(2)
+    digest = _json.loads((p.daily / days[-1] / "digest.json").read_text(encoding="utf-8"))
+    rows = (digest.get("triage") or {}).get("rows") or []
+    if not rows:
+        typer.echo("트리아지 블록이 없다 — 다이제스트가 낡았다", err=True)
+        raise typer.Exit(2)
+
+    cands = _sa.candidates(rows, partition="I-A", top_n=top_n)
+    if not refresh:
+        cands = [c for c in cands if _sa.read(root, c.ticker) is None]
+    if not cands:
+        typer.echo("부를 종목이 없다 — 구획 I-A 상위가 전부 노트를 갖고 있다")
+        raise typer.Exit(0)
+
+    picks = {
+        str(x.get("ticker")): x
+        for e in (digest.get("themes") or [])
+        for x in (e.get("picks") or [])
+    }
+    kind = "mock" if dry_run else provider
+    fails = 0
+    saved = 0
+    for c in cands:
+        prov = _make(
+            kind, theme_id=c.ticker, fixture_root=Path(fixtures) if fixtures else None
+        )
+        try:
+            note = _sa.run(prov, c, picks.get(c.ticker, {}), digest.get("asof") or days[-1])
+            _sa.validate(note)
+        except Exception as e:  # 한 종목의 실패가 나머지를 죽이지 않게 — 그러나 센다
+            typer.echo(f"  {c.ticker:8} 실패 — {type(e).__name__}: {e}", err=True)
+            fails += 1
+            continue
+        typer.echo(f"  {c.ticker:8} {note['verdict']}")
+        if not no_write:
+            _sa.write(root, note)
+            saved += 1
+    if no_write:
+        typer.echo("no-write — state/stock_notes/ 에 쓰지 않았다")
+    if fails:
+        # **"나머지는 저장했다" 를 무조건 쓰지 않는다** — 전부 실패했는데 그렇게 적으면
+        # 거짓말이 된다 (`CLAUDE.md` §2 의 정신).
+        tail = f"저장 {saved}건" if saved else "저장된 것 없음"
+        typer.echo(f"실패 {fails}건 · {tail}", err=True)
+        raise typer.Exit(1)
+
+
 @app.command()
 @cli_guard
 def regime(
