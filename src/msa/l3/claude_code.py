@@ -45,6 +45,7 @@ CLI 에는 `output_config.format` 이 없다. 그래서 스키마를 **프롬프
 
 from __future__ import annotations
 
+import atexit
 import json
 import logging
 import os
@@ -216,7 +217,13 @@ class ClaudeCodeProvider:
         self.max_retries = max_retries
         self.use_api_key = use_api_key
         self._cwd = cwd
-        self._tmp: tempfile.TemporaryDirectory[str] | None = None
+        #: 우리가 소유하는 작업 디렉터리. **`TemporaryDirectory` 가 아니다** —
+        #: 파이널라이저가 exec 직전에 지우는 경쟁을 없애려고 `mkdtemp` 를 쓴다
+        #: (`_work_dir` 독스트링).
+        self._own_dir: Path | None = None
+        #: 옛 이름. 이 속성이 `None` 이 아니면 파이널라이저가 살아 있다는 뜻이라
+        #: 테스트가 그것을 막는다 (`test_work_dir_does_not_depend_on_a_finalizer`).
+        self._tmp: None = None
         self.record_dir = record_dir
         self.theme_id = theme_id
         self.notional_usd = 0.0
@@ -230,18 +237,29 @@ class ClaudeCodeProvider:
     def _work_dir(self) -> Path:
         """중립 작업 디렉터리. 저장소에서 돌리면 CLAUDE.md 가 자동으로 실려 역할을 오염시킨다.
 
-        **매번 존재를 확인한다.** `TemporaryDirectory` 의 수명에 기대면 안 된다 —
-        2026-08-29 실측: 판별이 277초 돌다 `FileNotFoundError: /tmp/msa-l3-qblaldbk` 로
-        죽었다. 라운드가 몇 분이라 그 사이 파이널라이저·시스템 청소·프로세스 복제 등
-        무엇이든 지울 수 있고, 그러면 **끝나가던 작업을 디렉터리 하나 때문에 버린다.**
-        없으면 다시 만든다 — 중립 디렉터리라 내용이 없어도 잃을 것이 없다.
+        ## 파이널라이저를 쓰지 않는다 — 2026-08-29 에 두 번 물렸다
+
+        처음에는 `TemporaryDirectory` 를 쓰고 **매번 존재를 확인**하는 것으로 고쳤다
+        (`FileNotFoundError: /tmp/msa-l3-qblaldbk`). **그것으로 안 닫힌다.** 판별 두 개를
+        병렬로 돌리자 같은 예외가 다시 났다 — `/tmp/msa-l3-kf85w8sl`.
+
+        존재 확인과 `subprocess` 의 exec 사이에 창이 남기 때문이다. 그 사이에
+        파이널라이저가 돌면 exec 이 `cwd` 를 못 찾고, **몇 분 돌던 판별을 디렉터리 하나
+        때문에 버린다.** 확인을 더 촘촘히 해도 창은 안 닫힌다.
+
+        그래서 **파이널라이저를 아예 안 쓴다.** `mkdtemp` 로 우리가 소유하는 디렉터리를
+        만들고, 아무도 자동으로 지우지 않는다. 정리는 `atexit` 이 최선 노력으로 하고
+        실패해도 무시한다 — 빈 디렉터리 하나가 `/tmp` 에 남는 것은 판별을 잃는 것보다
+        훨씬 싸다.
         """
         d = self._cwd
         if d is None:
-            if self._tmp is None:
-                self._tmp = tempfile.TemporaryDirectory(prefix="msa-l3-")
-            d = Path(self._tmp.name)
+            if self._own_dir is None:
+                self._own_dir = Path(tempfile.mkdtemp(prefix="msa-l3-"))
+                atexit.register(shutil.rmtree, self._own_dir, True)
+            d = self._own_dir
         if not d.is_dir():
+            # 그래도 사라졌으면 다시 만든다 — 중립 디렉터리라 내용이 없어도 잃을 것이 없다
             d.mkdir(parents=True, exist_ok=True)
         return d
 

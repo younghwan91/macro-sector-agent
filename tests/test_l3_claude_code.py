@@ -357,3 +357,51 @@ def test_work_dir_survives_being_deleted_mid_round() -> None:
 
     again = p._work_dir()
     assert again.is_dir(), "지워졌으면 다시 만든다"
+
+
+def test_work_dir_does_not_depend_on_a_finalizer() -> None:
+    """**파이널라이저에 기대면 검사와 exec 사이에 경쟁이 남는다.**
+
+    2026-08-29 실측: `_work_dir()` 이 존재를 확인하고 돌려준 뒤, subprocess 가 exec 하기
+    전에 `TemporaryDirectory` 파이널라이저가 그 디렉터리를 지웠다 —
+    `FileNotFoundError: PosixPath('/tmp/msa-l3-kf85w8sl')` 로 죽었다. 판별 두 개를
+    병렬로 돌릴 때 나왔다.
+
+    존재 확인을 더 촘촘히 해도 그 창은 안 닫힌다. 파이널라이저를 아예 안 쓰는 것이
+    유일한 수정이다.
+    """
+    from msa.l3.claude_code import ClaudeCodeProvider
+
+    p = ClaudeCodeProvider(theme_id="t")
+    d = p._work_dir()
+    assert d.is_dir()
+    assert p._tmp is None, "TemporaryDirectory 객체를 들고 있으면 파이널라이저가 산다"
+
+
+def test_work_dir_is_stable_across_calls() -> None:
+    from msa.l3.claude_code import ClaudeCodeProvider
+
+    p = ClaudeCodeProvider(theme_id="t")
+    assert p._work_dir() == p._work_dir()
+
+
+def test_work_dir_is_recreated_if_deleted() -> None:
+    """지워져도 다시 만든다 — 중립 디렉터리라 내용이 없어도 잃을 것이 없다."""
+    import shutil
+
+    from msa.l3.claude_code import ClaudeCodeProvider
+
+    p = ClaudeCodeProvider(theme_id="t")
+    d = p._work_dir()
+    shutil.rmtree(d)
+    assert not d.exists()
+    assert p._work_dir().is_dir()
+
+
+def test_two_providers_get_different_work_dirs() -> None:
+    """병렬 판별이 서로의 디렉터리를 건드리면 안 된다."""
+    from msa.l3.claude_code import ClaudeCodeProvider
+
+    a = ClaudeCodeProvider(theme_id="a")._work_dir()
+    b = ClaudeCodeProvider(theme_id="b")._work_dir()
+    assert a != b
