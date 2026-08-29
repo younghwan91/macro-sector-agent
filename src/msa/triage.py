@@ -19,8 +19,19 @@ L4 의 선정 규칙은 2026-08-24 에 은퇴했다 — `docs/15` 검정에서 B
 옮긴 것이다: 테마 판별(J) > 재무 판정(C) > 차트(R). R 이 가장 작은 이유는 2026-08-24 에
 **차트는 사람이 본다** 고 역할이 못박혔기 때문이다.
 
-**새 수치 상수는 하나도 만들지 않았다.** 낙폭 기준선은 `ops.readme_block.PULLBACK_MARK` 를
-import 해서 쓰고(복사하지 않는다), 낙폭 순서는 백분위라 눈금이 없다.
+**시장 데이터 위에 새 임계를 긋지 않았다.** 낙폭 기준선은 `ops.readme_block.PULLBACK_MARK`
+를 import 해서 쓰고(복사하지 않는다), 낙폭 순서는 백분위라 눈금이 없다.
+
+**그러나 점수를 만드는 선언 상수는 이 모듈이 새로 만들었다** — `EVIDENCE_CAP` ·
+`EVIDENCE_CAP_REFUTED` · `UNJUDGED_PENALTY` · `RED_FLAG_PENALTY` · `RED_FLAG_MAX` ·
+`PARTIAL_PENALTY` 여섯이다. 초안 독스트링은 "새 수치 상수는 하나도 만들지 않았다" 고
+적었는데 **그대로 읽으면 거짓**이었고, `docs/24` 가 존재하는 이유가 정확히 그 드리프트다.
+여섯 전부 `msa.basis` 레지스트리에 `NoBasis`(선언값)로 등록돼 있고, 값을 바꾸면 근거도
+같이 고치라고 CI 가 막는다 (`tests/test_basis.py`).
+
+`TRIAGE_WEIGHTS` · `R_WEIGHTS` 는 레지스트리에 넣지 않는다 — `AXIS_WEIGHTS` · `S_WEIGHTS`
+가 들어 있지 않은 것과 같은 이유다. 레지스트리는 스칼라 임계를 추적하고, 배분 벡터의
+근거는 스펙 §4.2 가 문장으로 진다.
 """
 
 from __future__ import annotations

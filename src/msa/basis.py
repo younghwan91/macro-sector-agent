@@ -114,6 +114,7 @@ def live_value(module: str, name: str) -> Any:
 
 _L4 = "msa.l4.axes"
 _L5O, _L5R = "msa.l5.optimize", "msa.l5.risk"
+_TRI, _RB = "msa.triage", "msa.ops.readme_block"
 
 BASES: dict[str, Entry] = {
     # ---------------------------------------------------------------- L1
@@ -428,6 +429,85 @@ BASES: dict[str, Entry] = {
             verified="2026-08-27",
         ),
     ),
+    # ---------------------------------------------------------------- 트리아지 (2026-08-29)
+    #
+    # **이 값들은 아무것도 자르지 않는다.** 읽는 순서를 정할 뿐이므로 `hard`·`gate` 태그를
+    # 붙이지 않는다 — 붙이면 `weakest_links()` 가 "근거 없이 자르는 값" 으로 잘못 센다.
+    "PULLBACK_MARK": Entry(
+        _RB,
+        -0.15,
+        role=(
+            "구획 경계 — 52주 고점 대비 이만큼 아래면 I-A(지금 볼 자리), 아니면 "
+            "I-B(고점권). 명단에서 빼지 않는다"
+        ),
+        basis=NoBasis(
+            "선언값이다. 도메인 문헌에서 온 값이 아니고 데이터에 맞춰 고르지도 않았다"
+            "(스윕 없음). 2026-08-29 에 쓰임이 하나 늘었다 — 결론 문장에만 쓰이던 것이 "
+            "트리아지의 구획 경계가 됐다. 값은 그대로 두고 쓰임만 늘렸다.",
+            searched="2026-08-26",
+        ),
+    ),
+    "EVIDENCE_CAP": Entry(
+        _TRI,
+        0.50,
+        role="J 상한 — 판정을 만든 축의 증거가 원문 대조를 통과 못 했을 때. 순서만 내린다",
+        basis=NoBasis(
+            "선언값이다. '절반만 믿는다' 는 서술을 숫자로 옮긴 것이고 문헌 근거는 없다. "
+            "고를 근거가 없어 중앙값을 쓴 POOL_MIN 과 같은 자리다.",
+            searched="2026-08-29",
+        ),
+    ),
+    "EVIDENCE_CAP_REFUTED": Entry(
+        _TRI,
+        0.25,
+        role="J 상한 — 증거 처리 대장에서 사람이 `refuted` 를 냈을 때. 순서만 내린다",
+        basis=NoBasis(
+            "선언값이다. EVIDENCE_CAP 의 절반으로 뒀다 — 기계가 '못 찾았다' 고 한 것보다 "
+            "사람이 '원문에 없다' 고 한 것이 무겁다는 서술을 옮긴 것이다. 그 무게 비가 "
+            "2:1 이어야 할 근거는 없다.",
+            searched="2026-08-29",
+        ),
+    ),
+    "UNJUDGED_PENALTY": Entry(
+        _TRI,
+        0.50,
+        role="C 감점 — 생존 판정 불가. 사람이 재무제표를 직접 열어야 한다는 표시",
+        basis=NoBasis(
+            "선언값이다. C 축 감점 중 가장 크게 둔 것은 '가장 비싼 노동' 이라는 서술의 "
+            "귀결이지 측정된 비용이 아니다.",
+            searched="2026-08-29",
+        ),
+    ),
+    "RED_FLAG_PENALTY": Entry(
+        _TRI,
+        0.15,
+        role="C 감점 — 레드플래그 1건당. 명단에서 빼지 않는다 (리포트의 ⚠ 와 같은 것)",
+        basis=NoBasis(
+            "선언값이다. 레드플래그 자체의 근거(STREAK_YEARS 등)는 따로 있으나, "
+            "그것이 읽는 순서를 얼마나 내려야 하는지는 어디에도 없다.",
+            searched="2026-08-29",
+        ),
+    ),
+    "RED_FLAG_MAX": Entry(
+        _TRI,
+        2,
+        role="C 감점의 상한 건수 — 3건째부터는 더 안 깎는다",
+        basis=NoBasis(
+            "선언값이다. '3건이 2건보다 두 배 나쁘다고 말할 근거가 없다' 는 것이 이 값의 "
+            "전부이고, 그렇다고 2 여야 할 근거도 없다. 상한을 두는 것 자체가 판단이다.",
+            searched="2026-08-29",
+        ),
+    ),
+    "PARTIAL_PENALTY": Entry(
+        _TRI,
+        0.10,
+        role="C 감점 — 점수가 부분 입력으로 계산됐다는 표시. 결측은 나쁨이 아니라 모름이다",
+        basis=NoBasis(
+            "선언값이다. 감점 중 가장 작게 둔 것은 '결측은 나쁨이 아니다' 는 서술의 "
+            "귀결이다. 0.10 이어야 할 근거는 없다.",
+            searched="2026-08-29",
+        ),
+    ),
 }
 
 
@@ -444,6 +524,14 @@ def missing() -> tuple[str, ...]:
 #: 데이터 위생 상수(예: `TTM_MAX_SPAN_DAYS`)는 여기 넣지 않는다 — 판정을 만들지 않는다.
 #: 이 목록에 이름을 올리는 것이 "이건 근거가 있어야 한다" 는 선언이다.
 FILTER_CONSTANTS: tuple[str, ...] = (
+    # 트리아지 — 읽는 순서만 정한다 (자르지 않는다, 2026-08-29)
+    "PULLBACK_MARK",
+    "EVIDENCE_CAP",
+    "EVIDENCE_CAP_REFUTED",
+    "UNJUDGED_PENALTY",
+    "RED_FLAG_PENALTY",
+    "RED_FLAG_MAX",
+    "PARTIAL_PENALTY",
     # L1 — 자격 관문
     "POOL_MIN",
     # L3 — 게이트·확신도
