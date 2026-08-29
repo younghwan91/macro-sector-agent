@@ -44,6 +44,10 @@ from msa.triage import PARTITION_IA
 #: 않는다" 이고, 그것은 이 체인이 찾는 것이 아니다.
 BALANCE_PASS = "tightening"
 
+#: "무엇이 바뀌면" 에 싣는 최대 항목 수. **표시 상한이지 판정이 아니다** — 전문은 수급
+#: 조사 보고서(`state/balance/<theme>.report.md`)에 있고, 투자 메모에는 읽을 만큼만 싣는다.
+WHAT_CHANGES_MAX = 4
+
 assert BALANCE_PASS in BALANCE_VERDICTS
 
 
@@ -316,3 +320,211 @@ def declared_constants() -> dict[str, Any]:
             "선언한 것을 import 한다"
         ),
     }
+
+# ---------------------------------------------------------------- 다음 행동
+
+
+@dataclass(frozen=True)
+class Action:
+    """실행 가능한 다음 한 걸음. **기다리는 것은 여기 들어오지 않는다.**"""
+
+    theme: str
+    command: str
+    why: str
+
+
+def _action_for(row: Row) -> Action | None:
+    """막힌 관문 → 실행할 명령. **못 할 일은 None** 이다.
+
+    할 일 목록에 못 할 일을 넣으면 목록 전체가 죽는다 — 사람이 두 번 보고 안 본다.
+    """
+    key = row.blocked_at
+    if key is None:
+        return None
+    why = row.gate(key).why
+    if key == "not_a_trap":
+        if "판별을 받은 적이 없다" in why:
+            return Action(row.theme, f"msa research {row.theme}", "판별을 안 받았다")
+        return None  # 편입 불가 판정은 답이지 할 일이 아니다
+    if key == "evidence":
+        if "반박" in why:
+            # 반박된 근거는 더 읽는다고 안 풀린다 — 논지 자체를 다시 세워야 한다
+            return Action(
+                row.theme,
+                f"msa research {row.theme}",
+                "근거가 반박됐다 — 더 읽어서 풀리지 않는다. 판별을 다시 받아야 한다",
+            )
+        if "실사를 안 돌렸다" in why:
+            return Action(row.theme, "msa run daily", "증거 실사를 안 돌렸다")
+        if "미처리 근거" in why:
+            return Action(
+                row.theme,
+                f"msa ops audit-evidence {row.theme}",
+                "미처리 근거가 남았다 — 원문을 열고 대장에 적는다",
+            )
+        return None
+    if key == "balance":
+        if "수급 조사가 없다" in why:
+            return Action(
+                row.theme, f"msa balance {row.theme}", "수급 조사가 없다 — 회전을 돌린다"
+            )
+        return None  # loosening·balanced 는 답이다
+    # forgotten · macro · entry 는 기다리는 것이지 실행할 명령이 없다
+    return None
+
+
+def next_actions(rows: Sequence[Row]) -> list[Action]:
+    """**할 수 있는 것만.** 더 멀리 간 테마의 할 일이 먼저 온다 (통과에 가장 가깝다)."""
+    out: list[Action] = []
+    seen: set[str] = set()
+    for r in rows:  # `evaluate` 가 이미 depth 내림차순으로 준다
+        a = _action_for(r)
+        if a is not None and a.command not in seen:
+            seen.add(a.command)
+            out.append(a)
+    return out
+
+
+def what_would_change(rows: Sequence[Row]) -> dict[str, list[str]]:
+    """테마 → **무엇이 바뀌면 이 판정이 뒤집히나.**
+
+    수급 조사가 이미 `invalidations`(판정이 틀렸다는 관측)와 `what_would_close_it`(격차가
+    메워지는 경로)를 들고 있다. 다시 묻지 않고 그대로 싣는다 — 좋은 투자 메모의 핵심이
+    "무엇이 바뀌면 마음이 바뀌나" 이고, 그 답을 이미 갖고 있으면서 안 싣는 것이 낭비다.
+    """
+    out: dict[str, list[str]] = {}
+    try:
+        from msa.config import paths
+        from msa.l35 import balance as balance_mod
+    except Exception:
+        return {}
+    root = paths().balance
+    for r in rows:
+        try:
+            doc = balance_mod.read(root, r.theme)
+        except Exception:
+            continue
+        if not doc:
+            continue
+        bal = doc.get("balance") or {}
+        # `invalidations` 가 먼저다 — "이 판정이 틀렸다는 관측" 이 곧 재진입 트리거이고,
+        # `what_would_close_it`("격차가 메워지는 경로")보다 투자자에게 직접적이다.
+        items = [str(x) for x in (bal.get("invalidations") or [])]
+        items += [str(x) for x in (bal.get("what_would_close_it") or [])]
+        # 두 목록은 자주 겹친다 (2026-08-29 실측: 수에즈 항로가 양쪽에 있었다).
+        # 앞 40자가 같으면 같은 말로 본다 — 문장 전체 비교로는 안 잡힌다.
+        seen: set[str] = set()
+        uniq: list[str] = []
+        for x in items:
+            key = x[:40]
+            if key in seen:
+                continue
+            seen.add(key)
+            uniq.append(x)
+        if uniq:
+            out[r.theme] = uniq[:WHAT_CHANGES_MAX]
+    return out
+
+
+# ---------------------------------------------------------------- 투자 판단
+
+
+def _blocking_reasons(row: Row) -> list[str]:
+    """이 테마가 막힌 **모든** 사유. 첫 번째만 적으면 나머지가 안 보인다."""
+    return [f"{_BY_KEY[r.key].title.split(' ', 1)[1]} — {r.why}" for r in row.gates if not r.passed]
+
+
+def _passing_reasons(row: Row) -> list[str]:
+    return [f"{_BY_KEY[r.key].title.split(' ', 1)[1]} — {r.why}" for r in row.gates if r.passed]
+
+
+def verdict_md(rows: Sequence[Row], *, limit: int = 3) -> list[str]:
+    """**투자 판단** — 리포트의 첫 절. 관문이 결론이고 나머지는 그 근거다.
+
+    투자자가 읽는 문서다. 그러나 이 저장소가 쓸 수 있는 것은 **측정값과 명시된 가정**뿐이고
+    기대수익·승률은 쓰지 않는다 (`CLAUDE.md` §7·§8). 좋은 투자 메모가 원래 그렇다 —
+    무엇을 아는지, 무엇을 모르는지, **무엇이 바뀌면 마음이 바뀌는지**를 적는다.
+    """
+    if not rows:
+        return []
+    ok = cleared(rows)
+    out = ["", "## 투자 판단", ""]
+
+    if ok:
+        names = " · ".join(f"`{r.theme}`" for r in ok)
+        out += [
+            f"> **오늘의 섹터: {names}**",
+            ">",
+            "> 여섯 관문을 전부 통과했다 — 오래 잊혀졌고, 가치 함정이 아니고, 그 판별의 근거가 "
+            "원문 대조를 통과했고, 실물 수요가 공급을 앞지르고, 거시 역풍이 아니고, "
+            "지금 눌려 있다.",
+            "",
+        ]
+        for r in ok:
+            out += [f"**`{r.theme}` — 통과 근거**", ""]
+            out += [f"- {x}" for x in _passing_reasons(r)]
+            out.append("")
+    else:
+        best = rows[0]
+        out += [
+            "> **신규 편입 없음.** 여섯 관문을 모두 통과한 섹터가 오늘은 없다.",
+            ">",
+            f"> 가장 가까웠던 것은 **`{best.theme}`** ({best.depth}/{len(GATES)} 관문). "
+            "아래가 그 테마가 통과한 것과 막힌 것이다.",
+            "",
+        ]
+        # **판별을 통과한 테마만 길게 편다.** ② 에서 막힌 것은 아직 후보가 아니고,
+        # 그 아래 관문의 ❌ 를 나열하면 할 일처럼 보여 소음이 된다.
+        detailed = [r for r in rows if r.depth >= 2][:limit]
+        for r in detailed:
+            out += [f"**`{r.theme}`** — {r.depth}/{len(GATES)} 관문", ""]
+            # **답이 '안 산다' 이므로 왜 안 사는지가 먼저다.** 통과 항목을 앞에 놓으면
+            # 투자자가 세 줄을 읽고 "좋아 보인다" 고 오해한다 (2026-08-29 검토).
+            for x in _blocking_reasons(r):
+                out.append(f"- ❌ {x}")
+            for x in _passing_reasons(r):
+                out.append(f"- ✅ {x}")
+            out.append("")
+        rest = [r for r in rows if r not in detailed]
+        if rest:
+            names = " · ".join(f"`{r.theme}`" for r in rest)
+            out += [
+                f"나머지 {len(rest)}개는 판별 이전에서 막혔다 — {names}. "
+                "가치 함정 혐의를 못 벗었거나 아직 판별을 안 받았다.",
+                "",
+            ]
+
+    changes = what_would_change(rows)
+    named = [r.theme for r in (ok or rows[:limit]) if r.theme in changes]
+    if named:
+        out += [
+            "**재진입 트리거 — 무엇이 바뀌면 이 판단이 뒤집히나**",
+            "",
+            "<sub>수급 조사의 무효화 조건에서 그대로 가져왔다 "
+            "(`state/balance/<theme>.report.md` 에 전문). 이 목록은 예측이 아니라 "
+            "**관측 대상**이다.</sub>",
+            "",
+        ]
+        for t in named:
+            out.append(f"- `{t}`")
+            out += [f"  - {x}" for x in changes[t]]
+        out.append("")
+
+    acts = next_actions(rows)
+    out += ["**오늘 할 일**", ""]
+    if acts:
+        out += [f"- `{a.command}` — {a.why}" for a in acts]
+    else:
+        out.append(
+            "- **할 일이 없다.** 막힌 관문은 전부 시간이 푸는 것들이다 (판정이 답으로 나왔거나, "
+            "가격이 내려오기를 기다린다). 무리해서 관문을 느슨하게 하지 않는다."
+        )
+    out += [
+        "",
+        "<sub>**이 판단은 기대수익을 말하지 않는다.** 이 저장소는 전략 수익률을 낼 근거가 "
+        "없다 (`CLAUDE.md` §7). 여기 있는 것은 측정값과 명시된 가정이며, 집행은 사람이 한다 "
+        "(§8). 관문은 가중 합산이 아니라 순서 있는 체인이고, 각 칸은 그 계층이 이미 내린 "
+        "판정을 그대로 옮긴 것이다.</sub>",
+        "",
+    ]
+    return out

@@ -384,3 +384,267 @@ def test_readme_line_names_the_cleared_sector(tmp_path, monkeypatch) -> None:
     digest["sector"] = D._sector_block(digest)
     line = RB._sector_line(digest)
     assert "`t1`" in line and "전부 통과" in line
+
+
+# ---------------------------------------------------------------- 다음 행동
+
+
+def test_next_actions_are_only_the_actionable_blocks() -> None:
+    """**기다릴 것과 할 것을 구분한다.** 못 할 일을 할 일 목록에 넣으면 목록이 죽는다."""
+    rows = sector.evaluate(_digest())  # balance 조사 없음 → ④ 에서 막힘
+    acts = sector.next_actions(rows)
+    assert len(acts) == 1
+    assert acts[0].command == "msa balance t1"
+    assert "수급 조사" in acts[0].why
+
+
+def test_loosening_balance_is_not_actionable() -> None:
+    """수급이 벌어지지 않는다는 판정은 **답이지 할 일이 아니다.**"""
+    d = _digest(
+        balance={"surveyed": ["t1"], "missing": [], "lines": [], "verdicts": {"t1": "loosening"}}
+    )
+    assert sector.next_actions(sector.evaluate(d)) == []
+
+
+def test_entry_block_is_not_actionable() -> None:
+    """고점권이라 못 사는 것은 **기다리는 것**이지 실행할 명령이 없다."""
+    d = _digest(
+        balance={"surveyed": ["t1"], "missing": [], "lines": [], "verdicts": {"t1": "tightening"}},
+        triage={
+            "rows": [{"ticker": "B", "theme": "t1", "partition": "I-B", "triage": 0.9, "j": 0.9}]
+        },
+    )
+    acts = sector.next_actions(sector.evaluate(d))
+    assert acts == []
+
+
+def test_unresolved_evidence_is_actionable() -> None:
+    d = _digest(
+        evidence_audit={
+            "t1": {
+                "counts": {"verified": 10, "partial": 5},
+                "checked": 20,
+                "unverified_axes": [],
+            }
+        }
+    )
+    acts = sector.next_actions(sector.evaluate(d))
+    assert acts[0].command == "msa ops audit-evidence t1"
+
+
+def test_refuted_evidence_needs_rejudgement_not_more_reading() -> None:
+    """반박된 근거는 더 읽는다고 안 풀린다 — 판별을 다시 받아야 한다."""
+    import msa.sector as S
+
+    rows = [
+        S.Row(
+            "t1",
+            (
+                S.Result("forgotten", True, ""),
+                S.Result("not_a_trap", True, ""),
+                S.Result("evidence", False, "사람이 원문 대조에서 **반박**한 근거 3건"),
+                S.Result("balance", True, ""),
+                S.Result("macro", True, ""),
+                S.Result("entry", True, ""),
+            ),
+        )
+    ]
+    acts = sector.next_actions(rows)
+    assert acts[0].command == "msa research t1"
+    assert "반박" in acts[0].why
+
+
+def test_actions_are_deduplicated_and_ordered_by_progress() -> None:
+    """더 멀리 간 테마의 할 일이 먼저 — 그게 통과에 가장 가깝다."""
+    d = _digest(
+        themes=[_theme(theme="far"), _theme(theme="near", pool=0.1)],
+        judged=[
+            {"theme": "far", "portfolio_eligible": True, "trusted": True, "gate": "passed"},
+            {"theme": "near", "portfolio_eligible": True, "trusted": True, "gate": "passed"},
+        ],
+        evidence_audit={
+            "far": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []},
+            "near": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []},
+        },
+        triage={
+            "rows": [
+                {"ticker": "A", "theme": "far", "partition": "I-A", "triage": 0.8, "j": 0.9},
+                {"ticker": "B", "theme": "near", "partition": "I-A", "triage": 0.9, "j": 0.9},
+            ]
+        },
+    )
+    acts = sector.next_actions(sector.evaluate(d))
+    assert acts[0].command == "msa balance far"
+
+
+def test_no_actions_when_everything_cleared(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    d = _digest(
+        balance={"surveyed": ["t1"], "missing": [], "lines": [], "verdicts": {"t1": "tightening"}}
+    )
+    assert sector.next_actions(sector.evaluate(d)) == []
+
+
+# ---------------------------------------------------------------- 종합 결론
+
+
+def test_verdict_leads_with_the_chain_not_the_stock_list() -> None:
+    """**관문이 결론이고 트리아지는 그다음이다.** 둘을 뒤섞으면 모순처럼 읽힌다."""
+    lines = sector.verdict_md(sector.evaluate(_digest()))
+    text = "\n".join(lines)
+    assert text.startswith("\n## 투자 판단") or "## 투자 판단" in text.split("\n")[1]
+    assert "신규 편입 없음" in text
+    # 관문이 결론이고 종목 목록은 이 절에 아예 없다 — 뒤 절이 진다
+    assert "ALHC" not in text and "차트 확인" not in text
+
+
+def test_verdict_names_the_sector_when_one_clears(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    d = _digest(
+        balance={"surveyed": ["t1"], "missing": [], "lines": [], "verdicts": {"t1": "tightening"}}
+    )
+    text = "\n".join(sector.verdict_md(sector.evaluate(d)))
+    assert "오늘의 섹터: `t1`" in text
+    assert "신규 편입 없음" not in text, "통과가 있으면 없다고 말하지 않는다"
+
+
+def test_verdict_carries_next_actions() -> None:
+    text = "\n".join(sector.verdict_md(sector.evaluate(_digest())))
+    assert "오늘 할 일" in text
+    assert "msa balance t1" in text
+
+
+def test_verdict_says_nothing_to_do_when_waiting() -> None:
+    """할 일이 없으면 **없다고 적는다** — 빈 목록을 남기지 않는다."""
+    d = _digest(
+        balance={"surveyed": ["t1"], "missing": [], "lines": [], "verdicts": {"t1": "loosening"}}
+    )
+    text = "\n".join(sector.verdict_md(sector.evaluate(d)))
+    assert "할 일이 없다" in text or "기다린다" in text
+
+
+# ---------------------------------------------------------------- 무엇이 바뀌면
+
+
+def _bal_doc(theme: str, verdict: str) -> dict[str, object]:
+    return {
+        "theme": theme,
+        "asof": "2026-08-29",
+        "unit": "TEU",
+        "horizon_years": 5,
+        "demand": {
+            "verdict": "expanding",
+            "drivers": [{"name": "d", "direction": "up", "magnitude": "m", "evidence_ids": [1]}],
+            "cagr_pct": 2.3,
+        },
+        "supply": {
+            "verdict": "expanding",
+            "rigidity": [],
+            "new_capacity_3y": "확정 800만 TEU",
+            "cagr_pct": 5.5,
+        },
+        "balance": {
+            "verdict": verdict,
+            "ratio_note": "공급이 3.2%p 앞선다",
+            "what_would_close_it": ["조선소 슬롯 지연으로 확정 인도량이 축소되면"],
+            "who_captures_it": "선주",
+            "invalidations": ["수요 성장률이 4%대로 붙으면 이 판정은 무효다"],
+        },
+        "evidence": [
+            {"id": 1, "claim": "c", "source_url": "https://x.example/a", "date": "2026-01-01"}
+        ],
+    }
+
+
+def test_what_would_change_it_comes_from_the_balance_survey(tmp_path, monkeypatch) -> None:
+    """좋은 투자 메모의 핵심은 **무엇이 바뀌면 마음이 바뀌나**다.
+
+    수급 조사가 이미 `invalidations` 와 `what_would_close_it` 을 들고 있다 — 다시 묻지 않고
+    그것을 그대로 싣는다.
+    """
+    from msa.l35 import balance as bal
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    bal.write(tmp_path / "balance", _bal_doc("t1", "loosening"))
+    d = _digest(
+        balance={"surveyed": ["t1"], "missing": [], "lines": [], "verdicts": {"t1": "loosening"}}
+    )
+    got = sector.what_would_change(sector.evaluate(d))
+    assert "t1" in got
+    joined = " ".join(got["t1"])
+    assert "수요 성장률이 4%대로" in joined
+    assert "조선소 슬롯 지연" in joined
+
+
+def test_what_would_change_is_empty_without_a_survey(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    assert sector.what_would_change(sector.evaluate(_digest())) == {}
+
+
+def test_verdict_carries_what_would_change(tmp_path, monkeypatch) -> None:
+    from msa.l35 import balance as bal
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    bal.write(tmp_path / "balance", _bal_doc("t1", "loosening"))
+    d = _digest(
+        balance={"surveyed": ["t1"], "missing": [], "lines": [], "verdicts": {"t1": "loosening"}}
+    )
+    text = "\n".join(sector.verdict_md(sector.evaluate(d)))
+    assert "재진입 트리거" in text
+    assert "수요 성장률이 4%대로" in text
+
+
+def test_verdict_skips_themes_blocked_at_the_first_two_gates() -> None:
+    """**1/6 짜리를 길게 보여주는 것은 소음이다.** 투자자는 근접한 것만 본다."""
+    d = _digest(
+        themes=[_theme(theme="close"), _theme(theme="far_off")],
+        judged=[
+            {"theme": "close", "portfolio_eligible": True, "trusted": True, "gate": "passed"},
+            {"theme": "far_off", "portfolio_eligible": False, "trusted": True, "gate": "passed"},
+        ],
+        evidence_audit={
+            "close": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []},
+        },
+        triage={
+            "rows": [
+                {"ticker": "A", "theme": "close", "partition": "I-A", "triage": 0.8, "j": 0.9}
+            ]
+        },
+    )
+    text = "\n".join(sector.verdict_md(sector.evaluate(d)))
+    assert "`close`" in text
+    assert "**`far_off`** —" not in text, "②에서 막힌 테마를 길게 펴지 않는다"
+    assert "far_off" in text, "다만 한 줄로는 언급한다 — 조용히 사라지면 안 된다"
+
+
+def test_what_would_change_dedupes_and_caps(tmp_path, monkeypatch) -> None:
+    """두 목록은 자주 겹친다 — 2026-08-29 실측에서 수에즈 항로가 양쪽에 있었다."""
+    from msa.l35 import balance as bal
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    doc = _bal_doc("t1", "loosening")
+    doc["balance"]["invalidations"] = [  # type: ignore[index]
+        "수에즈 항로가 정상화되지 않으면 이 판정은 왜곡이다",
+        "다른 조건 A",
+        "다른 조건 B",
+        "다른 조건 C",
+        "다른 조건 D",
+    ]
+    doc["balance"]["what_would_close_it"] = [  # type: ignore[index]
+        "수에즈 항로가 정상화되지 않으면 톤마일이 흡수한다",
+    ]
+    bal.write(tmp_path / "balance", doc)
+    d = _digest(
+        balance={"surveyed": ["t1"], "missing": [], "lines": [], "verdicts": {"t1": "loosening"}}
+    )
+    got = sector.what_would_change(sector.evaluate(d))["t1"]
+    assert len(got) <= sector.WHAT_CHANGES_MAX
+    assert sum(1 for x in got if x.startswith("수에즈")) == 1, "겹친 항목이 두 번 실렸다"
+
+
+def test_blocked_reasons_come_before_passing_ones() -> None:
+    """답이 '안 산다' 이므로 **왜 안 사는지가 먼저**다."""
+    text = "\n".join(sector.verdict_md(sector.evaluate(_digest())))
+    # 헤더에도 `t1` 이 나오므로 **마지막** 조각(관문 목록)을 본다
+    body = text.split("**`t1`** — ")[-1]
+    assert body.index("❌") < body.index("✅"), "왜 안 사는지가 먼저 와야 한다"

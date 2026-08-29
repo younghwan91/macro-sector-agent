@@ -527,6 +527,26 @@ def sector_section_md(digest: dict[str, Any]) -> list[str]:
     return sector_mod.render_md(restored)
 
 
+def sector_verdict_md(digest: dict[str, Any]) -> list[str]:
+    """**투자 판단** 절 — 리포트의 첫 절. 관문이 결론이고 나머지가 그 근거다."""
+    from msa import sector as sector_mod
+
+    rows = (digest.get("sector") or {}).get("rows") or []
+    if not rows:
+        return []
+    restored = [
+        sector_mod.Row(
+            str(r["theme"]),
+            tuple(
+                sector_mod.Result(str(g["key"]), bool(g["passed"]), str(g["why"]))
+                for g in r["gates"]
+            ),
+        )
+        for r in rows
+    ]
+    return sector_mod.verdict_md(restored)
+
+
 def balance_section_md(digest: dict[str, Any]) -> list[str]:
     """수급 조사 절. **점수가 아니라 논지의 목록**이고, 없는 것을 없다고 적는다."""
     block = digest.get("balance") or {}
@@ -615,7 +635,9 @@ def render_digest_md(digest: dict[str, Any]) -> str:
             if diff.get("baseline_broken")
             else (diff.get("prev_asof") or "없음 (첫 실행 — 전부 신규)")
         ),
-        "",
+        # **투자 판단이 맨 앞이다.** 관문 체인이 결론이고 아래 표들은 그 근거다 —
+        # 근거를 먼저 놓으면 투자자가 결론을 스스로 조립해야 한다.
+        *sector_verdict_md(digest),
         f"## 상위 K={digest['params']['top_k']} 테마",
         "",
         "| 순위 | 테마 | 점수 | pool | **편입** | 플래그 | 변화 |",
