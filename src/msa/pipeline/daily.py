@@ -506,6 +506,27 @@ _PARTITION_HEADINGS = {
 }
 
 
+def sector_section_md(digest: dict[str, Any]) -> list[str]:
+    """관문 체인 절. **리포트에서 가장 위에 온다** — 이것이 오늘의 결론이다."""
+    from msa import sector as sector_mod
+
+    block = digest.get("sector") or {}
+    rows = block.get("rows") or []
+    if not rows:
+        return []
+    restored = [
+        sector_mod.Row(
+            str(r["theme"]),
+            tuple(
+                sector_mod.Result(str(g["key"]), bool(g["passed"]), str(g["why"]))
+                for g in r["gates"]
+            ),
+        )
+        for r in rows
+    ]
+    return sector_mod.render_md(restored)
+
+
 def balance_section_md(digest: dict[str, Any]) -> list[str]:
     """수급 조사 절. **점수가 아니라 논지의 목록**이고, 없는 것을 없다고 적는다."""
     block = digest.get("balance") or {}
@@ -688,6 +709,7 @@ def render_digest_md(digest: dict[str, Any]) -> str:
             L += ["", f"하드필터 통과 {n_ok} 종목 전부 · 테마 내 동일가중:", ""]
         L += roster_table_md(t["picks"], new_top)
         L += excluded_lines_md(t.get("excluded") or [], t["theme"])
+    L += sector_section_md(digest)
     L += triage_section_md(digest)
     L += balance_section_md(digest)
     L += ["", "## 오늘 새로 올라온 것", ""]
@@ -1138,6 +1160,31 @@ def _stock_notes_block(digest: dict[str, Any]) -> dict[str, float]:
     return got
 
 
+def _sector_block(digest: dict[str, Any]) -> dict[str, Any]:
+    """관문 체인 (`msa.sector`) — **모든 계층을 하나로 꿴다.**
+
+    새 계산은 없다. 여섯 계층이 이미 낸 판정을 읽어 "어디서 막혔나" 만 정한다.
+    """
+    from msa import sector as sector_mod
+
+    rows = sector_mod.evaluate(digest)
+    return {
+        "declared": sector_mod.declared_constants(),
+        "headline": sector_mod.headline(rows),
+        "cleared": [r.theme for r in sector_mod.cleared(rows)],
+        "rows": [
+            {
+                "theme": r.theme,
+                "cleared": r.cleared,
+                "blocked_at": r.blocked_at,
+                "depth": r.depth,
+                "gates": [{"key": g.key, "passed": g.passed, "why": g.why} for g in r.gates],
+            }
+            for r in rows
+        ],
+    }
+
+
 def _balance_block(digest: dict[str, Any]) -> dict[str, Any]:
     """편입 가능 테마의 수급 조사 요약 (L3.5, `docs/26` §3.5).
 
@@ -1181,7 +1228,14 @@ def _balance_block(digest: dict[str, Any]) -> dict[str, Any]:
 
     # 편입 가능인데 조사가 없는 것 — 이 목록이 다음에 `msa balance` 를 돌릴 대상이다
     missing = sorted(eligible - set(surveyed))
-    return {"surveyed": surveyed, "missing": missing, "lines": lines}
+    # 관문 체인(`msa.sector`)이 읽는 판정 지도. 요약 문장에서 다시 파싱하지 않게 따로 싣는다.
+    verdicts: dict[str, str] = {}
+    for theme in surveyed:
+        doc = balance_mod.read(root, theme)
+        v = ((doc or {}).get("balance") or {}).get("verdict")
+        if v:
+            verdicts[theme] = str(v)
+    return {"surveyed": surveyed, "missing": missing, "lines": lines, "verdicts": verdicts}
 
 
 def _risk_block(digest: dict[str, Any]) -> dict[str, Any]:
@@ -1581,6 +1635,8 @@ def run_daily(
     digest["risk"] = _risk_block(digest)
     # 수급 조사(L3.5) — **읽기만 한다.** 트리아지에 전달하지 않는다 (`docs/26` §3.5).
     digest["balance"] = _balance_block(digest)
+    # 관문 체인 — **맨 마지막이다.** 앞의 모든 블록을 읽어야 하므로 순서가 규칙이다.
+    digest["sector"] = _sector_block(digest)
     picks_by_ticker = {
         str(pk.get("ticker")): pk
         for e in (digest.get("themes") or [])
