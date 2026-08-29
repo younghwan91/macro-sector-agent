@@ -994,7 +994,7 @@ msa run quarterly            # 분기: ops calibration · ops rejections-update 
 
 | | 단계 (코드 정본) | L3(LLM) | 그래서 |
 |---|---|---|---|
-| `msa run daily` | `scan · select · picks · diff · check · digest · research · audit · readme` (`daily.py` `DAILY_STEPS`) | **없다 — 한 번도 안 돈다** | 다이제스트의 테마 대부분이 **논지 없음**이고 가치함정 게이트를 통과한 적이 없다 (§2.2) |
+| `msa run daily` | `scan · select · picks · diff · check · digest · research · audit · triage · readme` (`daily.py` `DAILY_STEPS`) | **없다 — 한 번도 안 돈다** | 다이제스트의 테마 대부분이 **논지 없음**이고 가치함정 게이트를 통과한 적이 없다 (§2.2) |
 | `msa run monthly` | `scan · select ·` **`research`** `· ingest · picks · assemble · portfolio · report` (`run.py` `MONTHLY_STEPS`) | **있다** — 다만 기본값 `--provider none` 은 호출하지 않고 사람 논지·직전 thesis 를 **찾기만** 한다 | 판정은 월간에서만 생기고, 그것도 **상위 K=8 테마에만** 생긴다 |
 
 **결정 케이던스는 월간 그대로다.** 일간은 읽기 전용 후보 뷰이고, 거기서 고르는 것은 사람이다.

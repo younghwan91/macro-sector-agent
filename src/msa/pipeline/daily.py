@@ -50,13 +50,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
 
+from msa import triage as triage_mod
 from msa.config import REPO_ROOT, paths, rel
 from msa.io import write_snapshot
 from msa.l1.scan import asof_note, run_scan, scan_dirs
@@ -102,6 +103,9 @@ DAILY_STEPS: tuple[str, ...] = (
     # 정해지기 때문이다. 새로 편입 가능이 나오면 판정을 갱신하고 다이제스트를 다시 쓴다.
     "research",
     "audit",
+    # 트리아지는 **실사 뒤**다 — J 축이 `evidence_audit` 을 읽으므로, 앞에 두면 오늘
+    # 실사한 결과가 오늘 점수에 안 들어간다 (스펙 §5.1.3).
+    "triage",
     "readme",
 )
 
@@ -983,6 +987,56 @@ def _audit_eligible(
     )
 
 
+#: `triage.csv` 의 앞 열 — 점수와 그 성분. 뒤에는 참고 열이 붙는다.
+TRIAGE_LEAD_COLUMNS = (
+    "partition", "triage", "ticker", "theme", "j", "c", "r", "from_52w_high",
+)
+
+#: **참고 열 — 점수 입력이 아니다.** 사람이 읽으라고 싣는다 (스펙 §5.2·§5.3).
+#: `s_pct`·`composite`·`rs_rating` 이 여기 있는 것은 의도다: 실리되 점수에는 안 들어간다.
+TRIAGE_REFERENCE_COLUMNS = (
+    "price", "adv20_usd", "red_flags", "survival_unjudged",
+    "s_pct", "t_pct", "m_pct", "composite", "rs_rating", "from_52w_low",
+)
+
+
+def build_triage_block(digest: dict[str, Any]) -> dict[str, Any]:
+    """digest 에 붙일 `triage` 블록. **새 계산은 `msa.triage` 안에만 있다.**"""
+    rows = triage_mod.score_digest(digest)
+    return {
+        "declared": triage_mod.declared_constants(),
+        "claim_note": triage_mod.CLAIM_NOTE,
+        "rows": [asdict(r) for r in rows],
+    }
+
+
+def render_triage_csv(
+    rows: list[dict[str, Any]], picks_by_ticker: dict[str, dict[str, Any]]
+) -> str:
+    """구획·점수 + 참고 열.
+
+    참고 열이 뒤에 오는 것은 표시가 아니라 **사실의 반영**이다 — 점수는 앞 열만으로
+    만들어진다. 계산 불가는 빈 칸이다: 0 으로 쓰면 "가장 낮은 점수" 로 오해된다.
+    """
+    header = [*TRIAGE_LEAD_COLUMNS, *TRIAGE_REFERENCE_COLUMNS]
+    out = [",".join(header)]
+    for r in rows:
+        src = picks_by_ticker.get(str(r.get("ticker")), {})
+        cells: list[str] = []
+        for col in header:
+            value = r.get(col, src.get(col)) if col in r else src.get(col)
+            if value is None:
+                cells.append("")
+            elif isinstance(value, bool):
+                cells.append(str(value))
+            elif isinstance(value, float):
+                cells.append(f"{value:.6g}")
+            else:
+                cells.append(str(value).replace(",", " "))
+        out.append(",".join(cells))
+    return "\n".join(out) + "\n"
+
+
 def _update_readme(report: RunReport, digest: dict[str, Any], *, readme: Path | None) -> None:
     """README 의 "오늘의 결론" 블록을 다시 쓴다 (2026-08-25 사용자 지시).
 
@@ -1273,6 +1327,48 @@ def run_daily(
     _audit_eligible(report, digest, asof_s, enabled=audit and write)
     if write and out_dir is not None and digest.get("evidence_audit"):
         write_snapshot(out_dir, jsons={"digest.json": digest})  # 실사 결과를 반영해 다시 쓴다
+
+    # 트리아지 — **실사 뒤에 돈다.** J 축이 `evidence_audit` 을 읽으므로 순서가 규칙의
+    # 일부다: 앞에 두면 오늘 실사한 결과가 오늘 점수에 안 들어간다.
+    t = _Timer()
+    digest["triage"] = build_triage_block(digest)
+    picks_by_ticker = {
+        str(pk.get("ticker")): pk
+        for e in (digest.get("themes") or [])
+        for pk in (e.get("picks") or [])
+    }
+    triage_csv = render_triage_csv(digest["triage"]["rows"], picks_by_ticker)
+    result.digest_md = render_digest_md(digest)
+    n_ia = sum(
+        1
+        for r in digest["triage"]["rows"]
+        if r["partition"] == triage_mod.PARTITION_IA
+    )
+    if write and out_dir is not None:
+        write_snapshot(
+            out_dir,
+            texts={
+                "digest.md": result.digest_md,
+                "report.txt": result.digest_md,
+                "triage.csv": triage_csv,
+            },
+            jsons={"digest.json": digest},
+        )
+        report.add(
+            StepResult(
+                "triage",
+                "ok",
+                f"구획 I-A {n_ia}종목",
+                [rel(out_dir / "triage.csv")],
+                t.seconds,
+            )
+        )
+    else:
+        report.add(
+            StepResult(
+                "triage", "ok", f"no-write — 구획 I-A {n_ia}종목", seconds=t.seconds
+            )
+        )
 
     # README 블록 — 건너뛰어도 **단계로 보고한다.** 단계가 통째로 사라지면 "안 돌았다" 와
     # "돌았는데 할 게 없었다" 를 구분할 수 없다 (`CLAUDE.md` §2).

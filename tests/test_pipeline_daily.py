@@ -176,6 +176,9 @@ def test_daily_first_run_writes_digest_and_marks_everything_new(env: dict[str, A
         "research": "skipped",
         # 증거 실사 — 편입 가능 테마가 없으면 건너뛴다 (합성 테마엔 논지가 없다)
         "audit": "skipped",
+        # 트리아지 — 합성 테마엔 판별이 없으므로 전부 구획 III 이지만, **단계는 돈다.**
+        # 구획이 비어도 "안 돌았다" 와 "돌았는데 I-A 가 0개다" 는 다른 말이다.
+        "triage": "ok",
         # README 블록 갱신 — 저장소 README 에는 마커가 있으므로 ok 다. 마커가 없으면
         # skipped 이고, 어느 쪽이든 **단계로 보고된다** (조용히 넘기지 않는다).
         "readme": "ok",
@@ -676,3 +679,83 @@ def test_readme_lists_the_real_daily_steps() -> None:
     want = " · ".join(DAILY_STEPS)
     readme = Path(__file__).resolve().parents[1] / "README.md"
     assert want in readme.read_text(), f"README 의 `msa run daily` 단계 목록이 낡았다 — {want}"
+
+
+# ---------------------------------------------------------------- 트리아지 (P1)
+
+
+def test_digest_carries_triage_block() -> None:
+    from msa import triage as triage_mod
+
+    digest = {
+        "themes": [
+            {
+                "theme": "t1",
+                "picks": [
+                    {"ticker": "AAA", "from_52w_high": -0.40, "red_flags": ""},
+                    {"ticker": "BBB", "from_52w_high": -0.02, "red_flags": ""},
+                ],
+            }
+        ],
+        "judged": [
+            {"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}
+        ],
+        "evidence_audit": {
+            "t1": {"counts": {"verified": 10}, "checked": 20, "unverified_axes": []}
+        },
+    }
+    block = D.build_triage_block(digest)
+    assert block["declared"]["triage_weights"] == {"J": 0.50, "C": 0.30, "R": 0.20}
+    assert "읽는 순서" in block["claim_note"]
+    by = {r["ticker"]: r for r in block["rows"]}
+    assert by["AAA"]["partition"] == triage_mod.PARTITION_IA
+    assert by["BBB"]["partition"] == triage_mod.PARTITION_IB
+
+
+def test_triage_csv_has_reference_columns_but_they_are_not_inputs() -> None:
+    rows = [
+        {
+            "ticker": "AAA", "theme": "t1", "partition": "I-A", "triage": 0.8,
+            "j": 0.7, "c": 1.0, "r": 0.7, "note": "",
+        }
+    ]
+    picks = {
+        "AAA": {
+            "ticker": "AAA", "s_pct": 0.5, "composite": 0.6, "rs_rating": 90.0,
+            "price": 10.0, "adv20_usd": 1e7, "from_52w_high": -0.4,
+        }
+    }
+    text = D.render_triage_csv(rows, picks)
+    header = text.splitlines()[0].split(",")
+    assert header[:8] == [
+        "partition", "triage", "ticker", "theme", "j", "c", "r", "from_52w_high"
+    ]
+    assert "s_pct" in header and "composite" in header and "rs_rating" in header
+    body = text.splitlines()[1].split(",")
+    assert body[0] == "I-A" and body[2] == "AAA"
+
+
+def test_build_triage_block_survives_missing_evidence_audit() -> None:
+    digest = {
+        "themes": [{"theme": "t1", "picks": [{"ticker": "AAA", "from_52w_high": -0.40}]}],
+        "judged": [
+            {"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}
+        ],
+    }
+    block = D.build_triage_block(digest)
+    row = block["rows"][0]
+    assert row["triage"] is None
+    assert "증거 실사 없음" in row["note"]
+
+
+def test_triage_csv_renders_none_as_empty_not_zero() -> None:
+    """계산 불가가 0 으로 보이면 '가장 낮은 점수' 로 오해된다 (`CLAUDE.md` §2)."""
+    rows = [
+        {
+            "ticker": "AAA", "theme": "t1", "partition": "I-A", "triage": None,
+            "j": None, "c": 1.0, "r": 0.7, "note": "증거 실사 없음 — J 계산 불가",
+        }
+    ]
+    text = D.render_triage_csv(rows, {})
+    body = text.splitlines()[1].split(",")
+    assert body[1] == "" and body[4] == ""
