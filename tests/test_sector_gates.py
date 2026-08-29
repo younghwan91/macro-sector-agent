@@ -673,3 +673,49 @@ def test_judged_out_and_unjudged_are_reported_separately() -> None:
     text = "\n".join(sector.verdict_md(sector.evaluate(d)))
     assert "판별에서 떨어진 1개" in text and "`rejected`" in text
     assert "아직 판별을 안 받은 1개" in text and "`never`" in text
+
+
+# ---------------------------------------------------------------- 체인의 우주
+
+
+def test_themes_with_a_survey_enter_the_chain_even_outside_top_k(tmp_path, monkeypatch) -> None:
+    """**조사해 둔 테마가 관문표에서 사라지면 안 된다.**
+
+    2026-08-29 실측: `silver_miners` 수급 조사(tightening)를 돌렸는데 상위 K 밖이라
+    체인에 아예 안 들어갔다. 리포트는 그 조사를 보여주면서 관문표에는 없어, 읽는 사람이
+    "왜 실버는 없나" 를 알 수 없었다. 실제 답은 ① 에서 떨어진다는 것(pool 0.27)이고,
+    **그 답이 보여야 한다.**
+    """
+    from msa.l35 import balance as bal
+    from msa.pipeline import daily as D
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    bal.write(tmp_path / "balance", _bal_doc("outsider", "tightening"))
+    digest = {
+        "themes": [_theme(theme="inside")],
+        "judged": [
+            {"theme": "inside", "portfolio_eligible": True, "trusted": True, "gate": "passed"}
+        ],
+        "evidence_audit": {},
+        "triage": {"rows": []},
+        "regime": {"tilts": {}},
+        "scan_all": {"outsider": {"pool": 0.27}},
+    }
+    digest["balance"] = D._balance_block(digest)
+    rows = sector.evaluate(digest)
+    names = [r.theme for r in rows]
+    assert "outsider" in names, "조사한 테마가 관문표에서 사라졌다"
+    out = next(r for r in rows if r.theme == "outsider")
+    assert not out.gate("forgotten").passed
+    assert "0.27" in out.gate("forgotten").why
+
+
+def test_outsider_without_scan_data_says_so() -> None:
+    """스캔 밖 테마의 pool 을 모르면 **모른다고 적는다** (`CLAUDE.md` §2)."""
+    d = _digest()
+    d["balance"] = {"surveyed": ["ghost"], "missing": [], "lines": [], "verdicts": {}}
+    rows = sector.evaluate(d)
+    ghost = next((r for r in rows if r.theme == "ghost"), None)
+    assert ghost is not None
+    assert not ghost.gate("forgotten").passed
+    assert "계산하지 못했다" in ghost.gate("forgotten").why or "없다" in ghost.gate("forgotten").why

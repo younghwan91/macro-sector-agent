@@ -1182,6 +1182,17 @@ def _stock_notes_block(digest: dict[str, Any]) -> dict[str, float]:
     return got
 
 
+def _scan_pools(sb: pd.DataFrame) -> dict[str, dict[str, Any]]:
+    """테마 → 스코어보드의 `pool`·`score`. 상위 K 밖 테마의 ① 관문을 채우는 데 쓴다."""
+    out: dict[str, dict[str, Any]] = {}
+    if sb is None or "theme" not in getattr(sb, "columns", []):
+        return out
+    for _, row in sb.iterrows():
+        theme = str(row.get("theme"))
+        out[theme] = {"pool": _num(row.get("pool")), "score": _num(row.get("score"))}
+    return out
+
+
 def _sector_block(digest: dict[str, Any]) -> dict[str, Any]:
     """관문 체인 (`msa.sector`) — **모든 계층을 하나로 꿴다.**
 
@@ -1657,6 +1668,9 @@ def run_daily(
     digest["risk"] = _risk_block(digest)
     # 수급 조사(L3.5) — **읽기만 한다.** 트리아지에 전달하지 않는다 (`docs/26` §3.5).
     digest["balance"] = _balance_block(digest)
+    # 스캔 전체의 pool — 상위 K 밖인데 수급 조사가 있는 테마의 ① 관문을 채운다.
+    # **조사한 테마가 관문표에서 사라지지 않게** 하는 것이 목적이다 (`msa.sector` §우주).
+    digest["scan_all"] = _scan_pools(sb)
     # 관문 체인 — **맨 마지막이다.** 앞의 모든 블록을 읽어야 하므로 순서가 규칙이다.
     digest["sector"] = _sector_block(digest)
     picks_by_ticker = {

@@ -221,11 +221,24 @@ def evaluate(digest: Mapping[str, Any]) -> list[Row]:
     regime = digest.get("regime") or {}
     bal = digest.get("balance") or {}
 
-    names = [str(t.get("theme")) for t in (digest.get("themes") or [])]
+    # **수급 조사를 돌린 테마는 상위 K 밖이어도 체인에 들어온다.**
+    # 2026-08-29 실측: `silver_miners` 조사(tightening)를 돌렸는데 상위 K 밖이라 관문표에
+    # 아예 없었다. 리포트가 그 조사는 보여주면서 관문에는 없으니, 읽는 사람이 "왜 실버는
+    # 없나" 를 알 수 없었다. 실제 답은 ① 에서 떨어진다는 것이고 **그 답이 보여야 한다.**
+    entries: list[Mapping[str, Any]] = list(digest.get("themes") or [])
+    inside = {str(t.get("theme")) for t in entries}
+    scan_all = digest.get("scan_all") or {}
+    for theme in sorted(set(bal.get("surveyed") or []) - inside):
+        # 스캔 밖이라 pool 을 모를 수 있다 — 모르면 모른다고 적힌다 (`_forgotten`).
+        extra = dict(scan_all.get(theme) or {})
+        extra["theme"] = theme
+        entries.append(extra)
+
+    names = [str(t.get("theme")) for t in entries]
     ledger = _refuted_counts(names)
 
     rows: list[Row] = []
-    for entry in digest.get("themes") or []:
+    for entry in entries:
         theme = str(entry.get("theme"))
         refuted, has_ledger = ledger.get(theme, (0, False))
         rows.append(
