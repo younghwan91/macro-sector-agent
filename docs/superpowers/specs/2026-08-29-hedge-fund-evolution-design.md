@@ -386,7 +386,7 @@ state/evidence_resolutions/<theme>.yaml
 | `test_triage_weights_declared` | 가중치 합 = 1.0 · 선언 상수가 `declared_constants()` 에 실린다 |
 | `test_triage_no_return_claim` | 산출 컬럼에 `s_pct` 계열이 **점수 입력으로** 들어가지 않는다 (참고열로만) |
 | `test_triage_missing_inputs` | 필드 결측 시 조용히 0 이 되지 않고 결측으로 표시된다 (`CLAUDE.md` §2) |
-| `test_triage_reproduce` | `msa ops reproduce <date>` 가 같은 triage 를 재생성한다 |
+| ~~`test_triage_reproduce`~~ | **배정 불가로 판명 — 골든으로 대체했다.** `msa ops reproduce` 는 `state/scans/` 스냅샷만 재생성하고 digest 를 다루지 않는다. triage 는 digest 의 순수 함수라 아래 골든 테스트가 결정론을 고정한다 (계획 자체 검토에서 발견) |
 | `test_triage_pullback_split` | `from_52w_high` 가 `PULLBACK_MARK` 바로 위/아래인 종목이 I-B / I-A 로 갈린다 · 새 상수를 만들지 않고 `readme_block.PULLBACK_MARK` 를 읽는다 |
 | `test_triage_percentile_scope` | 백분위가 **구획 안에서** 매겨진다 — 얕은 낙폭 테마의 종목이 깊은 낙폭 종목을 같은 구획에서 이기지 못한다 (§5.3 의 `ESEA`/`ALHC` 회귀) |
 | `test_triage_2026_08_29_golden` | 2026-08-29 digest 고정 입력에 대해 I-A = `ALHC` · `CLOV` · `MOH` 순서가 그대로 나온다 (§6.1 골든) |
