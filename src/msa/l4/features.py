@@ -62,7 +62,10 @@
   **결함이 있다 — 폭락 중에도 True 가 나온다** (`docs/06` §4·§8.2 · `test_l4_features.py`
   `test_vcp_base_characterization_*`). 고치려면 새 임계가 필요해 고치지 않았다. M 축은 어떤
   결정에도 쓰이지 않으므로 실피해는 0 이다 (`docs/06` §6.1).
-- **관찰용 열 — 아무 로직도 읽지 않는다**: `from_52w_high` · `sma200_up_1m` · `m_n_inputs`.
+- **관찰용 열**: `sma200_up_1m` · `m_n_inputs`. **`from_52w_high` 는 2026-08-29 에 관찰용에서
+  점수 입력으로 승격됐다** — `msa.triage` 의 R 축과 구획 분할이 읽는다
+  (`docs/superpowers/specs/2026-08-29-hedge-fund-evolution-design.md` §5.3).
+  **L4 의 선정은 여전히 이 열을 읽지 않는다.**
   `from_52w_high`·`sma200_up_1m` 은 `stage2` 안에서 **다시 계산**되어 쓰이고, 열 자체는 리포트·
   진단용이다. 지우지 않는 이유는 `vcp_base` 결함의 재현·진단에 이 열들이 필요하기 때문이다
   (`from_52w_high` 는 "지금 고점 대비 어디인가" 를 이미 담고 있다).

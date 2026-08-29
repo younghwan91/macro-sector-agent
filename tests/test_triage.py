@@ -134,3 +134,67 @@ def test_clarity_ignores_return_predictive_axes() -> None:
     low = triage.clarity(_pick(s_pct=0.01, composite=0.01))
     high = triage.clarity(_pick(s_pct=0.99, composite=0.99))
     assert low == high == 1.0
+
+
+def test_partition_splits_eligible_by_pullback_mark() -> None:
+    from msa.ops.readme_block import PULLBACK_MARK
+
+    ok = _judged()
+    assert triage.partition(ok, _pick(from_52w_high=PULLBACK_MARK)) == triage.PARTITION_IA
+    assert triage.partition(ok, _pick(from_52w_high=-0.44)) == triage.PARTITION_IA
+    assert triage.partition(ok, _pick(from_52w_high=-0.14)) == triage.PARTITION_IB
+
+
+def test_partition_untrusted_theme_is_two_not_one() -> None:
+    got = triage.partition(_judged(trusted=False), _pick(from_52w_high=-0.44))
+    assert got == triage.PARTITION_II
+
+
+def test_partition_unjudged_theme_is_three() -> None:
+    assert triage.partition(None, _pick(from_52w_high=-0.90)) == triage.PARTITION_III
+
+
+def test_partition_missing_drawdown_is_ib_not_ia() -> None:
+    """낙폭을 모르면 '지금 자리' 라고 말하지 않는다 (`CLAUDE.md` §2)."""
+    assert triage.partition(_judged(), _pick(from_52w_high=None)) == triage.PARTITION_IB
+
+
+def test_readiness_drawdown_percentile_within_peers() -> None:
+    peers = [0.182, 0.218, 0.448]
+    deepest = triage.readiness(_pick(from_52w_high=-0.448), peers)
+    middle = triage.readiness(_pick(from_52w_high=-0.218), peers)
+    shallow = triage.readiness(_pick(from_52w_high=-0.182), peers)
+    assert deepest == pytest.approx(0.7 * 1.0)
+    assert middle == pytest.approx(0.7 * 0.5)
+    assert shallow == pytest.approx(0.0)
+
+
+def test_readiness_base_component_from_stage2_and_above_50d() -> None:
+    peers = [0.30]
+    both = triage.readiness(_pick(from_52w_high=-0.30, stage2=True, above_50d=True), peers)
+    one = triage.readiness(_pick(from_52w_high=-0.30, stage2=True), peers)
+    assert both == pytest.approx(0.7 * 1.0 + 0.3 * 1.0)
+    assert one == pytest.approx(0.7 * 1.0 + 0.3 * 0.5)
+
+
+def test_readiness_ignores_vcp_base() -> None:
+    """`vcp_base` 는 폭락 중에도 True 를 낸다 — 결함이 문서화된 입력이다 (docs/backtest-l4 §14)."""
+    peers = [0.30]
+    with_vcp = triage.readiness(_pick(from_52w_high=-0.30, vcp_base=True), peers)
+    without = triage.readiness(_pick(from_52w_high=-0.30, vcp_base=False), peers)
+    assert with_vcp == without
+
+
+def test_readiness_shallow_theme_does_not_outrank_deep_one() -> None:
+    """2026-08-29 회귀 — 백분위를 테마 안에서 재면 -3.7% 인 ESEA 가 -44.8% 인 ALHC 를 이겼다.
+
+    구획 안에서 재면 그 일이 안 일어난다 (스펙 §5.3).
+    """
+    peers = [0.037, 0.448]
+    esea = triage.readiness(_pick(from_52w_high=-0.037), peers)
+    alhc = triage.readiness(_pick(from_52w_high=-0.448), peers)
+    assert alhc > esea
+
+
+def test_readiness_single_member_partition_is_top() -> None:
+    assert triage.readiness(_pick(from_52w_high=-0.30), [0.30]) == pytest.approx(0.7)

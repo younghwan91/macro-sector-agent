@@ -25,8 +25,10 @@ import 해서 쓰고(복사하지 않는다), 낙폭 순서는 백분위라 눈�
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
+
+from msa.ops.readme_block import PULLBACK_MARK
 
 #: 축 가중치 — 선언값. 결과를 보고 옮기지 않는다 (`CLAUDE.md` §1 · 스펙 §4.2).
 TRIAGE_WEIGHTS = {"J": 0.50, "C": 0.30, "R": 0.20}
@@ -46,6 +48,20 @@ RED_FLAG_MAX = 2
 #: 입력 결측. 작은 감점 — 결측은 나쁨이 아니라 **모름**이다.
 PARTIAL_PENALTY = 0.10
 
+#: R 축 안의 배분 — 선언값. 낙폭이 기저보다 큰 이유: 기저 판정(`stage2`·`above_50d`)은
+#: 불리언 둘이라 해상도가 낮고, 낙폭은 연속이라 순서를 실제로 만든다.
+R_WEIGHTS = {"drawdown": 0.7, "base": 0.3}
+
+#: 구획 — **점수보다 먼저 온다.** triage 값은 같은 구획 안에서만 비교 가능하다 (스펙 §6).
+PARTITION_IA = "I-A"
+PARTITION_IB = "I-B"
+PARTITION_II = "II"
+PARTITION_III = "III"
+
+#: 표시 순서. 구획 간 정렬은 하지 않는다 — 이 순서가 곧 읽는 순서다.
+PARTITION_ORDER = (PARTITION_IA, PARTITION_IB, PARTITION_II, PARTITION_III)
+
+assert abs(sum(R_WEIGHTS.values()) - 1.0) < 1e-9
 assert abs(sum(TRIAGE_WEIGHTS.values()) - 1.0) < 1e-9
 
 
@@ -117,3 +133,50 @@ def clarity(pick: Mapping[str, Any]) -> float:
     if pick.get("s_partial") or pick.get("composite_partial"):
         value -= PARTIAL_PENALTY
     return max(value, 0.0)
+
+
+def _drawdown(pick: Mapping[str, Any]) -> float | None:
+    """양수로 뒤집은 52주 고점 대비 낙폭. 모르면 None."""
+    raw = pick.get("from_52w_high")
+    if raw is None:
+        return None
+    return -float(raw)
+
+
+def partition(judged: Mapping[str, Any] | None, pick: Mapping[str, Any]) -> str:
+    """구획 — 판별을 통과한 테마만 I 이고, 그 안에서 낙폭이 I-A/I-B 를 가른다.
+
+    `III` 이 `I` 위로 올라오는 일은 점수가 아니라 **이 함수로** 막힌다. 가중치를 잘못
+    골라도 그 성질은 안 깨진다 (`docs/18` §1).
+    """
+    if judged is None:
+        return PARTITION_III
+    if not (judged.get("portfolio_eligible") and judged.get("trusted")):
+        return PARTITION_II
+    dd = _drawdown(pick)
+    if dd is None:
+        # 낙폭을 모르면 "지금 자리" 라고 말하지 않는다 (`CLAUDE.md` §2).
+        return PARTITION_IB
+    return PARTITION_IA if -dd <= PULLBACK_MARK else PARTITION_IB
+
+
+def _percentile(x: float, peers: Sequence[float]) -> float:
+    """`peers` 안에서 `x` 보다 작은 것의 비율. `peers` 는 `x` 자신을 포함한다.
+
+    눈금이 없다 — 그래서 옮길 눈금도 없다 (스펙 §5.3).
+    """
+    if len(peers) <= 1:
+        return 1.0
+    return sum(1 for v in peers if v < x) / (len(peers) - 1)
+
+
+def readiness(pick: Mapping[str, Any], peer_drawdowns: Sequence[float]) -> float:
+    """R 축 — **지금 이 차트가 할 말이 있는가.**
+
+    `peer_drawdowns` 는 **같은 구획** 종목들의 낙폭이다. 테마 안에서 재면 낙폭이 얕은
+    테마의 종목이 상위 백분위를 받는다 (2026-08-29 실측: -3.7% 가 -44.8% 를 이겼다).
+    """
+    dd = _drawdown(pick)
+    dd_part = 0.0 if dd is None else _percentile(dd, peer_drawdowns)
+    base = (int(bool(pick.get("stage2"))) + int(bool(pick.get("above_50d")))) / 2
+    return R_WEIGHTS["drawdown"] * dd_part + R_WEIGHTS["base"] * base
