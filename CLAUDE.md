@@ -122,6 +122,16 @@ msa research <theme>  # L3 에이전트 4역할(supply·catalyst·bear·referee)
                       #   실제 실행은 ANTHROPIC_API_KEY 필요 (--provider anthropic, 기본값)
                       #   오프라인: --dry-run (Mock) · --provider fixture (tests/fixtures/l3/)
                       #   산출물 state/theses/<date>/ (thesis.yaml·report.md·rejections-pending·contested)
+msa regime            # P2 매크로 분석가 — cycle_class 8칸에 3값 판정 (docs/25 사전 등록).
+                      #   **주간 1회.** --week --asof --provider --dry-run --no-write --show
+                      #   산출물 state/regime/<YYYY-Www>.yaml. 트리아지 **R 축의 계수**로만 쓰인다
+                      #   (tailwind 1.00 · neutral 0.85 · headwind 0.70) — J·C·구획은 못 건드린다.
+                      #   L2(거시 인과 DAG)를 되살린 것이 아니다: 점수를 조정하지 않는다
+msa stock-notes       # P3 종목 분석가 — "이 회사의 재무가 무너지고 있는가" (설계 §9.2).
+                      #   **후보는 코드가 정한다** (구획 I-A 의 triage 상위 N) — LLM 은 명단을
+                      #   만들지 않고 받는다 (CLAUDE.md §4). --top-n --provider --refresh --show
+                      #   산출물 state/stock_notes/<TICKER>.yaml → 다음 daily 의 J 축에 반영.
+                      #   노트가 없으면 J = J_theme (오늘의 식이 특수해다)
 msa picks <theme>     # L4 종목 선정 — **하드 제외 통과 종목 전부 · 테마 내 동일가중** (2026-08-24,
                       #   docs/06 §5.1·§6.1 · journal/2026-08-24-l4-selection-retired.md).
                       #   S·T·M 3축 · 종합 · 순위 · 바벨 라벨은 함께 산출되나 **관찰 지표**이고
