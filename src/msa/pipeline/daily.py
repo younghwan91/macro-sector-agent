@@ -538,6 +538,18 @@ def triage_section_md(digest: dict[str, Any]) -> list[str]:
         notes = {str(r.get("note")) for r in group if r.get("note")}
         if notes:
             out += ["", *(f"- {n}" for n in sorted(notes))]
+        # 리스크 경고(P4)는 **그 구획 표 바로 아래**에 붙는다 — 따로 절을 만들면 표를
+        # 본 사람이 경고를 못 보고 지나간다.
+        review = ((digest.get("risk") or {}).get("partitions") or {}).get(part) or {}
+        warns = review.get("warnings") or []
+        if warns:
+            out += ["", *(f"- ⚠ {w['text']}" for w in warns)]
+        if review.get("deferred"):
+            out += [
+                "",
+                "- PM 슬롯 밖으로 **미룬 것** (지운 것이 아니다): "
+                + " · ".join(f"`{t}`" for t in review["deferred"]),
+            ]
         out.append("")
     return out
 
@@ -1100,6 +1112,33 @@ def _stock_notes_block(digest: dict[str, Any]) -> dict[str, float]:
         return {}
 
 
+def _risk_block(digest: dict[str, Any]) -> dict[str, Any]:
+    """구획 I-A·I-B 에 대한 집중 경고와 PM 슬롯 (P4, 설계 §9.3).
+
+    **점수는 손대지 않는다** — `triage.rows` 를 읽기만 하고 되쓰지 않는다.
+    """
+    from msa.l4 import risk as risk_mod
+    from msa.themes import load_themes
+
+    rows = (digest.get("triage") or {}).get("rows") or []
+    try:
+        clusters = risk_mod.theme_clusters(load_themes())
+    except Exception as e:
+        return {
+            "note": f"상관 군집을 읽지 못했다 ({type(e).__name__}: {e}) — 집중 경고 없음",
+            "declared": risk_mod.declared_constants(),
+            "partitions": {},
+        }
+    return {
+        "note": "경고는 점수를 깎지 않는다 — 겹친다고 말할 뿐이다",
+        "declared": risk_mod.declared_constants(),
+        "partitions": {
+            part: risk_mod.review(rows, clusters, partition=part)
+            for part in (triage_mod.PARTITION_IA, triage_mod.PARTITION_IB)
+        },
+    }
+
+
 def build_triage_block(
     digest: dict[str, Any], *, resolutions_root: Path | None = None
 ) -> dict[str, Any]:
@@ -1463,6 +1502,9 @@ def run_daily(
     digest["triage"] = build_triage_block(
         digest, resolutions_root=paths().evidence_resolutions
     )
+    # 리스크·PM(P4) — **점수 뒤에 붙는다. 점수를 바꾸지 않는다.** 경고를 달고 표시 슬롯을
+    # 나눌 뿐이고, 자를지는 사람이 정한다 (설계 §9.3).
+    digest["risk"] = _risk_block(digest)
     picks_by_ticker = {
         str(pk.get("ticker")): pk
         for e in (digest.get("themes") or [])

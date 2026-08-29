@@ -429,6 +429,47 @@ BASES: dict[str, Entry] = {
             verified="2026-08-27",
         ),
     ),
+    "CONCENTRATION_FRACTION": Entry(
+        "msa.l4.risk",
+        0.6,
+        role="집중 경고 문턱 — 상위 창에서 이 비율을 넘으면 경고를 단다. **점수를 안 깎는다**",
+        basis=NoBasis(
+            "선언값이고 근거가 없다 (설계 §9.3). '과반을 넘으면 사실상 한 베팅' 이라는 "
+            "서술을 숫자로 옮긴 것이고 0.6 이어야 할 문헌은 없다.",
+            searched="2026-08-29",
+        ),
+    ),
+    "CONCENTRATION_WINDOW": Entry(
+        "msa.l4.risk",
+        5,
+        role="집중을 세는 상위 개수. 표시 상한이지 선정이 아니다",
+        basis=NoBasis(
+            "선언값이다. '사람이 한 번에 보는 개수' 라는 서술뿐이고 5 여야 할 근거는 없다.",
+            searched="2026-08-29",
+        ),
+    ),
+    "SLOT_MAX": Entry(
+        "msa.l4.risk",
+        5,
+        role="PM 이 한 테마에 줄 수 있는 표시 슬롯 상한. 명단을 자르지 않고 미룬다",
+        basis=NoBasis(
+            "선언값이다. CONCENTRATION_WINDOW 와 같은 크기로 뒀다 — 한 테마가 창을 다 "
+            "채우는 것이 곧 경고 대상이기 때문이다. 그 이상의 근거는 없다.",
+            searched="2026-08-29",
+        ),
+    ),
+    "SLOT_MIN": Entry(
+        "msa.l4.risk",
+        1,
+        role="PM 슬롯 하한. **0 이 아니다** — 슬롯 0 은 게이트의 몫이지 PM 의 몫이 아니다",
+        basis=Derived(
+            frm="설계 §9.3 의 역할 경계",
+            why=(
+                "슬롯 0 은 '이 테마는 보지 마라' 가 되는데 그 판정은 L3 게이트가 이미 "
+                "내린다. PM 이 화면에서 통째로 지우면 게이트를 두 번 거는 것이다"
+            ),
+        ),
+    ),
     "NOTE_TRUST": Entry(
         "msa.l4.analyst",
         {"intact": 1.00, "strained": 0.60, "breaking": 0.20},
@@ -554,6 +595,10 @@ FILTER_CONSTANTS: tuple[str, ...] = (
     # 트리아지 — 읽는 순서만 정한다 (자르지 않는다, 2026-08-29)
     "REGIME_TILT",
     "NOTE_TRUST",
+    "CONCENTRATION_FRACTION",
+    "CONCENTRATION_WINDOW",
+    "SLOT_MAX",
+    "SLOT_MIN",
     "PULLBACK_MARK",
     "EVIDENCE_CAP",
     "EVIDENCE_CAP_REFUTED",
