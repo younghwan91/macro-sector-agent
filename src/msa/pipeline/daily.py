@@ -1581,6 +1581,7 @@ def run_daily(
                 "trusted": h.trusted,
                 "cycle_confidence": h.cycle_confidence,
                 "gate": h.gate,
+                "gate_rule": h.gate_rule,
                 "source": h.source,
                 "in_top_k": h.theme in {t.get("theme") for t in themes},
             }
@@ -1618,6 +1619,7 @@ def run_daily(
                 "trusted": h.trusted,
                 "cycle_confidence": h.cycle_confidence,
                 "gate": h.gate,
+                "gate_rule": h.gate_rule,
                 "source": h.source,
                 "in_top_k": h.theme in {t.get("theme") for t in digest.get("themes") or []},
             }

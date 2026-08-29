@@ -132,7 +132,23 @@ def _not_a_trap(judged: Mapping[str, Any] | None) -> Result:
     if not judged.get("trusted"):
         return Result("not_a_trap", False, "판별했으나 논지를 신뢰하지 못한다 (trusted=false)")
     if not judged.get("portfolio_eligible"):
-        return Result("not_a_trap", False, "판별 결과 편입 불가 — 가치 함정 혐의를 못 벗었다")
+        # **왜 편입 불가인지가 다르다.** 확신도 미달과 "축이 적용 불가라 판정 자체가 없다" 는
+        # 다른 사실이고, 뭉뚱그리면 리포트가 거짓을 적는다 — 2026-08-29 실측:
+        # `insurance_brokers` 는 확신도 0.6 으로 편입선을 넘었는데 "확신도 미달" 로 표시됐다.
+        rule = str(judged.get("gate_rule") or "")
+        if "적용 불가" in rule:
+            return Result(
+                "not_a_trap",
+                False,
+                "**판별의 중심 질문에 답한 축이 없다** — 5축 중 여럿이 적용 불가라 "
+                "확신도가 판정이 아니라 판정의 부재에서 왔다 (`docs/04` §2). "
+                f"확신도 {judged.get('cycle_confidence')}",
+            )
+        conf = judged.get("cycle_confidence")
+        tail = f" (확신도 {conf})" if conf is not None else ""
+        return Result(
+            "not_a_trap", False, f"판별 결과 편입 불가 — 가치 함정 혐의를 못 벗었다{tail}"
+        )
     return Result("not_a_trap", True, "판별 통과 · 편입 가능")
 
 
@@ -508,11 +524,24 @@ def verdict_md(rows: Sequence[Row], *, limit: int = 3) -> list[str]:
             unjudged = [r for r in rest if r not in judged_out]
             if judged_out:
                 names = " · ".join(f"`{r.theme}`" for r in judged_out)
-                out += [
-                    f"**판별에서 떨어진 {len(judged_out)}개** — {names}. "
-                    "가치 함정 혐의를 못 벗었다 (확신도가 편입선에 못 미친다).",
-                    "",
-                ]
+                # 사유가 둘이다 — 뭉뚱그리면 거짓이 된다
+                no_axis = [r for r in judged_out if "답한 축이 없다" in r.gate("not_a_trap").why]
+                low_conf = [r for r in judged_out if r not in no_axis]
+                if low_conf:
+                    n2 = " · ".join(f"`{r.theme}`" for r in low_conf)
+                    out += [
+                        f"**확신도 미달 {len(low_conf)}개** — {n2}. "
+                        "가치 함정 혐의를 못 벗었다.",
+                        "",
+                    ]
+                if no_axis:
+                    n3 = " · ".join(f"`{r.theme}`" for r in no_axis)
+                    out += [
+                        f"**판정 자체가 없는 {len(no_axis)}개** — {n3}. "
+                        "5축 중 여럿이 적용 불가라 확신도가 판정의 부재에서 왔다 "
+                        "(`docs/04` §2 — 적용 불가는 통과가 아니다).",
+                        "",
+                    ]
             if unjudged:
                 names = " · ".join(f"`{r.theme}`" for r in unjudged)
                 out += [

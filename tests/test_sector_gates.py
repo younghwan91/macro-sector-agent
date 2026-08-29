@@ -671,7 +671,7 @@ def test_judged_out_and_unjudged_are_reported_separately() -> None:
         },
     )
     text = "\n".join(sector.verdict_md(sector.evaluate(d)))
-    assert "판별에서 떨어진 1개" in text and "`rejected`" in text
+    assert "확신도 미달 1개" in text and "`rejected`" in text
     assert "아직 판별을 안 받은 1개" in text and "`never`" in text
 
 
@@ -719,3 +719,43 @@ def test_outsider_without_scan_data_says_so() -> None:
     assert ghost is not None
     assert not ghost.gate("forgotten").passed
     assert "계산하지 못했다" in ghost.gate("forgotten").why or "없다" in ghost.gate("forgotten").why
+
+
+def test_not_a_trap_distinguishes_low_confidence_from_missing_axes() -> None:
+    """**확신도 미달과 '축이 적용 불가라 판정이 없다' 는 다른 사실이다.**
+
+    2026-08-29 실측: `insurance_brokers` 는 확신도 0.6 으로 편입선(0.50)을 넘었는데
+    리포트가 "확신도가 편입선에 못 미친다" 고 적었다 — **거짓이었다.** 실제 사유는
+    5축 중 셋이 적용 불가라 판정 자체가 없었던 것이다.
+    """
+    low = _digest(
+        judged=[
+            {
+                "theme": "t1",
+                "portfolio_eligible": False,
+                "trusted": True,
+                "gate": "passed",
+                "cycle_confidence": 0.45,
+                "gate_rule": "확신도 미달",
+            }
+        ]
+    )
+    r = sector.evaluate(low)[0].gate("not_a_trap")
+    assert "가치 함정 혐의를 못 벗었다" in r.why and "0.45" in r.why
+
+    no_axis = _digest(
+        judged=[
+            {
+                "theme": "t1",
+                "portfolio_eligible": False,
+                "trusted": True,
+                "gate": "passed",
+                "cycle_confidence": 0.6,
+                "gate_rule": "축1·축3 모두 적용 불가 → 판별의 중심 질문에 답한 축이 없다",
+            }
+        ]
+    )
+    r2 = sector.evaluate(no_axis)[0].gate("not_a_trap")
+    assert "답한 축이 없다" in r2.why
+    assert "0.6" in r2.why
+    assert "확신도가 편입선에 못 미친다" not in r2.why

@@ -204,6 +204,10 @@ class ThesisHead:
     #:
     #: **산출 주체가 없는 논지에서는 항상 False 다** (`trusted` 참조).
     portfolio_eligible: bool = False
+    #: `gate_result.rule` — **왜** 편입 불가인가. 확신도 미달과 축 적용 불가는 다른 사유이고,
+    #: 리포트가 뭉뚱그리면 거짓을 적는다 (2026-08-29 실측: `insurance_brokers` 는 확신도
+    #: 0.6 으로 편입선을 넘었는데 "확신도 미달" 로 표시됐다).
+    gate_rule: str = ""
     #: 확신도의 **산출 주체** (`cycle_confidence_by`) 와 항(`cycle_confidence_terms`)이 있는가.
     #: 없으면 그 숫자는 파이프라인이 계산한 것이 아니다 — 사람이 손으로 적었거나 옛 형식이다.
     #: `schema._check_recompute`(저장 전 재도출 대조)가 붙기 전에 쓰인 파일이 여기 걸린다.
@@ -309,6 +313,7 @@ def thesis_head(theme_id: str, asof: str, root: Path | str | None = None) -> The
         cycle_confidence=float(conf) if isinstance(conf, int | float) else None,
         gate=gate_status(raw),
         portfolio_eligible=bool((raw.get("gate_result") or {}).get("portfolio_eligible", False)),
+        gate_rule=str((raw.get("gate_result") or {}).get("rule") or ""),
         trusted=bool(raw.get("cycle_confidence_by"))
         and raw.get("cycle_confidence_terms") is not None,
         l4_survival_filter=bool((raw.get("gate_result") or {}).get("l4_survival_filter", False)),
