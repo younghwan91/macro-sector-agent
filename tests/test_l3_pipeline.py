@@ -666,3 +666,16 @@ def test_thesis_head_distrusts_missing_provenance(tmp_path: Path) -> None:
     )
     h2 = thesis_head("t", "2026-08-14", root=tmp_path)
     assert h2.trusted is True and h2.eligible is True
+
+
+def test_common_rules_forbid_live_dashboard_citations() -> None:
+    """2026-08-29 실측에서 나온 규칙 — Drewry WCI 인용이 구조적으로 검증 불가였다.
+
+    라이브 지수 페이지는 항상 최신 주차만 보여주므로, 거기에 과거 날짜를 붙인 증거는
+    **처음부터** 원문 대조를 통과할 수 없다. 틀린 것이 아니라 검증할 수 없게 인용된 것이다
+    (`journal/2026-08-29-first-live-run-all-four-layers.md` §3).
+    """
+    from msa.l3.roles import BEAR_SYSTEM, CATALYST_SYSTEM, SUPPLY_SYSTEM
+
+    for system in (SUPPLY_SYSTEM, CATALYST_SYSTEM, BEAR_SYSTEM):
+        assert "라이브 대시보드" in system, "공통 규약에서 라이브 대시보드 규칙이 사라졌다"
