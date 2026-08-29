@@ -40,6 +40,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from msa.l2 import regime as _regime
 from msa.ops.readme_block import PULLBACK_MARK
 
 #: 축 가중치 — 선언값. 결과를 보고 옮기지 않는다 (`CLAUDE.md` §1 · 스펙 §4.2).
@@ -200,16 +201,22 @@ def _percentile(x: float, peers: Sequence[float]) -> float:
     return sum(1 for v in peers if v < x) / (len(peers) - 1)
 
 
-def readiness(pick: Mapping[str, Any], peer_drawdowns: Sequence[float]) -> float:
+def readiness(
+    pick: Mapping[str, Any], peer_drawdowns: Sequence[float], tilt: float = 1.0
+) -> float:
     """R 축 — **지금 이 차트가 할 말이 있는가.**
 
     `peer_drawdowns` 는 **같은 구획** 종목들의 낙폭이다. 테마 안에서 재면 낙폭이 얕은
     테마의 종목이 상위 백분위를 받는다 (2026-08-29 실측: -3.7% 가 -44.8% 를 이겼다).
+
+    `tilt` 는 매크로 레짐 계수다 (P2, `docs/25` §3.3). **R 에만 곱한다** — 레짐은 그 테마의
+    가치함정 판별이 옳은지(J)에 대해서도 그 회사의 재무(C)에 대해서도 아무 말을 하지 않는다.
+    레짐이 없으면 1.0 이고, 그것이 이 인자의 기본값인 이유다.
     """
     dd = _drawdown(pick)
     dd_part = 0.0 if dd is None else _percentile(dd, peer_drawdowns)
     base = (int(bool(pick.get("stage2"))) + int(bool(pick.get("above_50d")))) / 2
-    return R_WEIGHTS["drawdown"] * dd_part + R_WEIGHTS["base"] * base
+    return (R_WEIGHTS["drawdown"] * dd_part + R_WEIGHTS["base"] * base) * tilt
 
 
 @dataclass(frozen=True)
@@ -241,6 +248,9 @@ def score_digest(
     # 둘 다 J 는 계산 불가지만, 사람이 할 일이 다르다 — 앞은 실행 방식의 문제고
     # 뒤는 그 테마의 문제다. 한 문장으로 뭉뚱그리면 어느 쪽인지 알 수 없다.
     audit_ran = "evidence_audit" in digest
+    # 매크로 레짐 계수 (P2). **구획 계산 전에 읽지 않는다** — 구획은 판별과 낙폭이 정하고
+    # 매크로는 둘 다에 발언권이 없다 (`docs/25` §3.3).
+    tilts: Mapping[str, float] = digest.get("regime_tilts") or {}
 
     staged: list[tuple[dict[str, Any], str, str, float | None, float, str]] = []
     for entry in digest.get("themes") or []:
@@ -271,7 +281,7 @@ def score_digest(
 
     rows: list[TriageRow] = []
     for pick, theme, part, j_value, c_value, note in staged:
-        r_value = readiness(pick, peers.get(part, []))
+        r_value = readiness(pick, peers.get(part, []), tilts.get(theme, 1.0))
         total = (
             None
             if j_value is None
@@ -328,6 +338,10 @@ def declared_constants() -> dict[str, Any]:
             "from_52w_low",
             "vcp_base",
         ],
+        "regime_tilt": dict(_regime.REGIME_TILT),
+        "regime_tilt_source": (
+            "msa.l2.regime.REGIME_TILT — docs/25 §3.4 선언값. R 축에만 곱한다"
+        ),
         "claim": (
             "읽는 순서 — 초과수익을 주장하지 않는다 "
             "(docs/superpowers/specs/2026-08-29-hedge-fund-evolution-design.md §3.3)"

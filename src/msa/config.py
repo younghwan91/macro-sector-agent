@@ -77,6 +77,14 @@ class Paths:
         return self.state / "runs"
 
     @property
+    def regime(self) -> Path:
+        """주간 매크로 레짐 (`state/regime/<YYYY-Www>.yaml`, `msa regime`, `docs/25`).
+
+        트리아지 R 축의 계수로만 쓰인다 — J·C·구획은 못 건드린다.
+        """
+        return self.state / "regime"
+
+    @property
     def evidence_resolutions(self) -> Path:
         """증거 처리 대장 (`state/evidence_resolutions/<theme>.yaml`, `ops.resolutions`).
 

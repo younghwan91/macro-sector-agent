@@ -1046,6 +1046,39 @@ TRIAGE_REFERENCE_COLUMNS = (
 )
 
 
+def _regime_block(digest: dict[str, Any]) -> dict[str, Any]:
+    """최신 주간 레짐을 읽어 테마별 R 계수로 편다 (P2, `docs/25`).
+
+    레짐이 없으면 `tilts` 가 비고 계수는 1.0 이 된다 — **없는 것을 중립이라 말하지 않는다.**
+    `note` 가 어느 쪽인지 적는다.
+    """
+    from msa.l2 import analyst as regime_analyst
+    from msa.l2 import regime as regime_mod
+    from msa.themes import load_themes
+
+    try:
+        doc = regime_mod.latest(paths().regime)
+        classes = regime_analyst.theme_classes(load_themes())
+    except Exception as e:
+        # 레짐은 **선택 사항**이다 — 없으면 계수 1.0 이고 다이제스트는 그대로 나간다.
+        # 그러나 조용히 넘기지 않는다: 왜 못 읽었는지를 리포트가 든다 (`CLAUDE.md` §2).
+        return {
+            "week": None,
+            "note": f"매크로 레짐을 읽지 못했다 ({type(e).__name__}: {e}) — R 계수 전부 1.0",
+            "declared": regime_mod.declared_constants(),
+            "tilts": {},
+        }
+    themes_now = [str(e.get("theme")) for e in (digest.get("themes") or [])]
+    tilts = regime_mod.tilts_by_theme(doc, {t: classes[t] for t in themes_now if t in classes})
+    return {
+        "week": (doc or {}).get("week"),
+        "note": regime_analyst.summarize(doc),
+        "declared": regime_mod.declared_constants(),
+        # **1.0 인 것은 싣지 않는다** — 계수가 붙은 테마만 남겨야 무엇이 실제로 밀렸는지 보인다
+        "tilts": {k: v for k, v in tilts.items() if v != 1.0},
+    }
+
+
 def build_triage_block(
     digest: dict[str, Any], *, resolutions_root: Path | None = None
 ) -> dict[str, Any]:
@@ -1398,6 +1431,11 @@ def run_daily(
     # 트리아지 — **실사 뒤에 돈다.** J 축이 `evidence_audit` 을 읽으므로 순서가 규칙의
     # 일부다: 앞에 두면 오늘 실사한 결과가 오늘 점수에 안 들어간다.
     t = _Timer()
+    # 매크로 레짐(P2) — **읽기만 한다. 여기서 분석가를 부르지 않는다.** 주간 케이던스를
+    # 일간이 대신 돌리면 크레딧이 매일 들고 같은 날 두 번 돌렸을 때 값이 갈린다
+    # (`docs/25` §4.3). 없으면 계수가 전부 1.0 이고, 그 사실을 리포트가 적는다.
+    digest["regime"] = _regime_block(digest)
+    digest["regime_tilts"] = digest["regime"]["tilts"]
     digest["triage"] = build_triage_block(
         digest, resolutions_root=paths().evidence_resolutions
     )

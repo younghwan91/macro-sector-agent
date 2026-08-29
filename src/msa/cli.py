@@ -551,6 +551,71 @@ def backtest_l4_structures(
 
 @app.command()
 @cli_guard
+def regime(
+    week: str = typer.Option("", help="ISO 주 YYYY-Www (기본 = 오늘이 속한 주)"),
+    asof: str = typer.Option("", help="기준일 YYYY-MM-DD (기본 = 오늘)"),
+    provider: str = typer.Option(
+        "claude_code",
+        "--provider",
+        help=(
+            "claude_code | anthropic | mock | fixture. "
+            "claude_code = 로컬 claude CLI 하위 프로세스 (구독 인증 — API 크레딧 0)"
+        ),
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="MockProvider 로 경로만 검증"),
+    no_write: bool = _no_write_option("state/regime/"),
+    fixtures: str = typer.Option("", help="--provider fixture 의 루트"),
+    show: bool = typer.Option(False, "--show", help="호출하지 않고 최신 레짐만 보여준다"),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """P2 매크로 분석가 — cycle_class 8칸에 3값 판정 (docs/25).
+
+    **주간 1회**다. 매일 돌리지 않는다 — 같은 날 두 번 돌리면 다른 값이 나와 재현성을 잃는다
+    (docs/25 §4.3). 산출물 state/regime/<week>.yaml.
+
+    판정은 트리아지 **R 축의 계수**로만 쓰인다: tailwind 1.00 · neutral 0.85 · headwind 0.70.
+    J(판정 신뢰도)·C(재무 명료도)·구획은 **못 건드린다** — 매크로는 그 테마의 가치함정 판별이
+    옳은지에 대해서도 그 회사의 재무에 대해서도 아무 말을 하지 않는다.
+    """
+    from datetime import date as _date
+
+    from msa.config import paths as _paths
+    from msa.l2 import analyst as _analyst
+    from msa.l2 import regime as _regime
+    from msa.l3.providers import make_provider as _make
+
+    root = _paths().regime
+    if show:
+        doc = _regime.latest(root)
+        typer.echo(_analyst.summarize(doc))
+        if doc:
+            for name in sorted(doc.get("classes") or {}):
+                body = doc["classes"][name]
+                typer.echo(f"  {name:24} {body.get('verdict')}")
+        raise typer.Exit(0)
+
+    today = _date.fromisoformat(asof) if asof else _date.today()
+    iso = today.isocalendar()
+    wk = week or f"{iso.year}-W{iso.week:02d}"
+    kind = "mock" if dry_run else provider
+    prov = _make(
+        kind,
+        theme_id="__macro__",
+        fixture_root=Path(fixtures) if fixtures else None,
+    )
+    doc = _analyst.run(prov, week=wk, asof=today.isoformat())
+    # 검증은 저장 전에 — 무효화 조건·증거가 없으면 저장하지 않는다 (CLAUDE.md §3·§5)
+    _regime.validate(doc)
+    typer.echo(_analyst.summarize(doc))
+    if no_write:
+        typer.echo("no-write — state/regime/ 에 쓰지 않았다")
+        raise typer.Exit(0)
+    out = _regime.write(root, doc)
+    typer.echo(f"저장: {out}")
+
+
+@app.command()
+@cli_guard
 def research(
     theme: str = typer.Argument(..., help="테마 id (state/themes.yaml)"),
     asof: str = typer.Option(
