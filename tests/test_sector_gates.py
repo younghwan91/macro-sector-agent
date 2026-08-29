@@ -648,3 +648,28 @@ def test_blocked_reasons_come_before_passing_ones() -> None:
     # 헤더에도 `t1` 이 나오므로 **마지막** 조각(관문 목록)을 본다
     body = text.split("**`t1`** — ")[-1]
     assert body.index("❌") < body.index("✅"), "왜 안 사는지가 먼저 와야 한다"
+
+
+def test_judged_out_and_unjudged_are_reported_separately() -> None:
+    """**판정을 받고 떨어진 것과 아직 안 받은 것은 다른 사실이다.**
+
+    뭉뚱그리면 투자자가 "돌리면 될 수도" 라고 읽는다 — 앞은 이미 답이 나온 것이다.
+    """
+    d = _digest(
+        themes=[_theme(theme="close"), _theme(theme="rejected"), _theme(theme="never")],
+        judged=[
+            {"theme": "close", "portfolio_eligible": True, "trusted": True, "gate": "passed"},
+            {"theme": "rejected", "portfolio_eligible": False, "trusted": True, "gate": "passed"},
+        ],
+        evidence_audit={
+            "close": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []},
+        },
+        triage={
+            "rows": [
+                {"ticker": "A", "theme": "close", "partition": "I-A", "triage": 0.8, "j": 0.9}
+            ]
+        },
+    )
+    text = "\n".join(sector.verdict_md(sector.evaluate(d)))
+    assert "판별에서 떨어진 1개" in text and "`rejected`" in text
+    assert "아직 판별을 안 받은 1개" in text and "`never`" in text

@@ -487,12 +487,26 @@ def verdict_md(rows: Sequence[Row], *, limit: int = 3) -> list[str]:
             out.append("")
         rest = [r for r in rows if r not in detailed]
         if rest:
-            names = " · ".join(f"`{r.theme}`" for r in rest)
-            out += [
-                f"나머지 {len(rest)}개는 판별 이전에서 막혔다 — {names}. "
-                "가치 함정 혐의를 못 벗었거나 아직 판별을 안 받았다.",
-                "",
+            # **판정을 받고 떨어진 것과 아직 안 받은 것은 다른 사실이다.** 뭉뚱그리면
+            # 투자자가 "돌리면 될 수도" 라고 읽는다 — 앞은 이미 답이 나온 것이다.
+            judged_out = [
+                r for r in rest if "판별을 받은 적이 없다" not in r.gate("not_a_trap").why
             ]
+            unjudged = [r for r in rest if r not in judged_out]
+            if judged_out:
+                names = " · ".join(f"`{r.theme}`" for r in judged_out)
+                out += [
+                    f"**판별에서 떨어진 {len(judged_out)}개** — {names}. "
+                    "가치 함정 혐의를 못 벗었다 (확신도가 편입선에 못 미친다).",
+                    "",
+                ]
+            if unjudged:
+                names = " · ".join(f"`{r.theme}`" for r in unjudged)
+                out += [
+                    f"**아직 판별을 안 받은 {len(unjudged)}개** — {names}. "
+                    "후보가 아니라 미지수다.",
+                    "",
+                ]
 
     changes = what_would_change(rows)
     named = [r.theme for r in (ok or rows[:limit]) if r.theme in changes]
