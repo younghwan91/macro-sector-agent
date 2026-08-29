@@ -745,7 +745,8 @@ def test_build_triage_block_survives_missing_evidence_audit() -> None:
     block = D.build_triage_block(digest)
     row = block["rows"][0]
     assert row["triage"] is None
-    assert "증거 실사 없음" in row["note"]
+    # 사유는 두 경우를 구분한다 — 여기는 실사 단계가 아예 안 돈 쪽이다.
+    assert "실사 단계가 돌지 않았다" in row["note"]
 
 
 def test_triage_csv_renders_none_as_empty_not_zero() -> None:
