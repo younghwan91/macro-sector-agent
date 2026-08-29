@@ -234,3 +234,42 @@ def test_llm_layers_cannot_emit_a_recommendation() -> None:
     }
     for schema in (stock.SCHEMA["properties"]["verdict"], macro_one["properties"]["verdict"]):
         assert "buy" not in schema["enum"] and "sell" not in schema["enum"]
+
+
+# ---------------------------------------------------------------- 합성 응답 격리
+
+
+def test_synthetic_stock_notes_never_reach_the_score(tmp_path) -> None:
+    """**--dry-run 이 dry 여야 한다.** 경로 검증용 값이 실제 읽는 순서를 바꾸면 안 된다."""
+    from msa.l4 import analyst as stock
+
+    real = {**stock.MOCK_OUTPUT, "ticker": "REAL"}
+    real.pop("synthetic")
+    stock.write(tmp_path, real)
+    stock.write(tmp_path, {**stock.MOCK_OUTPUT, "ticker": "FAKE"})
+
+    got = stock.load_all(tmp_path, ["REAL", "FAKE"])
+    assert "REAL" in got
+    assert "FAKE" not in got, "합성 노트가 점수에 들어갔다"
+    assert stock.skipped_synthetic(tmp_path, ["REAL", "FAKE"]) == ["FAKE"]
+
+
+def test_synthetic_regime_produces_no_tilt() -> None:
+    from msa.l2 import regime as regime_mod
+
+    doc = {
+        "week": "2026-W35",
+        "synthetic": True,
+        "classes": {"credit_rate": {"verdict": "headwind"}},
+    }
+    assert regime_mod.tilts_by_theme(doc, {"t": "credit_rate"}) == {"t": 1.0}
+    real = {k: v for k, v in doc.items() if k != "synthetic"}
+    assert regime_mod.tilts_by_theme(real, {"t": "credit_rate"}) == {"t": 0.70}
+
+
+def test_mock_outputs_are_all_marked_synthetic() -> None:
+    from msa.l2 import analyst as macro
+    from msa.l4 import analyst as stock
+
+    assert macro.MOCK_OUTPUT["synthetic"] is True
+    assert stock.MOCK_OUTPUT["synthetic"] is True

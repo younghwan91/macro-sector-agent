@@ -224,9 +224,25 @@ def load_all(root: Path, tickers: Iterable[str]) -> dict[str, float]:
     out: dict[str, float] = {}
     for t in tickers:
         note = read(root, t)
-        if note and note.get("verdict") in NOTE_TRUST:
-            out[str(t)] = NOTE_TRUST[str(note["verdict"])]
+        if not note or note.get("verdict") not in NOTE_TRUST:
+            continue
+        if note.get("synthetic"):
+            # **합성 응답(--dry-run)은 점수에 들어가지 않는다.** 경로 검증용으로 쓴 값이
+            # 실제 읽는 순서를 조용히 바꾸면 --dry-run 이 dry 가 아니게 된다.
+            # 건너뛴 사실은 `skipped_synthetic()` 이 든다.
+            continue
+        out[str(t)] = NOTE_TRUST[str(note["verdict"])]
     return out
+
+
+def skipped_synthetic(root: Path, tickers: Iterable[str]) -> list[str]:
+    """점수에서 제외된 **합성 노트**의 티커. 조용히 버리지 않는다 (`CLAUDE.md` §2)."""
+    out: list[str] = []
+    for t in tickers:
+        note = read(root, t)
+        if note and note.get("synthetic"):
+            out.append(str(t))
+    return sorted(set(out))
 
 
 def run(
@@ -241,6 +257,9 @@ def run(
         "ticker": cand.ticker,
         "theme": cand.theme,
         "asof": asof,
+        # 합성 표시는 **프로바이더가 낸 그대로 보존한다** — 여기서 지우면 mock 산출이
+        # 실제 판정과 구분되지 않는다.
+        **({"synthetic": True} if obj.get("synthetic") else {}),
         "verdict": obj.get("verdict"),
         "mechanism": obj.get("mechanism"),
         "invalidations": list(obj.get("invalidations") or []),
@@ -268,6 +287,7 @@ def declared_constants() -> dict[str, Any]:
 #: `--dry-run`(MockProvider) 용 결정론 응답. **합성이라는 것이 mechanism 에 적혀 있다** —
 #: 실수로 저장돼도 사람이 실제 판정과 구분할 수 있어야 한다.
 MOCK_OUTPUT: dict[str, Any] = {
+    "synthetic": True,
     "verdict": "strained",
     "mechanism": "합성 응답(--dry-run) — 실제 판정이 아니다. 경로 검증용이다.",
     "invalidations": ["합성 응답이므로 무효화 조건도 합성이다"],

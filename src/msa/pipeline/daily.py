@@ -1106,10 +1106,17 @@ def _stock_notes_block(digest: dict[str, Any]) -> dict[str, float]:
         for p in (e.get("picks") or [])
     ]
     try:
-        return stock_analyst.load_all(paths().stock_notes, tickers)
+        root = paths().stock_notes
+        got = stock_analyst.load_all(root, tickers)
+        skipped = stock_analyst.skipped_synthetic(root, tickers)
     except Exception:  # 노트 디렉터리 사고가 다이제스트를 죽이지 않게
         log.warning("종목 노트를 읽지 못했다 — J 는 테마 성분만으로 간다", exc_info=True)
         return {}
+    if skipped:
+        # **조용히 버리지 않는다** (`CLAUDE.md` §2). --dry-run 산출이 스토어에 남아 있다는
+        # 사실을 사람이 알아야 지울지 다시 돌릴지 정한다.
+        log.warning("합성 노트 %d건은 점수에서 제외했다: %s", len(skipped), " ".join(skipped))
+    return got
 
 
 def _risk_block(digest: dict[str, Any]) -> dict[str, Any]:

@@ -142,6 +142,10 @@ def tilts_by_theme(
 
     문서가 없거나 그 칸의 판정이 없으면 **1.0** 이다 — 빠진 것을 역풍으로 읽지 않는다.
     """
+    if (doc or {}).get("synthetic"):
+        # **합성 레짐(--dry-run)은 계수를 만들지 않는다.** 경로 검증용 값이 실제 읽는
+        # 순서를 조용히 바꾸면 --dry-run 이 dry 가 아니게 된다.
+        doc = None
     classes = (doc or {}).get("classes") or {}
     out: dict[str, float] = {}
     for theme, cls in theme_classes.items():

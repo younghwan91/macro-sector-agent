@@ -141,7 +141,11 @@ def run(provider: LLMProvider, *, week: str, asof: str) -> dict[str, Any]:
     (`regime.write` 가 저장 전에 부른다) — 여기서 삼키면 실패가 조용해진다."""
     result = provider.complete(build_request(week, asof))
     obj = result.json()
-    return {"asof": asof, "week": week, "classes": obj.get("classes") or {}}
+    out: dict[str, Any] = {"asof": asof, "week": week, "classes": obj.get("classes") or {}}
+    if obj.get("synthetic"):
+        # 합성 표시는 프로바이더가 낸 그대로 보존한다 — 지우면 실제 판정과 구분되지 않는다.
+        out["synthetic"] = True
+    return out
 
 
 def theme_classes(themes: Iterable[Any]) -> dict[str, str]:
@@ -168,6 +172,7 @@ def summarize(doc: Mapping[str, Any] | None) -> str:
 
 #: `--dry-run`(MockProvider) 용 결정론 응답. **합성이라는 것이 mechanism 에 적혀 있다.**
 MOCK_OUTPUT: dict[str, Any] = {
+    "synthetic": True,
     "classes": {
         name: {
             "verdict": "neutral",
