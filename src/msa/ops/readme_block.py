@@ -234,6 +234,24 @@ def _concentration_line(digest: dict[str, Any]) -> str:
     return f" ⚠ **{head} — 사실상 한 베팅이다.**"
 
 
+def _sector_line(digest: dict[str, Any]) -> str:
+    """관문 체인의 한 줄 결론을 **README 결론 안으로** 끌어올린다.
+
+    체인이 `digest.md` 에만 있으면 README 결론만 읽는 사람은 "여섯 관문 중 어디서
+    막혔나" 를 못 본다 — 그런데 그것이 **오늘 무엇을 해야 하는가**를 정하는 정보다.
+    """
+    block = digest.get("sector") or {}
+    head = str(block.get("headline") or "")
+    if not head:
+        return ""
+    ok = list(block.get("cleared") or [])
+    if ok:
+        names = " · ".join(f"`{t}`" for t in ok)
+        return f" ✅ **여섯 관문을 전부 통과한 섹터: {names}.**"
+    # 통과가 없으면 **무엇이 막았는지**가 결론이다 — 숫자보다 그게 행동을 정한다
+    return " " + head.replace("**", "**")
+
+
 def _headline(digest: dict[str, Any]) -> tuple[str, str]:
     """한 줄 결론 + 근거. 표를 읽기 전에 **무엇을 할지**가 먼저 나와야 한다.
 
@@ -310,7 +328,8 @@ def _headline(digest: dict[str, Any]) -> tuple[str, str]:
         f"차트 확인 대상 {len(dips)}종목 — 편입 가능 {names_top} 의 명단 {n_pick} 중{tail}",
         f"**{named}**{more}."
         f"{warn} 나머지는 52주 고점 −{abs(PULLBACK_MARK):.0%}(선언값) 이내라 지금 자리가 "
-        f"아니다.{_concentration_line(digest)}{audit} **판정은 사람이 차트로 한다** — "
+        f"아니다.{_sector_line(digest)}{_concentration_line(digest)}{audit} "
+        "**판정은 사람이 차트로 한다** — "
         "시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. "
         "⚠ 는 레드플래그·감점이 붙은 종목이다.",
     )

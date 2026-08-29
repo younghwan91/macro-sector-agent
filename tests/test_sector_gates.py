@@ -354,3 +354,32 @@ def test_balance_block_exposes_verdicts_for_the_chain(tmp_path, monkeypatch) -> 
     bal.write(tmp_path / "balance", doc)
     block = D._balance_block({"judged": [{"theme": "t1", "portfolio_eligible": True}]})
     assert block["verdicts"] == {"t1": "tightening"}
+
+
+def test_readme_conclusion_carries_the_chain_result() -> None:
+    """체인이 digest.md 에만 있으면 README 결론만 읽는 사람은 못 본다."""
+    from msa.ops import readme_block as RB
+    from msa.pipeline import daily as D
+
+    digest = dict(_digest())
+    digest["sector"] = D._sector_block(digest)
+    line = RB._sector_line(digest)
+    assert "관문" in line
+    assert RB._sector_line({}) == "", "블록이 없으면 아무 말도 덧붙이지 않는다"
+
+
+def test_readme_line_names_the_cleared_sector(tmp_path, monkeypatch) -> None:
+    from msa.ops import readme_block as RB
+    from msa.pipeline import daily as D
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    digest = dict(
+        _digest(
+            balance={
+                "surveyed": ["t1"], "missing": [], "lines": [], "verdicts": {"t1": "tightening"}
+            }
+        )
+    )
+    digest["sector"] = D._sector_block(digest)
+    line = RB._sector_line(digest)
+    assert "`t1`" in line and "전부 통과" in line
