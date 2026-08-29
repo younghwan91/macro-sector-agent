@@ -336,3 +336,64 @@ def test_report_says_it_is_a_thesis_not_a_list() -> None:
     assert "논지이지 명단이 아니다" in md
     assert "byproduct" in md
     assert "무엇이 이 격차를 메우나" in md
+
+
+# ---------------------------------------------------------------- 일간 리포트 배선
+
+
+def test_daily_digest_carries_the_balance_block(tmp_path, monkeypatch) -> None:
+    """설계 §3.5 가 "리포트에 표시된다" 고 적었으므로 실제로 실려야 한다."""
+    from msa.pipeline import daily as D
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    balance.write(tmp_path / "balance", _doc(theme="t1"))
+    digest = {
+        "judged": [
+            {"theme": "t1", "portfolio_eligible": True},
+            {"theme": "t2", "portfolio_eligible": True},
+            {"theme": "t3", "portfolio_eligible": False},
+        ]
+    }
+    block = D._balance_block(digest)
+    assert block["surveyed"] == ["t1"]
+    assert block["missing"] == ["t2"], "편입 가능인데 조사 없는 것을 짚어야 한다"
+    assert "t3" not in block["missing"], "편입 불가 테마는 조사 대상이 아니다"
+    assert "tightening" in block["lines"][0]
+
+
+def test_surveys_of_non_eligible_themes_are_still_shown(tmp_path, monkeypatch) -> None:
+    """**가진 조사는 전부 싣는다.** 2026-08-29 실측: 편입 가능한 것만 싣던 초안이
+    `silver_miners` 조사를 리포트에서 통째로 지웠다. 조사해 둔 것이 안 보이면 아무도
+    다시 안 본다."""
+    from msa.pipeline import daily as D
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    balance.write(tmp_path / "balance", _doc(theme="silver_miners"))
+    block = D._balance_block({"judged": [{"theme": "other", "portfolio_eligible": True}]})
+    assert block["surveyed"] == ["silver_miners"]
+    assert "오늘 편입 가능 테마는 아니다" in block["lines"][0]
+    assert block["missing"] == ["other"]
+
+
+def test_daily_balance_block_survives_missing_store(tmp_path, monkeypatch) -> None:
+    from msa.pipeline import daily as D
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    block = D._balance_block({"judged": [{"theme": "t1", "portfolio_eligible": True}]})
+    assert block["surveyed"] == []
+    assert block["missing"] == ["t1"]
+
+
+def test_balance_section_md_says_missing_is_not_neutral() -> None:
+    from msa.pipeline import daily as D
+
+    block = {"balance": {"lines": [], "missing": ["a"], "surveyed": []}}
+    md = "\n".join(D.balance_section_md(block))
+    assert "`a`" in md
+    assert "중립" not in md.replace("중립이라는 뜻이 아니다", "")
+
+
+def test_balance_section_empty_when_no_block() -> None:
+    from msa.pipeline import daily as D
+
+    assert D.balance_section_md({}) == []

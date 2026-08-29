@@ -506,6 +506,24 @@ _PARTITION_HEADINGS = {
 }
 
 
+def balance_section_md(digest: dict[str, Any]) -> list[str]:
+    """수급 조사 절. **점수가 아니라 논지의 목록**이고, 없는 것을 없다고 적는다."""
+    block = digest.get("balance") or {}
+    if not (block.get("lines") or block.get("missing")):
+        return []
+    out = ["", "## 수급 균형 — 수요 나누기 공급 (읽는 문서 · 점수 아님)", ""]
+    out += [f"- {ln}" for ln in (block.get("lines") or [])]
+    if block.get("missing"):
+        names = " · ".join(f"`{t}`" for t in block["missing"])
+        out += [
+            "",
+            f"- **조사 없음: {names}** — 안 했다는 뜻이지 수급이 중립이라는 뜻이 아니다. "
+            "`msa balance` 로 회전을 돌린다.",
+        ]
+    out.append("")
+    return out
+
+
 def triage_section_md(digest: dict[str, Any]) -> list[str]:
     """구획별 트리아지 표.
 
@@ -671,6 +689,7 @@ def render_digest_md(digest: dict[str, Any]) -> str:
         L += roster_table_md(t["picks"], new_top)
         L += excluded_lines_md(t.get("excluded") or [], t["theme"])
     L += triage_section_md(digest)
+    L += balance_section_md(digest)
     L += ["", "## 오늘 새로 올라온 것", ""]
     news = new_item_lines(diff)
     L += [f"- {x}" for x in news] or ["- (없음)"]
@@ -1119,6 +1138,52 @@ def _stock_notes_block(digest: dict[str, Any]) -> dict[str, float]:
     return got
 
 
+def _balance_block(digest: dict[str, Any]) -> dict[str, Any]:
+    """편입 가능 테마의 수급 조사 요약 (L3.5, `docs/26` §3.5).
+
+    **점수에 안 들어간다.** 읽기만 하고 트리아지에 전달하지 않는다 — 수급이 타이트한 것과
+    지금 살 자리인 것은 다른 명제다. 조사가 **없는** 편입 가능 테마를 짚는 것이 이 블록의
+    절반이다: 없는 것을 "중립" 으로 읽지 않는다 (`CLAUDE.md` §2).
+    """
+    from datetime import date as _date
+
+    from msa.l35 import balance as balance_mod
+
+    eligible = {
+        str(j["theme"]) for j in (digest.get("judged") or []) if j.get("portfolio_eligible")
+    }
+    root = paths().balance
+    today = _date.today()
+
+    # **가진 조사는 전부 싣는다** — 편입 가능 여부와 무관하게. 수급 조사는 그 테마가 오늘
+    # 후보인가와 독립인 연구 문서이고, 편입 가능한 것만 싣던 초안은 2026-08-29 에 실제로
+    # `silver_miners` 조사를 리포트에서 통째로 지웠다. 조사해 둔 것이 안 보이면 아무도
+    # 다시 안 본다.
+    have: list[str] = []
+    try:
+        if root.exists():
+            have = sorted(f.name.removesuffix(".balance.yaml") for f in root.glob("*.balance.yaml"))
+    except Exception:
+        log.warning("수급 조사를 읽지 못했다", exc_info=True)
+
+    lines: list[str] = []
+    surveyed: list[str] = []
+    for theme in have:
+        try:
+            doc = balance_mod.read(root, theme)
+        except Exception:
+            continue
+        if doc is None:
+            continue
+        surveyed.append(theme)
+        mark = "" if theme in eligible else " *(오늘 편입 가능 테마는 아니다)*"
+        lines.append(balance_mod.summarize_theme(doc, today=today) + mark)
+
+    # 편입 가능인데 조사가 없는 것 — 이 목록이 다음에 `msa balance` 를 돌릴 대상이다
+    missing = sorted(eligible - set(surveyed))
+    return {"surveyed": surveyed, "missing": missing, "lines": lines}
+
+
 def _risk_block(digest: dict[str, Any]) -> dict[str, Any]:
     """구획 I-A·I-B 에 대한 집중 경고와 PM 슬롯 (P4, 설계 §9.3).
 
@@ -1514,6 +1579,8 @@ def run_daily(
     # 리스크·PM(P4) — **점수 뒤에 붙는다. 점수를 바꾸지 않는다.** 경고를 달고 표시 슬롯을
     # 나눌 뿐이고, 자를지는 사람이 정한다 (설계 §9.3).
     digest["risk"] = _risk_block(digest)
+    # 수급 조사(L3.5) — **읽기만 한다.** 트리아지에 전달하지 않는다 (`docs/26` §3.5).
+    digest["balance"] = _balance_block(digest)
     picks_by_ticker = {
         str(pk.get("ticker")): pk
         for e in (digest.get("themes") or [])
