@@ -1046,12 +1046,33 @@ TRIAGE_REFERENCE_COLUMNS = (
 )
 
 
-def build_triage_block(digest: dict[str, Any]) -> dict[str, Any]:
-    """digest 에 붙일 `triage` 블록. **새 계산은 `msa.triage` 안에만 있다.**"""
-    rows = triage_mod.score_digest(digest)
+def build_triage_block(
+    digest: dict[str, Any], *, resolutions_root: Path | None = None
+) -> dict[str, Any]:
+    """digest 에 붙일 `triage` 블록. **새 계산은 `msa.triage` 안에만 있다.**
+
+    `resolutions_root` 가 주어지면 증거 처리 대장을 읽어 J 에 반영한다 (P1b). 대장이
+    비어 있으면 아무것도 안 바뀐다 — 사람이 아직 아무 문서도 안 열었다는 뜻이다.
+    """
+    from msa.ops import resolutions as res_mod
+
+    ledger: dict[str, list[Any]] = {}
+    if resolutions_root is not None:
+        for j in digest.get("judged") or []:
+            entries = res_mod.load(resolutions_root, str(j["theme"]))
+            if entries:
+                ledger[str(j["theme"])] = entries
+    rows = triage_mod.score_digest(digest, ledger)
     return {
         "declared": triage_mod.declared_constants(),
         "claim_note": triage_mod.CLAIM_NOTE,
+        # 대장을 **읽었다는 사실**을 산출물에 남긴다. 비어 있어도 칸은 있다 —
+        # "안 읽었다" 와 "읽었는데 0건" 은 다른 말이다 (`CLAUDE.md` §2).
+        "resolutions": (
+            {k: res_mod.summary(v) for k, v in sorted(ledger.items())}
+            if resolutions_root is not None
+            else None
+        ),
         "rows": [asdict(r) for r in rows],
     }
 
@@ -1377,7 +1398,9 @@ def run_daily(
     # 트리아지 — **실사 뒤에 돈다.** J 축이 `evidence_audit` 을 읽으므로 순서가 규칙의
     # 일부다: 앞에 두면 오늘 실사한 결과가 오늘 점수에 안 들어간다.
     t = _Timer()
-    digest["triage"] = build_triage_block(digest)
+    digest["triage"] = build_triage_block(
+        digest, resolutions_root=paths().evidence_resolutions
+    )
     picks_by_ticker = {
         str(pk.get("ticker")): pk
         for e in (digest.get("themes") or [])

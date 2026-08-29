@@ -95,18 +95,36 @@ def evidence_quality(audit: Mapping[str, Any]) -> float:
 def theme_trust(
     judged: Mapping[str, Any] | None,
     audit: Mapping[str, Any] | None,
+    *,
+    resolutions: Sequence[Any] | None = None,
 ) -> float | None:
     """J 축의 테마 성분.
 
     - 판별이 없으면 **0.0**. 증거품질 항은 아예 없다 — 평균 내지 않는다.
     - 판별은 있는데 실사가 없으면 **None**(계산 불가). 0.5 로 채우지 않는다
       (`CLAUDE.md` §2 조용한 절단 금지).
+    - 대장(`ops.resolutions`)에 `refuted` 가 하나라도 있으면 상한이
+      `EVIDENCE_CAP_REFUTED` 로 내려간다 — 판별을 떠받친 증거가 반박됐다는 뜻이라
+      `unverified_axes` 상한(0.50)보다 무겁다.
+    - `confirmed` 는 `verified` 로 계상한다 — 사람이 원문을 열어 확인했다.
+    - `unresolvable` 은 **아무 영향도 없다.** 시간을 썼다는 사실이 증거를 검증하지는 않는다.
     """
     if judged is None:
         return 0.0
     if audit is None:
         return None
-    value = 0.5 * judgment_state(judged) + 0.5 * evidence_quality(audit)
+    entries = list(resolutions or [])
+    confirmed = sum(1 for e in entries if getattr(e, "verdict", None) == "confirmed")
+    refuted = any(getattr(e, "verdict", None) == "refuted" for e in entries)
+
+    counts = audit.get("counts") or {}
+    checked = int(audit["checked"])
+    # 사람이 확인한 건수가 실사 건수를 넘어도 품질은 1 을 넘지 않는다.
+    quality = min(int(counts.get("verified", 0)) + confirmed, checked) / checked
+
+    value = 0.5 * judgment_state(judged) + 0.5 * quality
+    if refuted:
+        return min(value, EVIDENCE_CAP_REFUTED)
     if audit.get("unverified_axes"):
         return min(value, EVIDENCE_CAP)
     return value
@@ -197,7 +215,10 @@ class TriageRow:
     note: str = ""
 
 
-def score_digest(digest: Mapping[str, Any]) -> list[TriageRow]:
+def score_digest(
+    digest: Mapping[str, Any],
+    resolutions: Mapping[str, Sequence[Any]] | None = None,
+) -> list[TriageRow]:
     """digest 모양 dict → 구획·점수가 붙은 종목 줄.
 
     정렬은 **구획 먼저, 그 안에서 triage 내림차순**이다. 구획 간 정렬은 하지 않는다 —
@@ -215,7 +236,7 @@ def score_digest(digest: Mapping[str, Any]) -> list[TriageRow]:
         theme = str(entry.get("theme"))
         jrow = judged.get(theme)
         arow = audits.get(theme)
-        j_value = theme_trust(jrow, arow)
+        j_value = theme_trust(jrow, arow, resolutions=(resolutions or {}).get(theme))
         if j_value is not None:
             note = ""
         elif not audit_ran:

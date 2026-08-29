@@ -77,6 +77,14 @@ class Paths:
         return self.state / "runs"
 
     @property
+    def evidence_resolutions(self) -> Path:
+        """증거 처리 대장 (`state/evidence_resolutions/<theme>.yaml`, `ops.resolutions`).
+
+        사람이 원문을 열어 확인한 결과. append-only 라 `journal/` 과 같은 취급이다.
+        """
+        return self.state / "evidence_resolutions"
+
+    @property
     def daily(self) -> Path:
         """일간 후보 다이제스트 (`state/daily/<asof>/digest.json`·`digest.md`, `msa run daily`)."""
         return self.state / "daily"
