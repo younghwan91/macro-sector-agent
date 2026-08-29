@@ -147,7 +147,12 @@ msa run monthly       # 월간 한 번 (배선 W4): scan → 상위 K 선정 →
 msa run weekly        # 주간: 전수 스캔 + msa check --weekly + weekly-report.md. --asof --no-write
 msa run daily         # 일간: 후보 다이제스트 (스캔→상위 K→테마별 L4 랭킹→직전 diff→보유 점검).
                       #   --asof --top-k 8 --themes a,b --per-theme 5 --no-write --send
-                      #   산출물 state/daily/<date>/ (digest.json·digest.md·report.txt) — 읽기 전용 후보 뷰,
+                      #   산출물 state/daily/<date>/ (digest.json·digest.md·report.txt·triage.csv)
+                      #   triage.csv — 구획(I-A 지금 볼 자리/I-B 고점권/II 판별 대기/III 판별 전) +
+                      #   **읽는 순서** 점수. 수익률 순서가 아니다 (docs/superpowers/specs/
+                      #   2026-08-29-hedge-fund-evolution-design.md §3.3). 참고 열(s_pct·composite·
+                      #   rs_rating)은 실리되 점수 입력이 아니다. 증거 처리 대장
+                      #   state/evidence_resolutions/<theme>.yaml 이 있으면 J 축에 반영된다 — 읽기 전용 후보 뷰,
                       #   측정값·후보 목록이지 투자 조언이 아니다. 결정 케이던스는 월간 그대로
                       #   --send 가 그 실행의 모든 발신(다이제스트 + 보유 점검 알림)을 지배한다 —
                       #   없으면 아무것도 나가지 않고 alerts.json 만 남는다 (suppressed)
