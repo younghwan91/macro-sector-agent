@@ -45,7 +45,7 @@ def _doc(**kw: object) -> dict[str, object]:
                     "evidence_ids": [1],
                 }
             ],
-            "cagr_estimate": 0.04,
+            "cagr_pct": 4.0,
         },
         "supply": {
             "verdict": "constrained",
@@ -57,7 +57,7 @@ def _doc(**kw: object) -> dict[str, object]:
                 }
             ],
             "new_capacity_3y": "확정(FID) 신규 1차 은광 없음",
-            "cagr_estimate": 0.01,
+            "cagr_pct": 1.0,
         },
         "balance": {
             "verdict": "tightening",
@@ -154,8 +154,38 @@ def test_unitless_theme_is_refused() -> None:
 def test_cagr_may_be_null_but_not_invented() -> None:
     """모르면 null 이다. 0 으로 채우면 '증가율 0' 이라는 판정이 된다 (`CLAUDE.md` §2)."""
     d = _doc()
-    d["demand"]["cagr_estimate"] = None  # type: ignore[index]
-    d["supply"]["cagr_estimate"] = None  # type: ignore[index]
+    d["demand"]["cagr_pct"] = None  # type: ignore[index]
+    d["supply"]["cagr_pct"] = None  # type: ignore[index]
+    balance.validate(d)
+
+
+def test_cagr_is_percent_points_not_a_ratio() -> None:
+    """2026-08-29 실측 회귀 — 에이전트가 "-0.9%" 를 `-0.9` 로 썼는데 스키마는 비율을
+    뜻했고, 리포트가 **-90%** 로 찍혔다. 단위가 모호했던 것이 원인이다.
+
+    이제 필드는 퍼센트 포인트이고, **비율로 쓴 것을 거부한다.**
+    """
+    d = _doc()
+    d["supply"]["cagr_pct"] = -0.9  # 실버 실측값 — -0.9%p 로 정당하다  # type: ignore[index]
+    balance.validate(d)
+
+    d["supply"]["cagr_pct"] = 0.04  # 4% 를 비율로 쓴 것  # type: ignore[index]
+    with pytest.raises(balance.BalanceRejected, match="비율로 잘못 쓴 것"):
+        balance.validate(d)
+
+
+def test_cagr_beyond_the_hygiene_bound_is_refused() -> None:
+    """±100%p 를 넘는 실물 증가율은 단위 오류다 — 판정 임계가 아니라 오류 탐지기다."""
+    d = _doc()
+    d["demand"]["cagr_pct"] = 250.0  # type: ignore[index]
+    with pytest.raises(balance.BalanceRejected, match="퍼센트 포인트 단위다"):
+        balance.validate(d)
+
+
+def test_cagr_zero_is_allowed_as_an_explicit_judgment() -> None:
+    """0 은 '모른다' 가 아니라 '안 움직인다' 는 판정이다 — 거부하지 않는다."""
+    d = _doc()
+    d["demand"]["cagr_pct"] = 0.0  # type: ignore[index]
     balance.validate(d)
 
 

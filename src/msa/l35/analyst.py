@@ -59,8 +59,10 @@ SYSTEM = (
     "6. **증설은 확정(FID)된 것만 센다.** 발표·구상·MOU 는 공급이 아니다.\n"
     "7. **출처 없는 주장은 저장되지 않는다.** 모든 driver·rigidity 가 `evidence_ids` 로 "
     "실재하는 근거를 가리켜야 한다. 네 기억은 증거가 아니다.\n"
-    "8. **모르면 `cagr_estimate` 를 null 로 둬라.** 0 으로 채우면 '증가율 0' 이라는 판정이 "
-    "된다.\n\n"
+    "8. **모르면 `cagr_pct` 를 null 로 둬라.** 0 으로 채우면 '증가율 0' 이라는 판정이 된다.\n"
+    "9. **`cagr_pct` 는 퍼센트 포인트다.** 4% 는 `4.0`, -0.9% 는 `-0.9` 로 쓴다. "
+    "비율(`0.04`)로 쓰지 마라 — 2026-08-29 에 그 혼동으로 리포트가 -0.9% 를 -90% 로 "
+    "찍었다.\n\n"
     "## 판정 세 벌\n"
     f"- 수요: {' | '.join(DEMAND_VERDICTS)}\n"
     f"- 공급: {' | '.join(SUPPLY_VERDICTS)}\n"
@@ -144,7 +146,7 @@ def render_report(doc: Mapping[str, Any]) -> str:
         "**가격을 말하지 않는다 — 물량 대 물량이다.**",
         "",
         f"## 수요 — {dem.get('verdict')}"
-        + (f" (연 {dem['cagr_estimate']:.1%})" if dem.get("cagr_estimate") is not None else ""),
+        + (f" (연 {dem['cagr_pct']:+.1f}%p)" if dem.get("cagr_pct") is not None else ""),
         "",
     ]
     for d in dem.get("drivers") or []:
@@ -153,7 +155,7 @@ def render_report(doc: Mapping[str, Any]) -> str:
     lines += [
         "",
         f"## 공급 — {sup.get('verdict')}"
-        + (f" (연 {sup['cagr_estimate']:.1%})" if sup.get("cagr_estimate") is not None else ""),
+        + (f" (연 {sup['cagr_pct']:+.1f}%p)" if sup.get("cagr_pct") is not None else ""),
         "",
         f"확정(FID) 증설 3년: {sup.get('new_capacity_3y')}",
         "",
@@ -197,13 +199,13 @@ MOCK_OUTPUT: dict[str, Any] = {
                 "evidence_ids": [1],
             }
         ],
-        "cagr_estimate": None,
+        "cagr_pct": None,
     },
     "supply": {
         "verdict": "elastic",
         "rigidity": [],
         "new_capacity_3y": "합성 응답 — 실제 조사가 아니다",
-        "cagr_estimate": None,
+        "cagr_pct": None,
     },
     "balance": {
         "verdict": "balanced",

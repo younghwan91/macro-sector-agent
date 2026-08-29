@@ -54,6 +54,21 @@ RIGIDITY_KINDS = (
 #: 단위로도 잘 안 바뀐다" 는 서술을 옮긴 것뿐이다. 결과를 보고 옮기지 않는다.
 BALANCE_STALE_DAYS = 90
 
+#: `cagr_pct` 의 위생 상한 — **판정 임계가 아니라 단위 오류 탐지기다.**
+#:
+#: 2026-08-29 실측에서 에이전트가 "-0.9%" 를 `-0.9` 로 썼는데 스키마는 비율(0.04=4%)을
+#: 뜻했다. 리포트가 **-90%** 로 찍혔다. 원인은 단위가 모호했던 것이고, 그래서 필드를
+#: 퍼센트 포인트로 바꿨다. 이 상한은 반대 방향의 실수(4% 를 0.04 로 쓰는 것)를 못 잡는다 —
+#: 그건 100 이 아니라 **1 미만**으로 들어오므로, 아래 `_SUSPICIOUS_RATIO` 가 따로 본다.
+#:
+#: `docs/24` 의 필터 상수가 아니다: 판정을 만들지 않고 **입력을 거부**할 뿐이다
+#: (`TTM_MAX_SPAN_DAYS` 같은 데이터 위생 상수와 같은 취급).
+CAGR_PCT_MAX = 100.0
+
+#: 이 절댓값보다 작고 0 이 아닌 값은 **비율로 잘못 쓴 것을 의심**한다. 실물 수요·공급이
+#: 연 0.05%p 씩 움직인다는 판정은 의미가 없고, 0.04(=4%)를 그대로 넣었을 가능성이 훨씬 크다.
+_SUSPICIOUS_RATIO = 0.1
+
 _URL = re.compile(r"^https?://\S+$")
 
 
@@ -90,12 +105,16 @@ SCHEMA: dict[str, Any] = {
                         "required": ["name", "direction", "magnitude", "evidence_ids"],
                     },
                 },
-                "cagr_estimate": {
+                "cagr_pct": {
                     "type": ["number", "null"],
-                    "description": "실물 단위 기준 연평균 증가율. **모르면 null — 0 이 아니다**",
+                    "description": (
+                        "실물 단위 기준 연평균 증가율 — **퍼센트 포인트 단위**. "
+                        "4% 는 `4.0`, -0.9% 는 `-0.9` 로 쓴다. 비율(0.04)로 쓰지 마라. "
+                        "**모르면 null — 0 이 아니다**"
+                    ),
                 },
             },
-            "required": ["verdict", "drivers", "cagr_estimate"],
+            "required": ["verdict", "drivers", "cagr_pct"],
         },
         "supply": {
             "type": "object",
@@ -118,9 +137,12 @@ SCHEMA: dict[str, Any] = {
                     "type": "string",
                     "description": "**확정(FID)된 증설만.** 발표·구상은 세지 않는다",
                 },
-                "cagr_estimate": {"type": ["number", "null"]},
+                "cagr_pct": {
+                    "type": ["number", "null"],
+                    "description": "퍼센트 포인트 단위 (수요와 같다). 모르면 null",
+                },
             },
-            "required": ["verdict", "rigidity", "new_capacity_3y", "cagr_estimate"],
+            "required": ["verdict", "rigidity", "new_capacity_3y", "cagr_pct"],
         },
         "balance": {
             "type": "object",
@@ -165,6 +187,24 @@ def _need(cond: bool, msg: str) -> None:
         raise BalanceRejected(msg)
 
 
+def _check_cagr(label: str, block: Mapping[str, Any]) -> None:
+    """`cagr_pct` 의 **단위**를 검사한다. 값의 좋고 나쁨은 보지 않는다."""
+    raw = block.get("cagr_pct")
+    if raw is None:
+        return
+    v = float(raw)
+    _need(
+        abs(v) <= CAGR_PCT_MAX,
+        f"{label}.cagr_pct 가 ±{CAGR_PCT_MAX:.0f}%p 를 넘는다: {v} — 퍼센트 포인트 단위다",
+    )
+    _need(
+        v == 0.0 or abs(v) >= _SUSPICIOUS_RATIO,
+        f"{label}.cagr_pct 가 {v} 다 — **비율로 잘못 쓴 것으로 보인다.** "
+        f"4% 는 0.04 가 아니라 4.0 이다. 실물 물량이 연 {abs(v):.3f}%p 움직인다는 판정이 "
+        "정말 맞다면 null 로 두고 ratio_note 에 서술해라",
+    )
+
+
 def validate(doc: Mapping[str, Any]) -> None:
     """수급 문서를 검증한다. 어기면 `BalanceRejected` — 저장 전에 부른다."""
     _need(bool(str(doc.get("theme") or "").strip()), "theme 이 비었다")
@@ -187,11 +227,13 @@ def validate(doc: Mapping[str, Any]) -> None:
 
     demand = doc.get("demand") or {}
     _need(demand.get("verdict") in DEMAND_VERDICTS, f"demand.verdict 는 {DEMAND_VERDICTS} 중 하나")
+    _check_cagr("demand", demand)
     drivers = list(demand.get("drivers") or [])
     _need(bool(drivers), "demand.drivers 가 비었다 — 무엇이 수요를 미는지 적어야 한다")
 
     supply = doc.get("supply") or {}
     _need(supply.get("verdict") in SUPPLY_VERDICTS, f"supply.verdict 는 {SUPPLY_VERDICTS} 중 하나")
+    _check_cagr("supply", supply)
     rigidity = list(supply.get("rigidity") or [])
     if supply.get("verdict") == "constrained":
         _need(
