@@ -198,3 +198,22 @@ def test_readiness_shallow_theme_does_not_outrank_deep_one() -> None:
 
 def test_readiness_single_member_partition_is_top() -> None:
     assert triage.readiness(_pick(from_52w_high=-0.30), [0.30]) == pytest.approx(0.7)
+
+
+def test_note_distinguishes_audit_not_run_from_theme_missing() -> None:
+    """'실사가 안 돌았다' 와 '이 테마의 실사가 없다' 는 다른 사실이다.
+
+    둘 다 J 계산 불가지만 사람이 할 일이 다르다 — 앞은 실행 방식, 뒤는 그 테마의 문제다.
+    """
+    themes = [{"theme": "t1", "picks": [_pick()]}]
+    judged = [_judged(theme="t1")]
+
+    not_run = triage.score_digest({"themes": themes, "judged": judged})
+    assert not_run[0].triage is None
+    assert "실사 단계가 돌지 않았다" in not_run[0].note
+
+    ran_but_empty = triage.score_digest(
+        {"themes": themes, "judged": judged, "evidence_audit": {}}
+    )
+    assert ran_but_empty[0].triage is None
+    assert "`t1` 의 증거 실사 결과가 없다" in ran_but_empty[0].note

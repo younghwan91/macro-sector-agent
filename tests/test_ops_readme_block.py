@@ -39,3 +39,41 @@ def test_a_genuinely_behind_store_still_warns() -> None:
 
     out = render_block(digest)
     assert "마지막 거래일보다 뒤처졌다" in out and "적재를 확인해라" in out
+
+
+def test_readme_block_orders_pullbacks_by_triage() -> None:
+    """triage 가 있으면 명단 순서가 **읽는 순서**다 (스펙 §6.1).
+
+    낙폭 순서와 일부러 어긋나게 짰다 — `DEEP` 이 가장 깊지만 레드플래그로 C 가 깎여
+    triage 가 낮다. 순서가 바뀌는 것이 이 기능의 전부이므로 갈리는 경우로 검사한다.
+    """
+    from msa.ops import readme_block as RB
+
+    rows = [
+        {"ticker": "DEEP", "theme": "th", "partition": "I-A", "triage": 0.60,
+         "j": 0.74, "c": 0.70, "r": 0.70, "note": ""},
+        {"ticker": "SHAL", "theme": "th", "partition": "I-A", "triage": 0.81,
+         "j": 0.74, "c": 1.00, "r": 0.35, "note": ""},
+    ]
+    order = RB._triage_order({"triage": {"rows": rows}})
+    assert order == {"DEEP": 0.60, "SHAL": 0.81}
+    picks = [
+        {"ticker": "DEEP", "from_52w_high": -0.45},
+        {"ticker": "SHAL", "from_52w_high": -0.20},
+    ]
+    themes = [{"theme": "th", "thesis": {"portfolio_eligible": True}, "picks": picks}]
+    assert [p["ticker"] for p in RB._pullbacks(themes)] == ["DEEP", "SHAL"], "낙폭 순"
+    assert [p["ticker"] for p in RB._pullbacks(themes, order=order)] == ["SHAL", "DEEP"]
+
+
+def test_readme_block_pullbacks_keep_drawdown_order_without_triage() -> None:
+    """triage 가 없으면 기존 낙폭 순서를 그대로 둔다 — 없는 것을 있다고 말하지 않는다."""
+    from msa.ops import readme_block as RB
+
+    picks = [
+        {"ticker": "SHAL", "from_52w_high": -0.20},
+        {"ticker": "DEEP", "from_52w_high": -0.45},
+    ]
+    themes = [{"theme": "th", "thesis": {"portfolio_eligible": True}, "picks": picks}]
+    assert [p["ticker"] for p in RB._pullbacks(themes)] == ["DEEP", "SHAL"]
+    assert RB._triage_order({}) == {}

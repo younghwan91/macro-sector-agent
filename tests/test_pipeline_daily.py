@@ -759,3 +759,41 @@ def test_triage_csv_renders_none_as_empty_not_zero() -> None:
     text = D.render_triage_csv(rows, {})
     body = text.splitlines()[1].split(",")
     assert body[1] == "" and body[4] == ""
+
+
+def test_triage_section_leads_with_partition_ia_and_claim_note() -> None:
+    digest = {
+        "triage": {
+            "claim_note": "**triage 는 읽는 순서다. 수익률 순서가 아니다.**",
+            "declared": {},
+            "rows": [
+                {"ticker": "AAA", "theme": "t1", "partition": "I-A", "triage": 0.81,
+                 "j": 0.74, "c": 1.0, "r": 0.70, "note": ""},
+                {"ticker": "BBB", "theme": "t1", "partition": "I-B", "triage": 0.85,
+                 "j": 0.74, "c": 1.0, "r": 0.85, "note": ""},
+            ],
+        }
+    }
+    text = "\n".join(D.triage_section_md(digest))
+    assert "읽는 순서다" in text
+    assert text.index("I-A") < text.index("I-B"), "구획 순서가 점수보다 먼저다"
+    assert text.index("AAA") < text.index("BBB"), "값이 낮아도 I-A 가 위다"
+
+
+def test_triage_section_empty_when_no_block() -> None:
+    assert D.triage_section_md({}) == []
+
+
+def test_triage_section_renders_uncomputable_rows_with_note() -> None:
+    digest = {
+        "triage": {
+            "claim_note": "x",
+            "declared": {},
+            "rows": [
+                {"ticker": "AAA", "theme": "t1", "partition": "I-A", "triage": None,
+                 "j": None, "c": 1.0, "r": 0.7, "note": "증거 실사 없음 — J 계산 불가"},
+            ],
+        }
+    }
+    text = "\n".join(D.triage_section_md(digest))
+    assert "—" in text and "증거 실사 없음" in text

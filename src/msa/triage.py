@@ -205,6 +205,10 @@ def score_digest(digest: Mapping[str, Any]) -> list[TriageRow]:
     """
     judged = {str(j["theme"]): j for j in (digest.get("judged") or [])}
     audits = digest.get("evidence_audit") or {}
+    # **실사 단계가 안 돈 것**과 **이 테마의 실사가 없는 것**은 다른 사실이다.
+    # 둘 다 J 는 계산 불가지만, 사람이 할 일이 다르다 — 앞은 실행 방식의 문제고
+    # 뒤는 그 테마의 문제다. 한 문장으로 뭉뚱그리면 어느 쪽인지 알 수 없다.
+    audit_ran = "evidence_audit" in digest
 
     staged: list[tuple[dict[str, Any], str, str, float | None, float, str]] = []
     for entry in digest.get("themes") or []:
@@ -212,7 +216,15 @@ def score_digest(digest: Mapping[str, Any]) -> list[TriageRow]:
         jrow = judged.get(theme)
         arow = audits.get(theme)
         j_value = theme_trust(jrow, arow)
-        note = "" if j_value is not None else "증거 실사 없음 — J 계산 불가"
+        if j_value is not None:
+            note = ""
+        elif not audit_ran:
+            note = (
+                "증거 실사 단계가 돌지 않았다 (--no-write 또는 --no-audit) — J 계산 불가. "
+                "점수를 보려면 실사를 켜고 다시 돌린다"
+            )
+        else:
+            note = f"`{theme}` 의 증거 실사 결과가 없다 — J 계산 불가"
         for pick in entry.get("picks") or []:
             part = partition(jrow, pick)
             staged.append((dict(pick), theme, part, j_value, clarity(pick), note))

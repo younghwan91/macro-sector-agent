@@ -99,14 +99,36 @@ def _judged_eligible(digest: dict[str, Any]) -> list[dict[str, Any]]:
     return [j for j in (digest.get("judged") or []) if j.get("portfolio_eligible")]
 
 
-def _pullbacks(themes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """편입 가능 테마의 명단 중 **눌려 있는** 종목 (고점 대비 `PULLBACK_MARK` 아래)."""
+def _triage_order(digest: dict[str, Any]) -> dict[str, float]:
+    """티커 → triage. 블록이 없으면 **빈 dict** — 그러면 기존 낙폭 순서를 그대로 쓴다.
+
+    계산 불가(`triage: null`)는 넣지 않는다. 넣으면 0 으로 읽혀 맨 뒤로 밀리는데,
+    "모른다" 와 "가장 낮다" 는 다른 말이다 (`CLAUDE.md` §2).
+    """
+    rows = (digest.get("triage") or {}).get("rows") or []
+    return {
+        str(r["ticker"]): float(r["triage"])
+        for r in rows
+        if r.get("triage") is not None
+    }
+
+
+def _pullbacks(
+    themes: list[dict[str, Any]], order: dict[str, float] | None = None
+) -> list[dict[str, Any]]:
+    """편입 가능 테마의 명단 중 **눌려 있는** 종목 (고점 대비 `PULLBACK_MARK` 아래).
+
+    `order`(트리아지)가 주어지면 그 내림차순이 곧 읽는 순서다. 없으면 낙폭 깊은 순 —
+    **없는 것을 있다고 말하지 않는다.**
+    """
     out: list[dict[str, Any]] = []
     for t in _eligible(themes):
         for pick in t.get("picks") or []:
             h = pick.get("from_52w_high")
             if isinstance(h, int | float) and h <= PULLBACK_MARK:
                 out.append({**pick, "theme": t.get("theme")})
+    if order:
+        return sorted(out, key=lambda x: -order.get(str(x.get("ticker")), -1.0))
     return sorted(out, key=lambda x: x.get("from_52w_high", 0.0))
 
 
@@ -243,21 +265,42 @@ def _headline(digest: dict[str, Any]) -> tuple[str, str]:
     )
 
 
-def _dip_lines(themes: list[dict[str, Any]]) -> list[str]:
-    """눌린 종목을 **테마·티커 순**으로. 낙폭 순 정렬은 "더 눌린 것이 더 볼 만하다" 는
-    근거 없는 주장이 된다. 낙폭만 적으면 유동성 없는 껍데기가 맨 위에 온다 — 그래서
-    거래대금과 레드플래그를 같이 싣는다."""
-    dips = sorted(_pullbacks(themes), key=lambda d: (str(d.get("theme")), str(d.get("ticker"))))
+def _dip_lines(
+    themes: list[dict[str, Any]], order: dict[str, float] | None = None
+) -> list[str]:
+    """눌린 종목 표.
+
+    **이전 판은 테마·티커 순이었고 그 이유가 옳았다**: 낙폭 순 정렬은 "더 눌린 것이 더
+    볼 만하다" 는 근거 없는 주장이 되고, 낙폭만 적으면 유동성 없는 껍데기가 맨 위에 온다.
+
+    2026-08-29 에 바뀐 것은 **정렬 근거가 생겼다는 것**이지 그 판단이 틀렸다는 것이 아니다.
+    `order`(트리아지)는 낙폭 하나가 아니라 판정 신뢰도(J)·재무 명료도(C)·열람 시급성(R)을
+    함께 본다 — 그래서 레드플래그가 붙은 종목은 더 눌렸어도 뒤로 간다. **그래도 이것은
+    읽는 순서이지 수익률 순서가 아니다.**
+
+    `order` 가 없으면 옛 규칙 그대로 테마·티커 순이다 — 없는 것을 있다고 말하지 않는다.
+    거래대금과 레드플래그를 같이 싣는 것은 어느 경우든 그대로다.
+    """
+    if order:
+        dips = _pullbacks(themes, order=order)
+        order_note = "순서 = triage(읽는 순서) — 수익률 순서가 아니다"
+        bar_note = "막대는 크기만 — 부호는 숫자가 든다. 순서는 triage 이지 낙폭 순이 아니다."
+    else:
+        dips = sorted(
+            _pullbacks(themes), key=lambda d: (str(d.get("theme")), str(d.get("ticker")))
+        )
+        order_note = "순서 = 테마·티커 순, 볼 만한 순서가 아니다"
+        bar_note = "막대는 크기만 — 부호는 숫자가 든다. 순서는 테마·티커 순이지 우선순위가 아니다."
     if not dips:
         return []
     from msa.ops.charts import block
 
-    out = ["", "**눌린 종목** (순서 = 테마·티커 순, 볼 만한 순서가 아니다)", ""]
+    out = ["", f"**눌린 종목** ({order_note})", ""]
     # 그래프는 숫자를 대신하지 않고 옆에 붙는다 — 낙폭 크기 차이가 표만 봐서는 안 잡힌다.
     out += block(
         "52주 고점 대비",
         [(str(d.get("ticker")), float(d.get("from_52w_high", 0.0))) for d in dips],
-        note="막대는 크기만 — 부호는 숫자가 든다. 순서는 테마·티커 순이지 우선순위가 아니다.",
+        note=bar_note,
     )
     out += ["| 종목 | 테마 | 52wH | 가격 | ADV20 | 비고 |", "|---|---|---:|---:|---:|---|"]
     for d in dips:
@@ -327,7 +370,7 @@ def render_block(digest: dict[str, Any], *, today: date | None = None) -> str:
         "|---:|---|---:|---|---:|---|",
     ]
     out += _verdict_rows(themes) or ["| — | (테마 없음) | — | — | — | — |"]
-    out += _dip_lines(themes)
+    out += _dip_lines(themes, _triage_order(digest))
     out += [
         "",
         f"<sub>상위 {min(TOP_N, len(themes))}개만 싣는다. 전문·제외 사유·판단 재료 열은 "

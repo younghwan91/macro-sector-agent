@@ -487,14 +487,59 @@ def _eligibility_cell(theme: dict[str, Any]) -> str:
 def _conclusion_lines(digest: dict[str, Any]) -> list[str]:
     """다이제스트 머리의 결론. `readme_block._headline` 을 그대로 쓴다 — 같은 사실에서
     두 문서가 갈라지지 않게."""
-    from msa.ops.readme_block import _dip_lines, _headline
+    from msa.ops.readme_block import _dip_lines, _headline, _triage_order
 
     verdict, detail = _headline(digest)
     out = [f"> **{verdict}**", ">", f"> {detail}", ""]
     # 결론이 가리키는 종목 표를 **여기에도** 싣는다. 예전에는 README 블록에만 있어서
     # 다이제스트만 읽는 사람에게는 결론이 가리키는 대상이 없었다 (2026-08-26).
-    out += _dip_lines(list(digest.get("themes") or []))
+    out += _dip_lines(list(digest.get("themes") or []), _triage_order(digest))
     return [*out, ""]
+
+
+#: 구획 머리말 — 각 구획이 무엇인지 **매번 적는다.** 값만 있는 표는 오해를 만든다.
+_PARTITION_HEADINGS = {
+    "I-A": "구획 I-A · 지금 볼 자리 — 판별을 통과했고 눌려 있다",
+    "I-B": "구획 I-B · 편입 가능 · 고점권 — 테마는 좋으나 지금 자리가 아니다",
+    "II": "구획 II · 판별 대기 — 알고 있는 것이 있고 결론이 부정이다",
+    "III": "구획 III · 판별 전 참고 — 아무것도 모른다. 후보가 아니다",
+}
+
+
+def triage_section_md(digest: dict[str, Any]) -> list[str]:
+    """구획별 트리아지 표.
+
+    **구획 간 정렬은 하지 않는다** — 백분위가 구획별로 따로 매겨지므로 I-B 의 값이
+    I-A 보다 커질 수 있다 (스펙 §6). 그래서 표를 구획마다 끊어 낸다: 한 표에 담으면
+    비교 가능한 것처럼 보인다.
+    """
+    block = digest.get("triage") or {}
+    rows = block.get("rows") or []
+    if not rows:
+        return []
+    out = ["", "## 트리아지 — 읽는 순서", "", str(block.get("claim_note", "")), ""]
+    for part in triage_mod.PARTITION_ORDER:
+        group = [r for r in rows if r.get("partition") == part]
+        if not group:
+            continue
+        out += [
+            f"### {_PARTITION_HEADINGS.get(part, part)} ({len(group)})",
+            "",
+            "| triage | 종목 | 테마 | J | C | R |",
+            "|---:|---|---|---:|---:|---:|",
+        ]
+        for r in group:
+            score = "—" if r.get("triage") is None else f"{r['triage']:.3f}"
+            j = "—" if r.get("j") is None else f"{r['j']:.3f}"
+            out.append(
+                f"| {score} | `{r['ticker']}` | `{r['theme']}` | "
+                f"{j} | {r['c']:.2f} | {r['r']:.2f} |"
+            )
+        notes = {str(r.get("note")) for r in group if r.get("note")}
+        if notes:
+            out += ["", *(f"- {n}" for n in sorted(notes))]
+        out.append("")
+    return out
 
 
 def render_digest_md(digest: dict[str, Any]) -> str:
@@ -613,6 +658,7 @@ def render_digest_md(digest: dict[str, Any]) -> str:
             L += ["", f"하드필터 통과 {n_ok} 종목 전부 · 테마 내 동일가중:", ""]
         L += roster_table_md(t["picks"], new_top)
         L += excluded_lines_md(t.get("excluded") or [], t["theme"])
+    L += triage_section_md(digest)
     L += ["", "## 오늘 새로 올라온 것", ""]
     news = new_item_lines(diff)
     L += [f"- {x}" for x in news] or ["- (없음)"]
