@@ -276,12 +276,11 @@ def test_daily_regime_block_survives_missing_themes_file(tmp_path: Path, monkeyp
 
 def test_daily_regime_block_omits_neutral_ones(tmp_path: Path, monkeypatch) -> None:
     """계수 1.0 은 싣지 않는다 — 무엇이 실제로 밀렸는지가 보여야 한다."""
-    from msa.pipeline import daily as D
-    from msa.themes import load_themes
-
     import shutil
 
     from msa.config import paths
+    from msa.pipeline import daily as D
+    from msa.themes import load_themes
 
     real = paths().themes_yaml
     monkeypatch.setenv("MSA_STATE", str(tmp_path))
