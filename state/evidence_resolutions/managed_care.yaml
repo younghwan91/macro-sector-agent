@@ -1,0 +1,36 @@
+- evidence_id: 1
+  resolved_by: human+claude
+  date: '2026-08-29'
+  verdict: refuted
+  note: KFF 원문을 열었다. 2016~2021 연도별 가입자 수(17.6·19.1·20.5·22.1·24.1·27.6백만)가 **이 문서에
+    하나도 없다.** 문서가 주는 시계열은 '2007년 19% → 2026년 55%' 라는 비중 두 점뿐이다. claim 자신이 '여러 스냅샷
+    기사의 종합, 원문 CMS 파일과 개별 대조는 하지 않음' 이라고 적어 뒀다 — 즉 이 URL 은 그 숫자의 출처가 아니다.
+- evidence_id: 8
+  resolved_by: human+claude
+  date: '2026-08-29'
+  verdict: confirmed
+  note: 원문 대조 완료. '35.2 million out of 64.2 million' · '+1.1 million, or 3%' · '8.2
+    million ... SNPs, an increase of more than 900,000' · '55%' 전부 확인. 기계 실사가 '3,500'
+    을 못 찾은 것은 원문이 35.2 로 적혀 있어서다 — evidence_audit 독스트링이 예고한 반올림 사례이고 날조가 아니다.
+- evidence_id: 10
+  resolved_by: human+claude
+  date: '2026-08-29'
+  verdict: refuted
+  note: KFF 원문을 열었다. **114% 는 있다** ('premium payments are estimated to have increased
+    114%, on average, for subsidized enrollees'). 그러나 claim 이 앞세운 $888 → $1,904 도,
+    CBO 의 '약 25% 감소(약 400만 명)' 도 **이 문서에 없다.** 메커니즘은 맞고 수치의 출처가 틀렸다.
+- evidence_id: 17
+  resolved_by: human+claude
+  date: '2026-08-29'
+  verdict: unresolvable
+  note: Commonwealth Fund 이 HTTP 403 으로 봇을 막는다 — 기계 실사의 unreachable 과 같은 사유이고 사람이
+    브라우저로 직접 열어야 한다. 40개 주 · $340B · 120만 명 셋 다 미확인 상태로 남는다. **'못 읽었다' 는 '맞다' 도 '틀리다'
+    도 아니다.**
+- evidence_id: 21
+  resolved_by: human+claude
+  date: '2026-08-29'
+  verdict: confirmed
+  note: KFF 원문 대조. '73.9 million people enrolled in Medicaid/CHIP nationally' 확인,
+    'declined by 5 million or 6% from April 2025 through April 2026' 확인. 다만 '2023년
+    3월 정점 9,400만 명' 은 이 문서에 없다 — 서술을 받치는 배경 수치이지 claim 의 측정값이 아니라 confirmed 로 둔다.
+    그 사실은 이 기록에 남긴다.

@@ -1,0 +1,23 @@
+- evidence_id: 6
+  resolved_by: human+claude
+  date: '2026-08-29'
+  verdict: confirmed
+  note: 원문 대조 완료. 'only twelve cellular container vessels scrapped' · 'the lowest
+    in twenty years' 확인. 기계 실사가 '12' 를 못 찾은 것은 원문이 숫자가 아니라 **'twelve' 라는 낱말**로 적었기
+    때문이다 — 날조가 아니라 표기 문제다.
+- evidence_id: 49
+  resolved_by: human+claude
+  date: '2026-08-29'
+  verdict: confirmed
+  note: 원문 대조 완료. H1 2026 'eleven cellular vessels for a capacity of 36,700 teu' ·
+    2025년 'twelve vessels for 8,172 teu' · 상업적 매각 'five ships for about 4,800 teu'
+    전부 확인. 비자발적(사고·제재) 처분이 36,700 중 약 32,000 teu 라는 구분도 원문에 있다 (WAN HAI 503 화재 · MSC
+    BALTIC III 좌초). **claim 이 원문보다 보수적이지도 과장되지도 않았다.**
+- evidence_id: 46
+  resolved_by: human+claude
+  date: '2026-08-29'
+  verdict: unresolvable
+  note: '**구조적으로 확인 불가다.** 이 URL 은 Drewry WCI 의 **라이브 지수 페이지**라 항상 최신 주차만 보여준다. 오늘
+    열면 2026-08-27 종합 $4,473(-1%) 이 나오고, claim 이 인용한 2026-08-20 $4,526(+4%) 은 페이지에서
+    사라졌다. 값이 틀렸다는 뜻이 아니라 **이 출처로는 과거 주차 스냅샷을 영원히 검증할 수 없다**는 뜻이다. 교훈: 시점 수치를 라이브 대시보드
+    URL 로 인용하면 그 증거는 처음부터 검증 불가다.'
