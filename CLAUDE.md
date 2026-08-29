@@ -122,6 +122,17 @@ msa research <theme>  # L3 에이전트 4역할(supply·catalyst·bear·referee)
                       #   실제 실행은 ANTHROPIC_API_KEY 필요 (--provider anthropic, 기본값)
                       #   오프라인: --dry-run (Mock) · --provider fixture (tests/fixtures/l3/)
                       #   산출물 state/theses/<date>/ (thesis.yaml·report.md·rejections-pending·contested)
+msa balance [themes]  # L3.5 수급 균형 조사 — "수요 나누기 공급" (docs/26 사전 등록).
+                      #   판별기(L3)는 "안 죽었나" 만 묻는다. 이건 **"쓰는 양이 늘어나는가"** 다:
+                      #   향후 3~5년 실물 수요 증가율이 실물 공급 증가율을 앞지르는가.
+                      #   **가격이 아니라 물량 대 물량** — 목표가·기대수익을 담을 칸이 없다.
+                      #   **회전이다** — 테마를 안 주면 조사 없는 편입 가능 테마 먼저, 그다음
+                      #   90일(BALANCE_STALE_DAYS) 지난 것부터 n개. 매일 134 테마를 돌지 않는다.
+                      #   -n --unit --provider --dry-run --no-write --show
+                      #   산출물 state/balance/<theme>.balance.yaml · .report.md
+                      #   **트리아지 점수에 안 들어간다** (docs/26 §3.5) — 명단이 아니라 논지다.
+                      #   공급 경직성은 5유형 중 하나로 분류(byproduct·lead_time·permitting·
+                      #   capital·resource_depletion) — 분류 못 하면 그 주장을 안 싣는다
 msa regime            # P2 매크로 분석가 — cycle_class 8칸에 3값 판정 (docs/25 사전 등록).
                       #   **주간 1회.** --week --asof --provider --dry-run --no-write --show
                       #   산출물 state/regime/<YYYY-Www>.yaml. 트리아지 **R 축의 계수**로만 쓰인다

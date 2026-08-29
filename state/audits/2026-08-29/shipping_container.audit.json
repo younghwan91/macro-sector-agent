@@ -2,11 +2,11 @@
  "theme": "shipping_container",
  "thesis": "/home/young/Documents/git/macro-sector-agent/state/theses/2026-08-24/shipping_container.thesis.yaml",
  "counts": {
-  "verified": 12,
-  "partial": 6,
+  "verified": 17,
   "unsupported": 1,
   "unreachable": 2,
-  "no_numbers": 2
+  "no_numbers": 2,
+  "partial": 1
  },
  "unverified_axes": [],
  "checks": [
@@ -22,10 +22,9 @@
   },
   {
    "id": 4,
-   "status": "partial",
+   "status": "verified",
    "url": "https://gcaptain.com/container-shipping-faces-oversupply-threat-as-record-newbuild-orders-reshape-industry/",
    "checked_numbers": [
-    "12",
     "11.61",
     "34.8",
     "633",
@@ -36,24 +35,18 @@
     "79",
     "366",
     "72",
-    "27"
-   ],
-   "missing_numbers": [
-    "12"
-   ],
-   "numbers_not_checked": 1
+    "27",
+    "135"
+   ]
   },
   {
    "id": 6,
-   "status": "partial",
+   "status": "verified",
    "url": "https://globalmaritimehub.com/container-ship-demolition-hits-a-twenty-year-low-in-2025.html",
    "checked_numbers": [
     "12",
     "8,172",
     "20"
-   ],
-   "missing_numbers": [
-    "12"
    ]
   },
   {
@@ -81,15 +74,12 @@
   },
   {
    "id": 12,
-   "status": "partial",
+   "status": "verified",
    "url": "https://www.mundomaritimo.net/noticias/containership-charter-market-closes-2025-with-solid-rates-across-most-vessel-sizes",
    "checked_numbers": [
     "4,300",
     "5.6",
     "3.5"
-   ],
-   "missing_numbers": [
-    "4,300"
    ]
   },
   {
@@ -282,7 +272,7 @@
   },
   {
    "id": 49,
-   "status": "partial",
+   "status": "verified",
    "url": "https://globalmaritimehub.com/accidents-and-sanctions-lift-containership-demolition-sales/",
    "checked_numbers": [
     "11",
@@ -291,15 +281,11 @@
     "32,000",
     "12",
     "8,172"
-   ],
-   "missing_numbers": [
-    "11",
-    "12"
    ]
   },
   {
    "id": 50,
-   "status": "partial",
+   "status": "verified",
    "url": "https://gcaptain.com/container-shippings-recycling-backlog-reaches-1-8-million-teu-as-industry-faces-fleet-age-crisis/",
    "checked_numbers": [
     "180",
@@ -311,9 +297,6 @@
     "16",
     "10",
     "185",
-    "60"
-   ],
-   "missing_numbers": [
     "60"
    ]
   },

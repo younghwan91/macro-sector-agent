@@ -2,9 +2,9 @@
  "theme": "managed_care",
  "thesis": "/home/young/Documents/git/macro-sector-agent/state/theses/2026-08-24/managed_care.thesis.yaml",
  "counts": {
-  "partial": 7,
+  "partial": 5,
   "unreachable": 4,
-  "verified": 11,
+  "verified": 13,
   "no_numbers": 1
  },
  "unverified_axes": [],
@@ -178,7 +178,7 @@
   },
   {
    "id": 22,
-   "status": "partial",
+   "status": "verified",
    "url": "https://ccf.georgetown.edu/2026/08/13/medicaid-managed-care-the-big-five-in-q2-2026/",
    "checked_numbers": [
     "3,620",
@@ -186,9 +186,6 @@
     "6.5",
     "9.5",
     "2.6"
-   ],
-   "missing_numbers": [
-    "3,400"
    ]
   },
   {
@@ -219,16 +216,12 @@
   },
   {
    "id": 26,
-   "status": "partial",
+   "status": "verified",
    "url": "https://www.astho.org/communications/blog/2026/aca-enhanced-premium-tax-credits-legislative-developments-2025-2026/",
    "checked_numbers": [
-    "12",
     "1834",
     "230",
     "196"
-   ],
-   "missing_numbers": [
-    "12"
    ]
   },
   {
@@ -236,7 +229,6 @@
    "status": "unreachable",
    "url": "https://www.healthcaredive.com/news/cms-medicare-advantage-audits-radv-risk-adjustment-update/811320/",
    "checked_numbers": [
-    "11",
     "760",
     "170"
    ],
