@@ -35,13 +35,23 @@ VERDICTS = ("confirmed", "refuted", "unresolvable")
 
 @dataclass(frozen=True)
 class Resolution:
-    """대장 한 줄. `evidence_id` 는 그 테마 thesis 안의 증거 번호다."""
+    """대장 한 줄. `evidence_id` 는 그 테마 thesis 안의 증거 번호다.
+
+    `supersedes` 가 참이면 **같은 `evidence_id` 의 앞 기록을 대체한다.** 앞 기록을 지우지
+    않고 뒤에 덧붙이므로 append-only 가 유지된다 — `journal/` 이 "생각이 바뀌면 새 항목을
+    추가하고 이전 항목을 링크한다" 고 하는 것과 같은 방식이다 (`CLAUDE.md` §6).
+
+    이 필드가 필요했던 이유: 2026-08-29 에 `managed_care` [17] 을 `unresolvable`(403)로
+    적었는데, 나중에 같은 문서가 열려 **판정이 뒤집혔다.** 고칠 수 없고 다시 쓸 수도 없으면
+    대장은 첫 판정에 영원히 묶인다.
+    """
 
     evidence_id: int
     resolved_by: str
     date: str
     verdict: str
     note: str = ""
+    supersedes: bool = False
 
 
 def path_for(root: Path, theme: str) -> Path:
@@ -49,7 +59,7 @@ def path_for(root: Path, theme: str) -> Path:
 
 
 def load(root: Path, theme: str) -> list[Resolution]:
-    """대장을 읽는다. 없으면 빈 목록 — 아직 아무도 안 열었다는 뜻이다."""
+    """대장 **전문**을 파일 순서 그대로 읽는다 (승계된 옛 기록 포함)."""
     p = path_for(root, theme)
     if not p.exists():
         return []
@@ -57,15 +67,33 @@ def load(root: Path, theme: str) -> list[Resolution]:
     return [Resolution(**dict(r)) for r in raw]
 
 
+def effective(root: Path, theme: str) -> list[Resolution]:
+    """**오늘 유효한 판정만** — 같은 `evidence_id` 는 마지막 기록이 이긴다.
+
+    점수(`triage.theme_trust`)가 읽는 것은 이것이다. `load` 는 이력 전문이라 옛 판정이
+    섞여 있고, 그것을 그대로 점수에 넣으면 뒤집힌 판정이 두 번 세어진다.
+    """
+    latest: dict[int, Resolution] = {}
+    for e in load(root, theme):
+        latest[e.evidence_id] = e
+    return [latest[k] for k in sorted(latest)]
+
+
 def append(root: Path, theme: str, entry: Resolution) -> Path:
     """항목 하나를 덧붙인다. **덮어쓰기는 거부한다** (`CLAUDE.md` §6)."""
     if entry.verdict not in VERDICTS:
         raise ValueError(f"verdict 는 {VERDICTS} 중 하나여야 한다: {entry.verdict!r}")
     existing = load(root, theme)
-    if any(e.evidence_id == entry.evidence_id for e in existing):
+    if any(e.evidence_id == entry.evidence_id for e in existing) and not entry.supersedes:
         raise ValueError(
             f"evidence_id {entry.evidence_id} 는 이미 있다 — 대장은 append-only 다. "
-            "판단이 바뀌었으면 항목을 고치지 말고 재판별한다"
+            "판정이 뒤집혔으면 `supersedes=True` 로 **덧붙여라** (앞 기록은 남는다). "
+            "앞 기록을 지우거나 고치는 경로는 없다"
+        )
+    if entry.supersedes and not any(e.evidence_id == entry.evidence_id for e in existing):
+        raise ValueError(
+            f"evidence_id {entry.evidence_id} 는 대장에 없다 — 승계할 앞 기록이 없으면 "
+            "`supersedes=True` 를 붙이지 않는다"
         )
     p = path_for(root, theme)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -75,5 +103,9 @@ def append(root: Path, theme: str, entry: Resolution) -> Path:
 
 
 def summary(entries: Sequence[Resolution]) -> dict[str, int]:
-    """판정별 건수. 세 칸은 항상 있다 — 0 건도 사실이다."""
+    """판정별 건수. 세 칸은 항상 있다 — 0 건도 사실이다.
+
+    **유효 판정을 세려면 `effective()` 의 결과를 넘긴다.** `load()` 를 그대로 넘기면
+    승계된 옛 판정까지 세어진다.
+    """
     return {v: sum(1 for e in entries if e.verdict == v) for v in VERDICTS}

@@ -1159,7 +1159,9 @@ def build_triage_block(
     ledger: dict[str, list[Any]] = {}
     if resolutions_root is not None:
         for j in digest.get("judged") or []:
-            entries = res_mod.load(resolutions_root, str(j["theme"]))
+            # **`effective` 다.** `load` 는 이력 전문이라 승계된 옛 판정이 섞여 있고,
+            # 그것을 점수에 넣으면 뒤집힌 판정이 두 번 세어진다.
+            entries = res_mod.effective(resolutions_root, str(j["theme"]))
             if entries:
                 ledger[str(j["theme"])] = entries
     rows = triage_mod.score_digest(digest, ledger)

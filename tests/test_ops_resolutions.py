@@ -107,3 +107,43 @@ def test_paths_owns_the_ledger_directory() -> None:
 
     assert paths().evidence_resolutions.name == "evidence_resolutions"
     assert paths().evidence_resolutions.parent == paths().state
+
+
+# ---------------------------------------------------------------- 승계 (2026-08-29)
+
+
+def test_supersede_keeps_the_old_record_and_wins(tmp_path: Path) -> None:
+    """판정이 뒤집혀도 앞 기록을 지우지 않는다 — `journal/` 과 같은 방식 (`CLAUDE.md` §6)."""
+    res.append(tmp_path, "t", _entry(evidence_id=17, verdict="unresolvable", note="403"))
+    res.append(
+        tmp_path,
+        "t",
+        _entry(evidence_id=17, verdict="refuted", note="나중에 열렸다", supersedes=True),
+    )
+    full = res.load(tmp_path, "t")
+    assert [e.verdict for e in full] == ["unresolvable", "refuted"], "앞 기록이 남아야 한다"
+    eff = res.effective(tmp_path, "t")
+    assert [e.verdict for e in eff] == ["refuted"], "유효 판정은 마지막 것 하나"
+
+
+def test_supersede_without_a_prior_record_is_refused(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="승계할 앞 기록이 없으면"):
+        res.append(tmp_path, "t", _entry(evidence_id=99, supersedes=True))
+
+
+def test_duplicate_without_supersede_still_refused(tmp_path: Path) -> None:
+    res.append(tmp_path, "t", _entry(evidence_id=1))
+    with pytest.raises(ValueError, match="이미 있다"):
+        res.append(tmp_path, "t", _entry(evidence_id=1))
+
+
+def test_summary_of_effective_does_not_double_count(tmp_path: Path) -> None:
+    """`load` 를 그대로 세면 뒤집힌 판정이 두 번 세어진다."""
+    res.append(tmp_path, "t", _entry(evidence_id=1, verdict="unresolvable"))
+    res.append(tmp_path, "t", _entry(evidence_id=1, verdict="refuted", supersedes=True))
+    assert res.summary(res.load(tmp_path, "t")) == {
+        "confirmed": 0, "refuted": 1, "unresolvable": 1,
+    }
+    assert res.summary(res.effective(tmp_path, "t")) == {
+        "confirmed": 0, "refuted": 1, "unresolvable": 0,
+    }

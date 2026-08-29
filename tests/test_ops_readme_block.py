@@ -77,3 +77,60 @@ def test_readme_block_pullbacks_keep_drawdown_order_without_triage() -> None:
     themes = [{"theme": "th", "thesis": {"portfolio_eligible": True}, "picks": picks}]
     assert [p["ticker"] for p in RB._pullbacks(themes)] == ["DEEP", "SHAL"]
     assert RB._triage_order({}) == {}
+
+
+def test_conclusion_carries_the_concentration_warning() -> None:
+    """P4 경고가 구획 표 아래에만 있으면 결론만 읽는 사람은 못 본다 (2026-08-29)."""
+    from msa.ops import readme_block as RB
+
+    digest = {
+        "risk": {
+            "partitions": {
+                "I-A": {
+                    "warnings": [
+                        {
+                            "kind": "theme_concentration",
+                            "text": (
+                                "상위 3 중 3개가 `managed_care` 한 테마다 (100%) — "
+                                "사실상 한 베팅이다"
+                            ),
+                        }
+                    ]
+                }
+            }
+        }
+    }
+    got = RB._concentration_line(digest)
+    assert "managed_care" in got and "한 베팅" in got
+    assert RB._concentration_line({}) == "", "경고가 없으면 아무 말도 덧붙이지 않는다"
+
+
+def test_audit_line_drops_items_the_human_already_resolved(tmp_path, monkeypatch) -> None:
+    """처리한 일을 다시 시키면 목록 전체가 신뢰를 잃는다 (2026-08-29 실측)."""
+    from msa.config import paths
+    from msa.ops import readme_block as RB
+    from msa.ops import resolutions as res
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    res.append(
+        paths().evidence_resolutions,
+        "t1",
+        res.Resolution(1, "human", "2026-08-29", "confirmed", "원문 확인"),
+    )
+    digest = {
+        "evidence_audit": {
+            "t1": {
+                "counts": {"partial": 2, "unreachable": 0},
+                "checked": 5,
+                "unverified_axes": [],
+                "triage": [
+                    {"evidence_id": 1, "verdict": "open_first"},
+                    {"evidence_id": 2, "verdict": "open_first"},
+                ],
+            }
+        }
+    }
+    got = RB._audit_line(digest)
+    assert "[2]" in got
+    assert "[1]" not in got, "이미 처리한 [1] 이 다시 나왔다"
+    assert "원문 대조를 끝낸 1건은 목록에서 뺐다" in got

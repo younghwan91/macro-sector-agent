@@ -132,6 +132,27 @@ def _pullbacks(
     return sorted(out, key=lambda x: x.get("from_52w_high", 0.0))
 
 
+def _resolved_ids(digest: dict[str, Any]) -> dict[str, set[int]]:
+    """테마 → 대장에서 **이미 처리한** 증거 id.
+
+    `digest["triage"]["resolutions"]` 는 건수만 들고 있어 id 를 모른다. 대장 파일을 직접
+    읽는다 — 없으면 빈 dict 이고 아무것도 안 빠진다.
+    """
+    from msa.config import paths
+    from msa.ops import resolutions as res
+
+    out: dict[str, set[int]] = {}
+    try:
+        root = paths().evidence_resolutions
+        for th in (digest.get("evidence_audit") or {}):
+            ids = {e.evidence_id for e in res.effective(root, str(th))}
+            if ids:
+                out[str(th)] = ids
+    except Exception:  # 대장 사고가 리포트를 죽이지 않게 — 다만 아무것도 빼지 않는다
+        return {}
+    return out
+
+
 def _audit_line(digest: dict[str, Any]) -> str:
     """증거 실사 요약 한 조각. 결론 안에 넣는다 — 파일에만 있으면 아무도 안 본다."""
     audit = digest.get("evidence_audit") or {}
@@ -151,13 +172,20 @@ def _audit_line(digest: dict[str, Any]) -> str:
     # 무엇을 할지 모른다 (2026-08-29). 분류는 `l3.evidence_triage` 가 한다.
     # **테마별로 묶는다.** 증거 id 는 테마마다 따로라 `[1]` 이 두 테마에 다 있을 수 있다.
     # 섞어서 나열하면 어느 문서를 열어야 하는지 알 수 없다 (2026-08-29).
+    # **이미 대장에서 처리한 것은 빼고 짚는다.** 2026-08-29 실측: 사람이 [1]·[8]·[10]·[17]
+    # 을 원문 대조까지 끝냈는데 리포트는 여전히 그 넷을 "먼저 열 것" 으로 내밀었다.
+    # 처리한 일을 다시 시키면 목록 전체가 신뢰를 잃는다.
+    done = _resolved_ids(digest)
     by_theme: list[tuple[str, list[int]]] = []
+    resolved_n = 0
     for th, v in sorted(audit.items()):
-        ids = [
+        raw = [
             int(x["evidence_id"])
             for x in (v.get("triage") or [])
             if x.get("verdict") == "open_first"
         ]
+        ids = [i for i in raw if i not in done.get(th, set())]
+        resolved_n += len(raw) - len(ids)
         if ids:
             by_theme.append((th, sorted(ids)))
     first = [i for _, ids in by_theme for i in ids]
@@ -179,9 +207,31 @@ def _audit_line(digest: dict[str, Any]) -> str:
             " 먼저 열 것으로 분류된 것은 없다 — 전부 반올림·곁가지다 "
             "(`msa ops audit-evidence <theme>` 로 전문)."
         )
+    if resolved_n:
+        bit += f" (사람이 원문 대조를 끝낸 {resolved_n}건은 목록에서 뺐다.)"
     if axes:
         bit += f" 확인된 근거가 하나도 없는 축: {', '.join(axes)}."
     return bit
+
+
+def _concentration_line(digest: dict[str, Any]) -> str:
+    """P4 의 집중 경고를 **결론 문장 안으로** 끌어올린다.
+
+    경고가 구획 표 아래에만 있으면 결론만 읽는 사람은 못 본다. 2026-08-29 실측에서
+    구획 I-A 의 3종목이 전부 한 테마·한 군집이었는데, 그 사실이 결론에는 없고 표
+    아래에만 있었다 — **명단의 가장 중요한 사실이 가장 안 읽히는 자리에 있었다.**
+    """
+    parts = (digest.get("risk") or {}).get("partitions") or {}
+    warns = [
+        w["text"]
+        for p in ("I-A", "I-B")
+        for w in (parts.get(p) or {}).get("warnings") or []
+        if w.get("kind") in ("theme_concentration", "cluster_concentration")
+    ]
+    if not warns:
+        return ""
+    head = str(warns[0]).split(" — ")[0].strip()
+    return f" ⚠ **{head} — 사실상 한 베팅이다.**"
 
 
 def _headline(digest: dict[str, Any]) -> tuple[str, str]:
@@ -260,8 +310,9 @@ def _headline(digest: dict[str, Any]) -> tuple[str, str]:
         f"차트 확인 대상 {len(dips)}종목 — 편입 가능 {names_top} 의 명단 {n_pick} 중{tail}",
         f"**{named}**{more}."
         f"{warn} 나머지는 52주 고점 −{abs(PULLBACK_MARK):.0%}(선언값) 이내라 지금 자리가 "
-        f"아니다.{audit} **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 "
-        "아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.",
+        f"아니다.{_concentration_line(digest)}{audit} **판정은 사람이 차트로 한다** — "
+        "시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. "
+        "⚠ 는 레드플래그·감점이 붙은 종목이다.",
     )
 
 

@@ -355,6 +355,14 @@ _UA = (
 MAX_BYTES = 4_000_000
 FETCH_TIMEOUT_S = 15
 
+#: **일시적 차단은 다시 시도한다.** 2026-08-29 실측: Commonwealth Fund 가 실사에서 403 을
+#: 냈는데 같은 헤더로 나중에 다시 열자 200 이었다 — 헤더 문제가 아니라 순간적인 차단이었다.
+#: 한 번 시도하고 `unreachable` 로 굳히면 **읽을 수 있는 문서를 "사람이 열어야 한다" 로
+#: 잘못 미룬다.** 그 오판이 실제로 판정 하나를 며칠 묶어 뒀다.
+RETRY_STATUSES = (403, 429, 500, 502, 503, 504)
+RETRY_ATTEMPTS = 3
+RETRY_BACKOFF_S = 2.0
+
 #: 동시에 받는 문서 수. 서로 다른 호스트라 한 사이트를 두드리는 것이 아니다.
 MAX_WORKERS = 8
 
@@ -365,18 +373,31 @@ def http_fetch(url: str, *, timeout_s: int = FETCH_TIMEOUT_S) -> str | None:
     빈 문자열을 돌려주면 "본문에 그 숫자가 없다" 와 "문서를 못 읽었다" 가 같아진다.
     전자는 증거가 틀렸다는 뜻이고 후자는 아무 말도 못 한 것이다 (`CLAUDE.md` §2).
     """
+    import time
+
     import httpx
 
-    try:
-        with httpx.Client(follow_redirects=True, timeout=timeout_s) as c:
-            r = c.get(url, headers={"User-Agent": _UA, "Accept": "text/html,*/*"})
-        if r.status_code != 200:
-            log.info("실사: %s → HTTP %s", url[:70], r.status_code)
-            return None
-        return r.text[:MAX_BYTES]
-    except Exception as e:  # 네트워크·TLS·인코딩 — 사유를 남기고 못 읽었다고 한다
-        log.info("실사: %s → %s", url[:70], type(e).__name__)
-        return None
+    headers = {
+        "User-Agent": _UA,
+        "Accept": "text/html,application/xhtml+xml,*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    last = ""
+    for attempt in range(RETRY_ATTEMPTS):
+        try:
+            with httpx.Client(follow_redirects=True, timeout=timeout_s) as c:
+                r = c.get(url, headers=headers)
+            if r.status_code == 200:
+                return r.text[:MAX_BYTES]
+            last = f"HTTP {r.status_code}"
+            if r.status_code not in RETRY_STATUSES:
+                break
+        except Exception as e:  # 네트워크·TLS·인코딩
+            last = type(e).__name__
+        if attempt < RETRY_ATTEMPTS - 1:
+            time.sleep(RETRY_BACKOFF_S * (attempt + 1))
+    log.info("실사: %s → %s (%d회 시도)", url[:70], last, RETRY_ATTEMPTS)
+    return None
 
 
 def render_audit(theme: str, res: AuditResult) -> str:
