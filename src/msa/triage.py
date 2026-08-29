@@ -1,0 +1,86 @@
+"""트리아지 점수 — **읽는 순서**이지 수익률 순서가 아니다.
+
+설계는 `docs/superpowers/specs/2026-08-29-hedge-fund-evolution-design.md`.
+
+## 이 점수가 주장하는 것과 하지 않는 것
+
+L4 의 선정 규칙은 2026-08-24 에 은퇴했다 — `docs/15` 검정에서 B0·B1·B2 셋 다 B3(하드 제외
+통과 전부 동일가중)를 이기지 못했기 때문이다. **이 모듈은 그 규칙을 되살리지 않는다.**
+종합 점수가 묻던 "무엇이 더 오를 것인가" 대신 **"다음 10분을 어느 차트에 쓸 것인가"** 를
+묻는다. 수익률을 주장하지 않으므로 `docs/15` 관문의 대상이 아니고, 그 대가로 **검정될 수도
+없다** (스펙 §8.3).
+
+그래서 `s_pct`·`t_pct`·`m_pct`·`composite`·`rank`·`rs_rating`·`from_52w_low` 는 **점수 입력이
+아니다.** 넣는 순간 이 점수는 조용히 수익률 주장이 된다. 참고 열로만 싣는다.
+
+## 선언값 (`CLAUDE.md` §1 — 데이터에 맞춰 바꾸지 않는다)
+
+`TRIAGE_WEIGHTS`(0.50/0.30/0.20)는 이 저장소가 자기 깔때기의 순서로 이미 선언해 둔 우선순위를
+옮긴 것이다: 테마 판별(J) > 재무 판정(C) > 차트(R). R 이 가장 작은 이유는 2026-08-24 에
+**차트는 사람이 본다** 고 역할이 못박혔기 때문이다.
+
+**새 수치 상수는 하나도 만들지 않았다.** 낙폭 기준선은 `ops.readme_block.PULLBACK_MARK` 를
+import 해서 쓰고(복사하지 않는다), 낙폭 순서는 백분위라 눈금이 없다.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import Any
+
+#: 축 가중치 — 선언값. 결과를 보고 옮기지 않는다 (`CLAUDE.md` §1 · 스펙 §4.2).
+TRIAGE_WEIGHTS = {"J": 0.50, "C": 0.30, "R": 0.20}
+
+#: 판정을 만든 축의 증거가 원문 대조를 통과하지 못했을 때 J 의 상한 (스펙 §5.1.3).
+EVIDENCE_CAP = 0.50
+
+#: 증거 처리 대장에서 `refuted` 가 나온 테마의 J 상한 (스펙 §7).
+EVIDENCE_CAP_REFUTED = 0.25
+
+assert abs(sum(TRIAGE_WEIGHTS.values()) - 1.0) < 1e-9
+
+
+def judgment_state(judged: Mapping[str, Any]) -> float:
+    """판별 상태 — **위에서부터 먼저 맞는 줄 하나**만 적용한다 (스펙 §5.1.1).
+
+    순서가 규칙의 일부다: 한 테마가 여러 줄에 해당할 수 있고, `trusted: false` 는
+    편입 가능이어도 먼저 걸린다.
+    """
+    if not judged.get("trusted"):
+        return 0.30
+    if judged.get("portfolio_eligible"):
+        return 1.00
+    if judged.get("gate") == "passed":
+        return 0.50
+    return 0.30
+
+
+def evidence_quality(audit: Mapping[str, Any]) -> float:
+    """`verified / checked`.
+
+    `unreachable`·`unsupported` 는 **분모에 남는다** — "못 읽었다" 는 "맞다" 가 아니다
+    (`l3.evidence_audit` 모듈 독스트링).
+    """
+    counts = audit.get("counts") or {}
+    checked = int(audit["checked"])
+    return int(counts.get("verified", 0)) / checked
+
+
+def theme_trust(
+    judged: Mapping[str, Any] | None,
+    audit: Mapping[str, Any] | None,
+) -> float | None:
+    """J 축의 테마 성분.
+
+    - 판별이 없으면 **0.0**. 증거품질 항은 아예 없다 — 평균 내지 않는다.
+    - 판별은 있는데 실사가 없으면 **None**(계산 불가). 0.5 로 채우지 않는다
+      (`CLAUDE.md` §2 조용한 절단 금지).
+    """
+    if judged is None:
+        return 0.0
+    if audit is None:
+        return None
+    value = 0.5 * judgment_state(judged) + 0.5 * evidence_quality(audit)
+    if audit.get("unverified_axes"):
+        return min(value, EVIDENCE_CAP)
+    return value
