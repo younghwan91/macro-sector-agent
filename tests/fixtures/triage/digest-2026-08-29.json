@@ -1,0 +1,208 @@
+{
+  "asof": "2026-08-29",
+  "evidence_audit": {
+    "managed_care": {
+      "checked": 23,
+      "counts": {
+        "no_numbers": 1,
+        "partial": 7,
+        "unreachable": 4,
+        "verified": 11
+      },
+      "unverified_axes": []
+    },
+    "shipping_container": {
+      "checked": 23,
+      "counts": {
+        "no_numbers": 2,
+        "partial": 6,
+        "unreachable": 2,
+        "unsupported": 1,
+        "verified": 12
+      },
+      "unverified_axes": []
+    }
+  },
+  "judged": [
+    {
+      "cycle_confidence": 0.75,
+      "gate": "passed",
+      "in_top_k": true,
+      "portfolio_eligible": true,
+      "source": "state/theses/2026-08-24/managed_care.thesis.yaml",
+      "theme": "managed_care",
+      "trusted": true
+    },
+    {
+      "cycle_confidence": 0.75,
+      "gate": "passed",
+      "in_top_k": true,
+      "portfolio_eligible": true,
+      "source": "state/theses/2026-08-24/shipping_container.thesis.yaml",
+      "theme": "shipping_container",
+      "trusted": true
+    }
+  ],
+  "themes": [
+    {
+      "picks": [
+        {
+          "above_50d": true,
+          "composite_partial": false,
+          "from_52w_high": -0.006843267108167628,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "GSL"
+        },
+        {
+          "above_50d": true,
+          "composite_partial": false,
+          "from_52w_high": -0.004790735819377279,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "MATX"
+        },
+        {
+          "above_50d": true,
+          "composite_partial": false,
+          "from_52w_high": -0.1301637672125573,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": false,
+          "survival_unjudged": null,
+          "ticker": "CMRE"
+        },
+        {
+          "above_50d": true,
+          "composite_partial": false,
+          "from_52w_high": -0.03715833228366294,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "ESEA"
+        },
+        {
+          "above_50d": true,
+          "composite_partial": false,
+          "from_52w_high": -0.008716738759994791,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "DAC"
+        },
+        {
+          "above_50d": true,
+          "composite_partial": false,
+          "from_52w_high": -0.030892051371051665,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "ZIM"
+        }
+      ],
+      "theme": "shipping_container"
+    },
+    {
+      "picks": [
+        {
+          "above_50d": false,
+          "composite_partial": false,
+          "from_52w_high": -0.08272283272283265,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "OSCR"
+        },
+        {
+          "above_50d": false,
+          "composite_partial": false,
+          "from_52w_high": -0.21811460258780035,
+          "red_flags": "consecutive_operating_loss",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "CLOV"
+        },
+        {
+          "above_50d": false,
+          "composite_partial": false,
+          "from_52w_high": -0.1816946640316205,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "MOH"
+        },
+        {
+          "above_50d": true,
+          "composite_partial": false,
+          "from_52w_high": -0.04933061699650754,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "CNC"
+        },
+        {
+          "above_50d": true,
+          "composite_partial": false,
+          "from_52w_high": -0.041009232572908116,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "HUM"
+        },
+        {
+          "above_50d": false,
+          "composite_partial": false,
+          "from_52w_high": -0.44788273615635177,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": false,
+          "survival_unjudged": null,
+          "ticker": "ALHC"
+        },
+        {
+          "above_50d": true,
+          "composite_partial": false,
+          "from_52w_high": -0.06485625248951477,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "ELV"
+        },
+        {
+          "above_50d": false,
+          "composite_partial": false,
+          "from_52w_high": -0.09464879110805546,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": true,
+          "survival_unjudged": null,
+          "ticker": "UNH"
+        },
+        {
+          "above_50d": false,
+          "composite_partial": false,
+          "from_52w_high": -0.0921515097023099,
+          "red_flags": "",
+          "s_partial": false,
+          "stage2": false,
+          "survival_unjudged": null,
+          "ticker": "CI"
+        }
+      ],
+      "theme": "managed_care"
+    }
+  ]
+}

@@ -26,6 +26,7 @@ import 해서 쓰고(복사하지 않는다), 낙폭 순서는 백분위라 눈�
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
 from msa.ops.readme_block import PULLBACK_MARK
@@ -180,3 +181,111 @@ def readiness(pick: Mapping[str, Any], peer_drawdowns: Sequence[float]) -> float
     dd_part = 0.0 if dd is None else _percentile(dd, peer_drawdowns)
     base = (int(bool(pick.get("stage2"))) + int(bool(pick.get("above_50d")))) / 2
     return R_WEIGHTS["drawdown"] * dd_part + R_WEIGHTS["base"] * base
+
+
+@dataclass(frozen=True)
+class TriageRow:
+    """종목 한 줄. `triage` 가 None 이면 계산 불가이고 `note` 가 이유를 든다."""
+
+    ticker: str
+    theme: str
+    partition: str
+    triage: float | None
+    j: float | None
+    c: float
+    r: float
+    note: str = ""
+
+
+def score_digest(digest: Mapping[str, Any]) -> list[TriageRow]:
+    """digest 모양 dict → 구획·점수가 붙은 종목 줄.
+
+    정렬은 **구획 먼저, 그 안에서 triage 내림차순**이다. 구획 간 정렬은 하지 않는다 —
+    백분위가 구획별로 따로 매겨지므로 I-B 의 값이 I-A 보다 커질 수 있다 (스펙 §6).
+    """
+    judged = {str(j["theme"]): j for j in (digest.get("judged") or [])}
+    audits = digest.get("evidence_audit") or {}
+
+    staged: list[tuple[dict[str, Any], str, str, float | None, float, str]] = []
+    for entry in digest.get("themes") or []:
+        theme = str(entry.get("theme"))
+        jrow = judged.get(theme)
+        arow = audits.get(theme)
+        j_value = theme_trust(jrow, arow)
+        note = "" if j_value is not None else "증거 실사 없음 — J 계산 불가"
+        for pick in entry.get("picks") or []:
+            part = partition(jrow, pick)
+            staged.append((dict(pick), theme, part, j_value, clarity(pick), note))
+
+    # 낙폭 백분위의 모집단은 **구획**이다 (스펙 §5.3). 테마 안에서 재면 낙폭이 얕은
+    # 테마의 종목이 상위 백분위를 받는다 (2026-08-29 실측).
+    peers: dict[str, list[float]] = {}
+    for pick, _theme, part, _j, _c, _n in staged:
+        dd = _drawdown(pick)
+        if dd is not None:
+            peers.setdefault(part, []).append(dd)
+
+    rows: list[TriageRow] = []
+    for pick, theme, part, j_value, c_value, note in staged:
+        r_value = readiness(pick, peers.get(part, []))
+        total = (
+            None
+            if j_value is None
+            else TRIAGE_WEIGHTS["J"] * j_value
+            + TRIAGE_WEIGHTS["C"] * c_value
+            + TRIAGE_WEIGHTS["R"] * r_value
+        )
+        rows.append(
+            TriageRow(
+                str(pick.get("ticker")), theme, part, total, j_value, c_value, r_value, note
+            )
+        )
+
+    rows.sort(
+        key=lambda r: (
+            PARTITION_ORDER.index(r.partition),
+            -(r.triage if r.triage is not None else -1.0),
+            r.ticker,
+        )
+    )
+    return rows
+
+
+#: 리포트에 매번 싣는 고정 문장 (`CLAUDE.md` §7 · 스펙 §8.1). 토씨를 바꾸지 않는다.
+CLAIM_NOTE = (
+    "**triage 는 읽는 순서다. 수익률 순서가 아니다.** 이 점수는 초과수익을 주장하지 "
+    "않으며 그렇게 검정된 적도 없다. 높은 triage 는 \"먼저 차트를 열어라\" 이지 "
+    "\"먼저 사라\" 가 아니다."
+)
+
+
+def declared_constants() -> dict[str, Any]:
+    """산출물에 싣는 선언값 — 무엇을 어떤 값으로 돌렸는지 남긴다."""
+    return {
+        "triage_weights": TRIAGE_WEIGHTS,
+        "r_weights": R_WEIGHTS,
+        "evidence_cap": EVIDENCE_CAP,
+        "evidence_cap_refuted": EVIDENCE_CAP_REFUTED,
+        "unjudged_penalty": UNJUDGED_PENALTY,
+        "red_flag_penalty": RED_FLAG_PENALTY,
+        "red_flag_max": RED_FLAG_MAX,
+        "partial_penalty": PARTIAL_PENALTY,
+        "pullback_mark": PULLBACK_MARK,
+        "pullback_mark_source": (
+            "msa.ops.readme_block.PULLBACK_MARK — 이 모듈이 만든 값이 아니다"
+        ),
+        "excluded_inputs": [
+            "s_pct",
+            "t_pct",
+            "m_pct",
+            "composite",
+            "rank",
+            "rs_rating",
+            "from_52w_low",
+            "vcp_base",
+        ],
+        "claim": (
+            "읽는 순서 — 초과수익을 주장하지 않는다 "
+            "(docs/superpowers/specs/2026-08-29-hedge-fund-evolution-design.md §3.3)"
+        ),
+    }
