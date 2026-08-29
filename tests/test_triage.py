@@ -75,3 +75,62 @@ def test_theme_trust_none_when_judged_but_no_audit() -> None:
 def test_theme_trust_rejects_zero_checked() -> None:
     with pytest.raises(ZeroDivisionError):
         triage.evidence_quality(_audit(0, 0))
+
+
+def _pick(**kw: object) -> dict[str, object]:
+    d: dict[str, object] = {
+        "ticker": "AAA",
+        "survival_unjudged": None,
+        "red_flags": "",
+        "s_partial": False,
+        "composite_partial": False,
+        "from_52w_high": -0.30,
+        "stage2": False,
+        "above_50d": False,
+    }
+    d.update(kw)
+    return d
+
+
+def test_clarity_clean_pick_is_one() -> None:
+    assert triage.clarity(_pick()) == 1.0
+
+
+def test_clarity_unjudged_survival_costs_half() -> None:
+    """하드필터를 '통과한 것' 과 '판정 불가라 통과 취급된 것' 은 다르다."""
+    assert triage.clarity(_pick(survival_unjudged="재무 없음")) == pytest.approx(0.50)
+
+
+def test_clarity_red_flags_capped_at_two() -> None:
+    one = triage.clarity(_pick(red_flags="consecutive_operating_loss"))
+    two = triage.clarity(_pick(red_flags="a,b"))
+    three = triage.clarity(_pick(red_flags="a,b,c"))
+    assert one == pytest.approx(0.85)
+    assert two == pytest.approx(0.70)
+    assert three == pytest.approx(0.70), "3건이 2건보다 두 배 나쁘다고 말할 근거가 없다"
+
+
+def test_clarity_partial_inputs_small_penalty() -> None:
+    assert triage.clarity(_pick(s_partial=True)) == pytest.approx(0.90)
+    assert triage.clarity(_pick(composite_partial=True)) == pytest.approx(0.90)
+    assert triage.clarity(_pick(s_partial=True, composite_partial=True)) == pytest.approx(
+        0.90
+    ), "둘 다 참이어도 한 번만 깎는다 — 같은 사실의 두 표시다"
+
+
+def test_clarity_worst_case_floor_is_point_one() -> None:
+    """감점 전부를 맞아도 0.10 이다 — 0 으로 클립되는 경로는 도달 불가다.
+
+    0.50(미판정) + 0.30(레드플래그 2건) + 0.10(결측) = 0.90 이 감점의 최대다.
+    `clarity` 의 `max(..., 0.0)` 은 **앞으로 감점이 늘어날 때를 위한 방어**이지 지금
+    돌아가는 가지가 아니다. 그 사실을 테스트가 박아 둔다.
+    """
+    got = triage.clarity(_pick(survival_unjudged="x", red_flags="a,b,c", s_partial=True))
+    assert got == pytest.approx(0.10)
+
+
+def test_clarity_ignores_return_predictive_axes() -> None:
+    """S 축은 rank-IC 가 양수로 측정된 축이다 — 넣으면 수익률 주장이 된다 (스펙 §5.2)."""
+    low = triage.clarity(_pick(s_pct=0.01, composite=0.01))
+    high = triage.clarity(_pick(s_pct=0.99, composite=0.99))
+    assert low == high == 1.0

@@ -37,6 +37,15 @@ EVIDENCE_CAP = 0.50
 #: 증거 처리 대장에서 `refuted` 가 나온 테마의 J 상한 (스펙 §7).
 EVIDENCE_CAP_REFUTED = 0.25
 
+#: C 축 감점 — 전부 선언값이다 (스펙 §5.2).
+#: 미판정이 가장 큰 이유: 사람이 재무제표를 직접 열어야 한다 — 가장 비싼 노동이다.
+UNJUDGED_PENALTY = 0.50
+RED_FLAG_PENALTY = 0.15
+#: 레드플래그 감점의 상한 건수. 3건이 2건보다 두 배 나쁘다고 말할 근거가 없다.
+RED_FLAG_MAX = 2
+#: 입력 결측. 작은 감점 — 결측은 나쁨이 아니라 **모름**이다.
+PARTIAL_PENALTY = 0.10
+
 assert abs(sum(TRIAGE_WEIGHTS.values()) - 1.0) < 1e-9
 
 
@@ -84,3 +93,27 @@ def theme_trust(
     if audit.get("unverified_axes"):
         return min(value, EVIDENCE_CAP)
     return value
+
+
+def _red_flag_count(pick: Mapping[str, Any]) -> int:
+    raw = pick.get("red_flags") or ""
+    return len([x for x in str(raw).split(",") if x.strip()])
+
+
+def clarity(pick: Mapping[str, Any]) -> float:
+    """C 축 — **차트를 열기 전에 재무를 다시 확인해야 하는가.**
+
+    `s_pct` 를 쓰지 않는다: S 는 `docs/backtest-l4.md` §Q2 에서 rank-IC 가 양수로 측정된
+    축이고, 그것을 읽는 순서에 넣으면 이 점수가 조용히 수익률 주장이 된다 (스펙 §5.2).
+
+    **실제 하한은 0.10 이다** — 감점 최대가 0.50+0.30+0.10 = 0.90 이기 때문이다.
+    끝의 `max(..., 0.0)` 은 앞으로 감점 항목이 늘어날 때를 위한 방어이지 지금 돌아가는
+    가지가 아니다 (`test_clarity_worst_case_floor_is_point_one`).
+    """
+    value = 1.0
+    if pick.get("survival_unjudged") is not None:
+        value -= UNJUDGED_PENALTY
+    value -= RED_FLAG_PENALTY * min(_red_flag_count(pick), RED_FLAG_MAX)
+    if pick.get("s_partial") or pick.get("composite_partial"):
+        value -= PARTIAL_PENALTY
+    return max(value, 0.0)
