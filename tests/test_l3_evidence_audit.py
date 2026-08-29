@@ -262,3 +262,85 @@ def test_a_number_inside_a_bigger_number_is_not_a_match() -> None:
 
     # 자릿점이 있는 원문도 통과한다 — 경계 검사가 천 단위 구분만 지운다
     assert check_one(_ev(3, "34,225,000명"), lambda _u: doc).status == VERIFIED
+
+
+# ---------------------------------------------------------------- 영문 표기
+
+
+def test_english_word_numbers_are_matched() -> None:
+    """claim 의 `12척` 은 원문에 `twelve ships` 로 있다 — 표기 차이지 다른 수가 아니다.
+
+    2026-08-29 사람이 원문을 대조한 오탐 4건 중 2건이 이것이었다 (해체 척수 `twelve`·`eleven`).
+    """
+    doc = "<p>only twelve ships for a total capacity of 8,172 teu were scrapped</p>"
+    assert check_one(_ev(1, "2025년 해체량 12척·8,172 TEU"), lambda _u: doc).status == VERIFIED
+
+    doc2 = "<p>only eleven cellular vessels for a capacity of 36,700 TEU</p>"
+    assert check_one(_ev(2, "해체 11척·36,700 TEU"), lambda _u: doc2).status == VERIFIED
+
+
+def test_word_numbers_respect_word_boundaries() -> None:
+    """넓히려다 검사를 꺼 버리면 안 된다 — `one` 이 `money`·`phone` 안에서 걸리면 그것이다."""
+    from msa.l3.evidence_audit import _has_word, _word_forms
+
+    body = "money phoned someone at tenant nineteenth"
+    for w in ("one", "ten", "nine", "nineteen"):
+        assert not _has_word(body, w), w
+    assert _has_word("only ten ships", "ten")
+
+    # 맨 단위 낱말은 값이 아니다 — `five hundred ships` 가 claim 의 `100` 을 통과시키면 안 된다
+    assert "hundred" not in _word_forms("100")
+    assert not check_one(
+        _ev(3, "100개 이상"), lambda _u: "<p>five hundred ships</p>"
+    ).ok
+
+    # 없는 수는 여전히 없다
+    assert check_one(_ev(4, "13척"), lambda _u: "<p>twelve ships</p>").status == PARTIAL
+
+
+def test_english_abbreviated_units_in_the_body_are_expanded() -> None:
+    """원문의 `4.3k TEU`·`0.6 million` 은 claim 의 `4,300`·`60만` 과 같은 수다.
+
+    2026-08-29 오탐 4건 중 나머지 2건이 이것이었다.
+    """
+    doc = "<p>One-year T/C rates for 4.3k TEU Non-Eco Classic Panamax vessels</p>"
+    assert check_one(_ev(1, "4,300TEU 파나막스"), lambda _u: doc).status == VERIFIED
+
+    doc2 = "<p>in 2016, when 185 ships totaling 0.6 million TEU were scrapped</p>"
+    assert check_one(_ev(2, "2016년 185척·60만 TEU"), lambda _u: doc2).status == VERIFIED
+
+    doc3 = "<p>from 36.2 million on June 30, 2025 to 34.0 million on June 30, 2026</p>"
+    assert check_one(_ev(3, "3,400만 명으로 감소"), lambda _u: doc3).status == VERIFIED
+
+    doc4 = "<p>net debt of 2.5bn and cash of 1.8M</p>"
+    assert check_one(_ev(4, "순부채 25억·현금 180만"), lambda _u: doc4).status == VERIFIED
+
+
+def test_unit_expansion_does_not_make_the_check_toothless() -> None:
+    """**찾는 쪽만 넓힌다.** 단위 확장이 없는 수치를 있다고 하면 검사가 무의미해진다."""
+    from msa.l3.evidence_audit import _expanded_units
+
+    # 붙여 쓴 한 글자 약어만 본다 — `40 M` 은 미터일 수도 있어 확장하지 않는다
+    assert "4300" in _expanded_units("rates for 4.3k TEU")
+    assert "40000000" not in _expanded_units("a span of 40 M across")
+
+    # 반올림은 여전히 남는다 — 3,500만 ≠ 35.2 million (KFF 실측, 2026-08-29)
+    doc = "<p>55% of eligible beneficiaries – 35.2 million out of 64.2 million</p>"
+    c = check_one(_ev(9, "가입자 3,500만 명 이상"), lambda _u: doc)
+    assert c.status == PARTIAL and "3,500" in c.missing
+
+
+def test_korean_year_month_is_a_date_not_a_measurement() -> None:
+    """`2025년 12월 기준` 의 `12` 는 claim 의 측정값이 아니다 — 남기면 오탐이 된다.
+
+    실측: managed_care [26]·shipping_container [4] 의 못 찾은 `12` 가 전부 이것이었다.
+    """
+    got, _ = numbers_in("2025년 12월 기준 발주잔량 11.61백만 TEU")
+    assert "12" not in got and "11.61" in got
+
+    got2, _ = numbers_in("하원은 2026년 1월 8일 230-196으로 가결")
+    assert "230" in got2 and "196" in got2 and "8" not in got2
+
+    # 달이 붙지 않은 숫자는 그대로 남는다
+    got3, _ = numbers_in("2025년 대비 12% 올랐다")
+    assert "12" in got3

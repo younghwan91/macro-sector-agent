@@ -470,6 +470,17 @@ BASES: dict[str, Entry] = {
             ),
         ),
     ),
+    "BALANCE_STALE_DAYS": Entry(
+        "msa.l35.balance",
+        90,
+        role="수급 조사가 낡았다고 보는 기간 — 회전 선정 대상. 아무것도 자르지 않는다",
+        basis=NoBasis(
+            "선언값이고 근거가 없다 (docs/26 §3.4). '수급 구조는 분기 단위로도 잘 안 "
+            "바뀐다' 는 서술을 옮긴 것이고 90 이어야 할 문헌은 없다. 결과를 보고 옮기지 "
+            "않는다.",
+            searched="2026-08-29",
+        ),
+    ),
     "NOTE_TRUST": Entry(
         "msa.l4.analyst",
         {"intact": 1.00, "strained": 0.60, "breaking": 0.20},
@@ -595,6 +606,7 @@ FILTER_CONSTANTS: tuple[str, ...] = (
     # 트리아지 — 읽는 순서만 정한다 (자르지 않는다, 2026-08-29)
     "REGIME_TILT",
     "NOTE_TRUST",
+    "BALANCE_STALE_DAYS",
     "CONCENTRATION_FRACTION",
     "CONCENTRATION_WINDOW",
     "SLOT_MAX",

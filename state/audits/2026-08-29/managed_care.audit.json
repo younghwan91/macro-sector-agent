@@ -1,0 +1,305 @@
+{
+ "theme": "managed_care",
+ "thesis": "/home/young/Documents/git/macro-sector-agent/state/theses/2026-08-24/managed_care.thesis.yaml",
+ "counts": {
+  "partial": 7,
+  "unreachable": 4,
+  "verified": 11,
+  "no_numbers": 1
+ },
+ "unverified_axes": [],
+ "checks": [
+  {
+   "id": 1,
+   "status": "partial",
+   "url": "https://www.kff.org/medicare/medicare-advantage-in-2026-enrollment-update-and-key-trends/",
+   "checked_numbers": [
+    "17.6",
+    "19.1",
+    "20.5",
+    "22.1",
+    "24.1",
+    "27.6",
+    "30.4",
+    "33",
+    "34.1"
+   ],
+   "missing_numbers": [
+    "17.6",
+    "19.1",
+    "20.5",
+    "22.1",
+    "24.1",
+    "27.6",
+    "30.4",
+    "34.1"
+   ]
+  },
+  {
+   "id": 2,
+   "status": "unreachable",
+   "url": "https://www.healthcaredive.com/news/medicare-advantage-plans-2026-unitedhealthcare-humana-aetna/801761/",
+   "checked_numbers": [
+    "225",
+    "14",
+    "60",
+    "198"
+   ],
+   "note": "문서를 못 읽었다 (403·페이월·네트워크) — 맞다는 뜻도 틀리다는 뜻도 아니다"
+  },
+  {
+   "id": 3,
+   "status": "verified",
+   "url": "https://www.kff.org/medicare/medicare-advantage-2026-spotlight-a-first-look-at-plan-offerings/",
+   "checked_numbers": [
+    "3,373"
+   ]
+  },
+  {
+   "id": 6,
+   "status": "verified",
+   "url": "https://www.fool.com/earnings/call-transcripts/2026/07/16/unitedhealth-unh-q2-2026-earnings-call-transcript/",
+   "checked_numbers": [
+    "86.7",
+    "89.4",
+    "88.1",
+    "25",
+    "11",
+    "1.7"
+   ]
+  },
+  {
+   "id": 7,
+   "status": "unreachable",
+   "url": "https://www.healthcaredive.com/news/centene-cnc-q2-2026-guidance-hike-aca-medicaid/826286/",
+   "checked_numbers": [
+    "536",
+    "10",
+    "11",
+    "4.5"
+   ],
+   "note": "문서를 못 읽었다 (403·페이월·네트워크) — 맞다는 뜻도 틀리다는 뜻도 아니다"
+  },
+  {
+   "id": 8,
+   "status": "partial",
+   "url": "https://www.kff.org/medicare/medicare-advantage-in-2026-enrollment-update-and-key-trends/",
+   "checked_numbers": [
+    "3,500",
+    "110",
+    "83",
+    "800",
+    "90",
+    "55",
+    "48"
+   ],
+   "missing_numbers": [
+    "3,500"
+   ]
+  },
+  {
+   "id": 10,
+   "status": "partial",
+   "url": "https://www.kff.org/affordable-care-act/aca-marketplace-enrollment-is-down-in-2026-but-all-of-the-data-isnt-in-yet/",
+   "checked_numbers": [
+    "888",
+    "114",
+    "25",
+    "400"
+   ],
+   "missing_numbers": [
+    "888",
+    "25"
+   ]
+  },
+  {
+   "id": 12,
+   "status": "verified",
+   "url": "https://www.cms.gov/newsroom/fact-sheets/2027-medicare-advantage-part-d-rate-announcement",
+   "checked_numbers": [
+    "2.48",
+    "13"
+   ]
+  },
+  {
+   "id": 16,
+   "status": "verified",
+   "url": "https://benefitsusa.org/en/blog/medicaid-cuts-2026",
+   "checked_numbers": [
+    "10",
+    "625",
+    "780"
+   ]
+  },
+  {
+   "id": 17,
+   "status": "partial",
+   "url": "https://www.commonwealthfund.org/publications/explainer/2025/dec/how-new-limits-state-provider-taxes-will-affect-medicaid-funding",
+   "checked_numbers": [
+    "40",
+    "6.0",
+    "3.5",
+    "0.5",
+    "340",
+    "120"
+   ],
+   "missing_numbers": [
+    "40",
+    "340",
+    "120"
+   ]
+  },
+  {
+   "id": 20,
+   "status": "verified",
+   "url": "https://www.kff.org/quick-insights/aca-marketplace-enrollment-is-down-by-3-million-after-big-jump-in-premium-payments/",
+   "checked_numbers": [
+    "2,210",
+    "300",
+    "13",
+    "114",
+    "58",
+    "100"
+   ]
+  },
+  {
+   "id": 21,
+   "status": "partial",
+   "url": "https://www.kff.org/medicaid/medicaid-enrollment-and-unwinding-tracker/",
+   "checked_numbers": [
+    "7,390",
+    "12",
+    "500",
+    "9,400"
+   ],
+   "missing_numbers": [
+    "9,400"
+   ]
+  },
+  {
+   "id": 22,
+   "status": "partial",
+   "url": "https://ccf.georgetown.edu/2026/08/13/medicaid-managed-care-the-big-five-in-q2-2026/",
+   "checked_numbers": [
+    "3,620",
+    "3,400",
+    "6.5",
+    "9.5",
+    "2.6"
+   ],
+   "missing_numbers": [
+    "3,400"
+   ]
+  },
+  {
+   "id": 23,
+   "status": "verified",
+   "url": "https://www.kff.org/medicare/medicare-advantage-in-2026-enrollment-update-and-key-trends/",
+   "checked_numbers": [
+    "3,520",
+    "6,420",
+    "55",
+    "110",
+    "64.7",
+    "34.6",
+    "2.9",
+    "46"
+   ]
+  },
+  {
+   "id": 24,
+   "status": "unreachable",
+   "url": "https://www.healthcaredive.com/news/medicare-advantage-enrollment-2026-unitedhealth-humana-cms/812856/",
+   "checked_numbers": [
+    "3,550",
+    "3,440",
+    "10"
+   ],
+   "note": "문서를 못 읽었다 (403·페이월·네트워크) — 맞다는 뜻도 틀리다는 뜻도 아니다"
+  },
+  {
+   "id": 26,
+   "status": "partial",
+   "url": "https://www.astho.org/communications/blog/2026/aca-enhanced-premium-tax-credits-legislative-developments-2025-2026/",
+   "checked_numbers": [
+    "12",
+    "1834",
+    "230",
+    "196"
+   ],
+   "missing_numbers": [
+    "12"
+   ]
+  },
+  {
+   "id": 28,
+   "status": "unreachable",
+   "url": "https://www.healthcaredive.com/news/cms-medicare-advantage-audits-radv-risk-adjustment-update/811320/",
+   "checked_numbers": [
+    "11",
+    "760",
+    "170"
+   ],
+   "note": "문서를 못 읽었다 (403·페이월·네트워크) — 맞다는 뜻도 틀리다는 뜻도 아니다"
+  },
+  {
+   "id": 29,
+   "status": "no_numbers",
+   "url": "https://www.healthcaredive.com/news/unitedhealth-grassley-medicare-advantage-investigation/809377/",
+   "note": "claim 에 확인할 숫자가 없다"
+  },
+  {
+   "id": 32,
+   "status": "verified",
+   "url": "https://www.takecommandhealth.com/blog/2026-hra-data-whats-driving-ichra-growth",
+   "checked_numbers": [
+    "40.2",
+    "50",
+    "1,000",
+    "178",
+    "500",
+    "999",
+    "105",
+    "108"
+   ]
+  },
+  {
+   "id": 33,
+   "status": "verified",
+   "url": "https://www.kff.org/quick-insights/aca-marketplace-insurers-are-proposing-a-median-premium-increase-of-about-15-in-2027/",
+   "checked_numbers": [
+    "15",
+    "20",
+    "50"
+   ]
+  },
+  {
+   "id": 34,
+   "status": "verified",
+   "url": "https://www.kff.org/affordable-care-act/in-preliminary-rate-filings-aca-marketplace-insurers-largely-propose-double-digit-premium-increase-for-2027-following-a-steep-climb-this-year/",
+   "checked_numbers": [
+    "16",
+    "77",
+    "14",
+    "10",
+    "20"
+   ]
+  },
+  {
+   "id": 35,
+   "status": "verified",
+   "url": "https://payerperspectives.substack.com/p/bids-are-in-what-does-2027-portend",
+   "checked_numbers": [
+    "2.48"
+   ]
+  },
+  {
+   "id": 36,
+   "status": "verified",
+   "url": "https://247wallst.com/personal-finance/2026/07/31/medicare-advantage-insurers-are-redrawing-the-map-for-2027-members-find-out-by-letter-this-fall/",
+   "checked_numbers": [
+    "110"
+   ]
+  }
+ ]
+}

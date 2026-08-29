@@ -1,0 +1,333 @@
+{
+ "theme": "shipping_container",
+ "thesis": "/home/young/Documents/git/macro-sector-agent/state/theses/2026-08-24/shipping_container.thesis.yaml",
+ "counts": {
+  "verified": 12,
+  "partial": 6,
+  "unsupported": 1,
+  "unreachable": 2,
+  "no_numbers": 2
+ },
+ "unverified_axes": [],
+ "checks": [
+  {
+   "id": 2,
+   "status": "verified",
+   "url": "https://meobserver.news/global-maritime/2026/08/21/container-shipping-reliability-slips-as-spare-vessel-capacity-stays-tight/",
+   "checked_numbers": [
+    "89",
+    "34.1",
+    "0.6"
+   ]
+  },
+  {
+   "id": 4,
+   "status": "partial",
+   "url": "https://gcaptain.com/container-shipping-faces-oversupply-threat-as-record-newbuild-orders-reshape-industry/",
+   "checked_numbers": [
+    "12",
+    "11.61",
+    "34.8",
+    "633",
+    "508",
+    "477",
+    "474",
+    "497",
+    "79",
+    "366",
+    "72",
+    "27"
+   ],
+   "missing_numbers": [
+    "12"
+   ],
+   "numbers_not_checked": 1
+  },
+  {
+   "id": 6,
+   "status": "partial",
+   "url": "https://globalmaritimehub.com/container-ship-demolition-hits-a-twenty-year-low-in-2025.html",
+   "checked_numbers": [
+    "12",
+    "8,172",
+    "20"
+   ],
+   "missing_numbers": [
+    "12"
+   ]
+  },
+  {
+   "id": 7,
+   "status": "verified",
+   "url": "https://www.xindemarinenews.com/news/2075458427389485058",
+   "checked_numbers": [
+    "1,592",
+    "12.98",
+    "503,000",
+    "500",
+    "13",
+    "737",
+    "505"
+   ]
+  },
+  {
+   "id": 9,
+   "status": "verified",
+   "url": "https://www.gocubic.io/guides/market-intelligence/2026-freight-market-outlook",
+   "checked_numbers": [
+    "1,200",
+    "1,600"
+   ]
+  },
+  {
+   "id": 12,
+   "status": "partial",
+   "url": "https://www.mundomaritimo.net/noticias/containership-charter-market-closes-2025-with-solid-rates-across-most-vessel-sizes",
+   "checked_numbers": [
+    "4,300",
+    "5.6",
+    "3.5"
+   ],
+   "missing_numbers": [
+    "4,300"
+   ]
+  },
+  {
+   "id": 15,
+   "status": "verified",
+   "url": "https://porteconomicsmanagement.org/pemp/contents/part1/maritime-shipping-and-international-trade/world-container-throughput/",
+   "checked_numbers": [
+    "3,600",
+    "2.37",
+    "5.45",
+    "7.92",
+    "8.49"
+   ]
+  },
+  {
+   "id": 16,
+   "status": "unsupported",
+   "url": "https://unctad.org/system/files/official-document/rmt2025ch1_en.pdf",
+   "checked_numbers": [
+    "9.203",
+    "6.9",
+    "0.6",
+    "40",
+    "2,675",
+    "4.4"
+   ],
+   "note": "본문을 읽지 않는 형식"
+  },
+  {
+   "id": 30,
+   "status": "verified",
+   "url": "https://www.indexbox.io/blog/container-ship-orderbook-hits-record-13-million-teu-overcapacity-warning/",
+   "checked_numbers": [
+    "1,300",
+    "38.3",
+    "510",
+    "190",
+    "520"
+   ]
+  },
+  {
+   "id": 31,
+   "status": "verified",
+   "url": "https://maritime-executive.com/article/containership-orders-reach-new-high-raising-fresh-concerns",
+   "checked_numbers": [
+    "1,040",
+    "31.7",
+    "10",
+    "40",
+    "30"
+   ]
+  },
+  {
+   "id": 32,
+   "status": "verified",
+   "url": "https://www.clecat.org/news/newsletters/container-market-outlook-highlights-challenging-pe",
+   "checked_numbers": [
+    "1.8",
+    "10",
+    "17"
+   ]
+  },
+  {
+   "id": 33,
+   "status": "verified",
+   "url": "https://nrf.com/media-center/press-releases/declining-import-cargo-volume-expected-to-continue-in-2026",
+   "checked_numbers": [
+    "200",
+    "10.3",
+    "186",
+    "8.5",
+    "179",
+    "16.8",
+    "197",
+    "10.9"
+   ]
+  },
+  {
+   "id": 34,
+   "status": "verified",
+   "url": "https://www.textileworld.com/textile-world/2026/08/nrf-import-cargos-early-peak-season-is-winding-down/",
+   "checked_numbers": [
+    "222",
+    "4.2",
+    "224",
+    "2,550",
+    "0.1",
+    "122",
+    "301"
+   ]
+  },
+  {
+   "id": 35,
+   "status": "unreachable",
+   "url": "https://www.investing.com/news/company-news/danaos-q2-2026-slides-dry-bulk-drives-beat-46b-backlog-93CH-4834923",
+   "checked_numbers": [
+    "3,870",
+    "3,950",
+    "35,522",
+    "36,087",
+    "3,570",
+    "57",
+    "30,401",
+    "17,934",
+    "46",
+    "100",
+    "93",
+    "79"
+   ],
+   "numbers_not_checked": 4,
+   "note": "문서를 못 읽었다 (403·페이월·네트워크) — 맞다는 뜻도 틀리다는 뜻도 아니다"
+  },
+  {
+   "id": 36,
+   "status": "unreachable",
+   "url": "https://www.globenewswire.com/news-release/2026/05/22/3300083/0/en/Global-Ship-Lease-Reports-Results-for-the-First-Quarter-of-2026.html",
+   "checked_numbers": [
+    "20.5",
+    "2.6",
+    "71",
+    "18.2",
+    "100",
+    "86",
+    "2.50"
+   ],
+   "note": "문서를 못 읽었다 (403·페이월·네트워크) — 맞다는 뜻도 틀리다는 뜻도 아니다"
+  },
+  {
+   "id": 37,
+   "status": "verified",
+   "url": "https://investors.zim.com/news/news-details/2026/ZIM-Reports-Strong-Results-for-the-Second-Quarter-of-2026-Benefiting-from-its-Leading-Transpacific-Position-Agile-Commercial-Approach-and-Efficient-Cost-Structure/default.aspx",
+   "checked_numbers": [
+    "2,220",
+    "6,400",
+    "1,455",
+    "1,632",
+    "1,590",
+    "178.8",
+    "183.9",
+    "92.2",
+    "115",
+    "707",
+    "123",
+    "767"
+   ],
+   "numbers_not_checked": 2
+  },
+  {
+   "id": 39,
+   "status": "no_numbers",
+   "url": "https://www.stocktitan.net/sec-filings/ZIM/6-k-zim-integrated-shipping-services-ltd-current-report-foreign-issue-35177841fc0c.html",
+   "note": "claim 에 확인할 숫자가 없다"
+  },
+  {
+   "id": 40,
+   "status": "no_numbers",
+   "url": "https://www.xeneta.com/blog/largescale-return-of-container-ships-to-red-sea-in-2026-five-key-considerations-for-shippers",
+   "note": "claim 에 확인할 숫자가 없다"
+  },
+  {
+   "id": 46,
+   "status": "partial",
+   "url": "https://www.drewry.co.uk/supply-chain-advisors/supply-chain-expertise/world-container-index-assessed-by-drewry",
+   "checked_numbers": [
+    "40",
+    "4,526",
+    "9,507",
+    "6,802",
+    "4,955",
+    "4,401"
+   ],
+   "missing_numbers": [
+    "4,526",
+    "9,507",
+    "6,802",
+    "4,955",
+    "4,401"
+   ]
+  },
+  {
+   "id": 47,
+   "status": "verified",
+   "url": "https://english.news.cn/20260416/df6ac15e930440f3831bbf6316a1aa34/c.html",
+   "checked_numbers": [
+    "5,460",
+    "54.6",
+    "29",
+    "22"
+   ]
+  },
+  {
+   "id": 49,
+   "status": "partial",
+   "url": "https://globalmaritimehub.com/accidents-and-sanctions-lift-containership-demolition-sales/",
+   "checked_numbers": [
+    "11",
+    "36,700",
+    "4,800",
+    "32,000",
+    "12",
+    "8,172"
+   ],
+   "missing_numbers": [
+    "11",
+    "12"
+   ]
+  },
+  {
+   "id": 50,
+   "status": "partial",
+   "url": "https://gcaptain.com/container-shippings-recycling-backlog-reaches-1-8-million-teu-as-industry-faces-fleet-age-crisis/",
+   "checked_numbers": [
+    "180",
+    "500",
+    "850",
+    "310",
+    "20",
+    "24",
+    "16",
+    "10",
+    "185",
+    "60"
+   ],
+   "missing_numbers": [
+    "60"
+   ]
+  },
+  {
+   "id": 51,
+   "status": "verified",
+   "url": "https://www.lloydslistintelligence.com/resources/blog/red-sea-brief-20-august-2026",
+   "checked_numbers": [
+    "08",
+    "16",
+    "1,088",
+    "1,070",
+    "41"
+   ]
+  }
+ ]
+}

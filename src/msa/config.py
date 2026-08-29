@@ -77,6 +77,14 @@ class Paths:
         return self.state / "runs"
 
     @property
+    def balance(self) -> Path:
+        """L3.5 수급 균형 조사 (`state/balance/<theme>.balance.yaml`, `msa balance`, `docs/26`).
+
+        **트리아지 점수에 안 들어간다** — 사람이 읽는 논지다.
+        """
+        return self.state / "balance"
+
+    @property
     def stock_notes(self) -> Path:
         """P3 종목 분석가 노트 (`state/stock_notes/<TICKER>.yaml`, `msa stock-notes`).
 

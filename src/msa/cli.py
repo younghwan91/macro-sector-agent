@@ -549,6 +549,106 @@ def backtest_l4_structures(
     _echo_saved(res.out_dir)
 
 
+@app.command()
+@cli_guard
+def balance(
+    themes: str = typer.Argument(
+        "", help="테마 id 쉼표 구분. 비우면 회전 선정 (조사 없는 것 먼저, 그다음 낡은 것)"
+    ),
+    asof: str = typer.Option("", help="기준일 YYYY-MM-DD (기본 = 오늘)"),
+    n: int = typer.Option(2, "-n", help="회전 선정 시 한 번에 조사할 테마 수"),
+    unit: str = typer.Option("", "--unit", help="실물 단위 힌트 (예: 온스·톤·TEU)"),
+    provider: str = typer.Option(
+        "claude_code", "--provider", help="claude_code | anthropic | mock | fixture"
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="MockProvider 로 경로만 검증"),
+    no_write: bool = _no_write_option("state/balance/"),
+    fixtures: str = typer.Option("", help="--provider fixture 의 루트"),
+    show: bool = typer.Option(False, "--show", help="호출하지 않고 가진 조사만 보여준다"),
+    verbose: bool = OPT_VERBOSE,
+) -> None:
+    """L3.5 수급 균형 조사 — "수요 나누기 공급" (docs/26).
+
+    판별기(L3)는 "안 죽었나" 만 묻는다. 이건 다른 질문이다:
+    **향후 3~5년, 실물 수요 증가율이 실물 공급 증가율을 앞지르는가.**
+    가격이 아니라 물량 대 물량이다.
+
+    **매일 모든 섹터를 하지 않는다.** 수급 구조는 분기 단위로도 잘 안 바뀌므로 회전으로 돈다 —
+    테마를 지정하지 않으면 조사 없는 편입 가능 테마부터, 그다음 90일 지난 것부터 n개.
+
+    산출물 state/balance/<theme>.balance.yaml · .report.md.
+    **트리아지 점수에 들어가지 않는다** (docs/26 §3.5) — 명단이 아니라 논지를 준다.
+    """
+    from datetime import date as _date
+
+    from msa.config import paths as _paths
+    from msa.l3.providers import make_provider as _make
+    from msa.l35 import analyst as _ba
+    from msa.l35 import balance as _bal
+    from msa.thesis import all_theses, find_thesis, read_thesis_yaml
+
+    p = _paths()
+    root = p.balance
+    if show:
+        docs = []
+        if root.exists():
+            for f in sorted(root.glob("*.balance.yaml")):
+                d = _bal.read(root, f.name.removesuffix(".balance.yaml"))
+                if d:
+                    docs.append(d)
+        typer.echo(_bal.summarize(docs))
+        today = _date.today()
+        for d in docs:
+            typer.echo("  " + _bal.summarize_theme(d, today=today))
+        raise typer.Exit(0)
+
+    today = _date.fromisoformat(asof) if asof else _date.today()
+    picked = [t.strip() for t in themes.split(",") if t.strip()]
+    if not picked:
+        # **코드가 고른다** — 편입 가능 테마 중 조사 없는 것 먼저, 그다음 가장 낡은 것
+        eligible = [h.theme for h in all_theses(today.isoformat()) if h.eligible]
+        if not eligible:
+            typer.echo("편입 가능 테마가 없다 — 조사할 대상이 없다", err=True)
+            raise typer.Exit(2)
+        picked = _bal.rotation(root, eligible, n=n, today=today)
+        if not picked:
+            typer.echo("전부 최근에 조사했다 — 낡은 것이 없다 (--show 로 확인)")
+            raise typer.Exit(0)
+        typer.echo(f"회전 선정: {' · '.join(picked)}")
+
+    kind = "mock" if dry_run else provider
+    fails = 0
+    saved = 0
+    for theme in picked:
+        thesis = None
+        tp = find_thesis(theme, today.isoformat(), p.theses)
+        if tp is not None:
+            thesis = read_thesis_yaml(tp)
+        prov = _make(
+            kind, theme_id=theme, fixture_root=Path(fixtures) if fixtures else None
+        )
+        try:
+            doc = _ba.run(prov, theme, today.isoformat(), unit_hint=unit, thesis=thesis)
+            _bal.validate(doc)
+        except Exception as e:
+            typer.echo(f"  {theme:22} 실패 — {type(e).__name__}: {e}", err=True)
+            fails += 1
+            continue
+        typer.echo("  " + _bal.summarize_theme(doc, today=today))
+        if not no_write:
+            out = _bal.write(root, doc)
+            out.with_suffix("").with_suffix(".report.md").write_text(
+                _ba.render_report(doc), encoding="utf-8"
+            )
+            saved += 1
+    if no_write:
+        typer.echo("no-write — state/balance/ 에 쓰지 않았다")
+    if fails:
+        tail = f"저장 {saved}건" if saved else "저장된 것 없음"
+        typer.echo(f"실패 {fails}건 · {tail}", err=True)
+        raise typer.Exit(1)
+
+
 @app.command("stock-notes")
 @cli_guard
 def stock_notes(

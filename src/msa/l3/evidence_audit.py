@@ -51,7 +51,11 @@ _YEAR = re.compile(r"^(19|20)\d{2}$")
 #: claim 에서 **먼저 지우는** 것 — 날짜다. 날짜의 조각(`08`·`14`)은 claim 의 측정값이 아니고,
 #: 증거 날짜는 `R_EVIDENCE_FUTURE`·`W_EVIDENCE_DATE_PLACEHOLDER` 가 따로 본다. 지우지 않으면
 #: 실사가 날짜 조각을 "원문에서 못 찾은 숫자" 로 올려 신호를 묽게 만든다.
-_DATE_LIKE = re.compile(r"\d{4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?|\d{1,2}월\s*\d{1,2}일")
+_DATE_LIKE = re.compile(
+    r"\d{4}[-/.]\d{1,2}(?:[-/.]\d{1,2})?"
+    r"|\d{4}년\s*\d{1,2}월(?:\s*\d{1,2}일)?"
+    r"|\d{1,2}월\s*\d{1,2}일"
+)
 
 #: 이 확장자는 본문 추출을 시도하지 않는다.
 _BINARY_SUFFIXES = (".pdf", ".xlsx", ".xls", ".zip", ".doc", ".docx")
@@ -216,6 +220,106 @@ def _plain(raw: str) -> str:
         return raw
 
 
+#: 영문 낱말 숫자 → 값. **작은 표만 둔다** — `twelve`·`eleven` 이 실측 오탐의 절반이었고
+#: (2026-08-29, 해체 척수), 임의의 복합 수사 파서는 새 자유도라 유지비가 크다.
+#: 맨 단위 낱말(`hundred`·`million`)은 **값으로 두지 않는다** — `five hundred ships` 가
+#: claim 의 `100` 을 통과시키면 넓히려다 검사를 꺼 버리는 것이다.
+_WORD_NUM: dict[str, tuple[str, ...]] = {
+    "0": ("zero",),
+    "1": ("one",),
+    "2": ("two",),
+    "3": ("three",),
+    "4": ("four",),
+    "5": ("five",),
+    "6": ("six",),
+    "7": ("seven",),
+    "8": ("eight",),
+    "9": ("nine",),
+    "10": ("ten",),
+    "11": ("eleven",),
+    "12": ("twelve",),
+    "13": ("thirteen",),
+    "14": ("fourteen",),
+    "15": ("fifteen",),
+    "16": ("sixteen",),
+    "17": ("seventeen",),
+    "18": ("eighteen",),
+    "19": ("nineteen",),
+    "20": ("twenty",),
+    "30": ("thirty",),
+    "40": ("forty",),
+    "50": ("fifty",),
+    "60": ("sixty",),
+    "70": ("seventy",),
+    "80": ("eighty",),
+    "90": ("ninety",),
+    "100": ("one hundred",),
+    "1000": ("one thousand",),
+    "1000000": ("one million",),
+    "1000000000": ("one billion",),
+}
+
+
+def _word_forms(token: str) -> tuple[str, ...]:
+    """`12` → `("twelve",)`. 표에 없으면 빈 튜플 — 복합 수사(`twenty-one`)는 다루지 않는다."""
+    return _WORD_NUM.get(token, ())
+
+
+def _has_word(body: str, word: str) -> bool:
+    """`word` 가 **하나의 낱말로서** 본문에 있는가.
+
+    단어 경계를 강제한다 — `one` 이 `money`·`phone`, `ten` 이 `tenant` 안에서 걸리면
+    검사가 꺼진다. `one hundred` 처럼 사이에 공백이 있는 것도 그대로 본다 (`_loose` 가
+    본문 공백을 하나로 접어 둔다).
+    """
+    pat = r"(?<![A-Za-z])" + word.replace(" ", r"\s+") + r"(?![A-Za-z])"
+    return re.search(pat, body, re.I) is not None
+
+
+#: 본문의 영문 축약 단위 → 배수. **한 글자 약어는 붙여 쓴 것만** 본다 (`1.8M`) —
+#: `40 M` 은 미터일 수도 있어 띄어 쓴 것까지 받으면 엉뚱한 수를 만든다.
+_EN_UNIT_SCALE: dict[str, float] = {
+    "k": 1e3,
+    "m": 1e6,
+    "bn": 1e9,
+    "tn": 1e12,
+    "thousand": 1e3,
+    "million": 1e6,
+    "billion": 1e9,
+    "trillion": 1e12,
+}
+
+#: 붙여 쓴 한 글자 약어(`4.3k`)와 띄어 쓸 수 있는 낱말 단위(`0.6 million`).
+_ABBREV_UNIT = re.compile(r"(\d+(?:\.\d+)?)(k|m|bn|tn)(?![A-Za-z])", re.I)
+_WORD_UNIT = re.compile(r"(\d+(?:\.\d+)?)\s*(thousand|million|billion|trillion)(?![A-Za-z])", re.I)
+
+
+def _expanded_units(body: str) -> str:
+    """본문의 `4.3k`·`0.6 million` 을 편 수(`4300`·`600000`)로 옮긴 **덧붙임 문자열**.
+
+    원문이 어느 표기를 쓸지 모르므로 claim 쪽에서 후보를 만들었는데(`_alternates`),
+    소수 + 단위 조합(`0.6 million`)은 그것만으로는 못 만난다 — `60만` 의 후보는
+    `600000`·`600` 인데 본문에는 `0.6` 만 있기 때문이다. 그래서 **본문 쪽도 편다.**
+
+    확장한 값은 공백으로 갈라 뒤에 붙인다 — `_has_number` 의 경계 검사가 그대로 산다.
+    자리수를 바꾸지 않고 **적힌 그대로의 값**만 만든다.
+    """
+    out: list[str] = []
+    for pat in (_ABBREV_UNIT, _WORD_UNIT):
+        for m in pat.finditer(body):
+            scale = _EN_UNIT_SCALE.get(m.group(2).lower())
+            if scale is None:
+                continue
+            try:
+                v = float(m.group(1)) * scale
+            except ValueError:
+                continue
+            t = _fmt_num(v)
+            if t not in out:
+                out.append(t)
+    return " ".join(out)
+
+
 def _units_for(text: str, wanted: Sequence[str]) -> dict[str, str]:
     """숫자 바로 뒤에 붙은 한글 수 단위 (`2,220만` → `{"2,220": "만"}`). 없으면 빈 문자열."""
     out: dict[str, str] = {}
@@ -223,6 +327,18 @@ def _units_for(text: str, wanted: Sequence[str]) -> dict[str, str]:
         m = re.search(re.escape(w) + r"\s*([만억조])", text or "")
         out[w] = m.group(1) if m else ""
     return out
+
+
+def _found(loose: str, w: str, unit: str) -> bool:
+    """claim 의 숫자 `w` 하나가 본문에 있는가 — 표기 후보를 전부 본다.
+
+    후보는 세 갈래다: claim 에 적힌 표기 그대로 · 자리수를 옮긴 것(`_alternates`) ·
+    영문 낱말(`twelve`). 어느 갈래든 **경계를 본다** — 숫자는 숫자 경계, 낱말은 단어 경계.
+    """
+    cands = [_norm(w), _plain(w), *_alternates(w, unit)]
+    if any(_has_number(loose, c) for c in cands):
+        return True
+    return any(_has_word(loose, word) for c in cands for word in _word_forms(c))
 
 
 def strip_html(raw: str) -> str:
@@ -285,15 +401,11 @@ def check_one(item: Mapping[str, Any], fetch: Callable[[str], str | None]) -> Ev
             truncated=cut,
             note="문서를 못 읽었다 (403·페이월·네트워크) — 맞다는 뜻도 틀리다는 뜻도 아니다",
         )
-    loose = _loose(strip_html(raw))
+    body = _loose(strip_html(raw))
+    # 본문의 `4.3k`·`0.6 million` 을 편 값을 뒤에 덧붙인다 — 숫자로 찾는 쪽만 넓어진다.
+    loose = body + " " + _expanded_units(body)
     units = _units_for(claim, wanted)
-    missing = tuple(
-        w
-        for w in wanted
-        if not _has_number(loose, _norm(w))
-        and not _has_number(loose, _plain(w))
-        and not any(_has_number(loose, a) for a in _alternates(w, units.get(w, "")))
-    )
+    missing = tuple(w for w in wanted if not _found(loose, w, units.get(w, "")))
     status = VERIFIED if not missing else PARTIAL
     return EvidenceCheck(eid, status, url, wanted, missing, cut)
 
