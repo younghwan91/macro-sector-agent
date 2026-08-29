@@ -57,6 +57,12 @@ SYSTEM = (
     "**그 격차가 어떻게 메워지는가**를 같이 말해야 한다. 영구 부족은 자본주의에서 거의 "
     "항상 틀린다. 이 칸이 네 논지를 스스로 공격하는 자리다.\n"
     "6. **증설은 확정(FID)된 것만 센다.** 발표·구상·MOU 는 공급이 아니다.\n"
+    "6-1. **`who_captures_it` — 이 격차를 누가 가져가는가.** 원자재라면 생산자·보유자가 "
+    "높은 가격으로 가져간다. 해운이라면 선주가 운임으로 가져간다. **가져가는 주체를 못 "
+    "대겠으면 그것은 타이트가 아니라 산업의 축소이고, verdict 를 loosening 이나 balanced "
+    "로 고쳐라.** 특히 '공급' 이 그 산업 자신의 산출물인 경우(보험 가입자, 구독자, 병상) "
+    "공급 감소는 타이트가 아니라 **시장 축소**다 — 2026-08-29 에 managed_care 가 정확히 "
+    "그 함정에 빠질 뻔했다.\n"
     "7. **출처 없는 주장은 저장되지 않는다.** 모든 driver·rigidity 가 `evidence_ids` 로 "
     "실재하는 근거를 가리켜야 한다. 네 기억은 증거가 아니다.\n"
     "8. **모르면 `cagr_pct` 를 null 로 둬라.** 0 으로 채우면 '증가율 0' 이라는 판정이 된다.\n"
@@ -167,6 +173,7 @@ def render_report(doc: Mapping[str, Any]) -> str:
             ids = ",".join(str(i) for i in (r.get("evidence_ids") or []))
             lines.append(f"- `{r.get('kind')}` — {r.get('note')} [{ids}]")
         lines.append("")
+    lines += ["## 이 격차를 누가 가져가나", "", f"{bal.get('who_captures_it') or '(미기재)'}", ""]
     lines += ["## 무엇이 이 격차를 메우나", ""]
     lines += [f"- {x}" for x in (bal.get("what_would_close_it") or ["(없음)"])]
     lines += ["", "## 무효화 조건", ""]
@@ -211,6 +218,7 @@ MOCK_OUTPUT: dict[str, Any] = {
         "verdict": "balanced",
         "ratio_note": "합성 응답(--dry-run) — 실제 판정이 아니다. 경로 검증용이다.",
         "what_would_close_it": [],
+        "who_captures_it": "합성 응답 — 실제 판정이 아니다",
         "invalidations": ["합성 응답이므로 무효화 조건도 합성이다"],
     },
     "evidence": [

@@ -63,6 +63,7 @@ def _doc(**kw: object) -> dict[str, object]:
             "verdict": "tightening",
             "ratio_note": "수요 4% · 공급 1% → 연 3%p 벌어진다",
             "what_would_close_it": ["은 가격이 3년 이상 높게 유지되면 1차 은광이 FID 를 받는다"],
+            "who_captures_it": "은광 생산자와 보유자 — 부족분이 가격으로 전가된다",
             "invalidations": ["태양광 셀당 은 사용량이 연 10% 이상 줄면 수요 축이 무효다"],
         },
         "evidence": _ev(2),
@@ -397,3 +398,39 @@ def test_balance_section_empty_when_no_block() -> None:
     from msa.pipeline import daily as D
 
     assert D.balance_section_md({}) == []
+
+
+def test_who_captures_it_is_required_when_tightening() -> None:
+    """**2026-08-29 실측이 만든 규칙.** `managed_care` 가 tightening 으로 나왔는데 분석가
+    스스로 "격차의 실체는 초과수요가 아니라 무보험 전환" 이라고 적었다 — 줄어드는 공급이
+    곧 산업 자체의 축소였고, 그 격차를 가져가는 주체가 없었다.
+
+    가져가는 주체가 없으면 그것은 타이트가 아니라 **축소**다.
+    """
+    d = _doc()
+    d["balance"]["who_captures_it"] = ""  # type: ignore[index]
+    with pytest.raises(balance.BalanceRejected, match="who_captures_it"):
+        balance.validate(d)
+
+
+def test_who_captures_it_not_required_when_not_tightening() -> None:
+    d = _doc()
+    d["balance"]["verdict"] = "balanced"  # type: ignore[index]
+    d["balance"]["who_captures_it"] = ""  # type: ignore[index]
+    balance.validate(d)
+
+
+def test_report_asks_who_captures_the_gap() -> None:
+    from msa.l35 import analyst
+
+    md = analyst.render_report(_doc())
+    assert "이 격차를 누가 가져가나" in md
+    assert "은광 생산자와 보유자" in md
+
+
+def test_prompt_warns_about_industry_shrinkage() -> None:
+    from msa.l35 import analyst
+
+    text = analyst.build_request("x", "2026-08-29").as_text()
+    assert "who_captures_it" in text
+    assert "산업의 축소" in text

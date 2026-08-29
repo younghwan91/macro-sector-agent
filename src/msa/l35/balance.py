@@ -154,13 +154,27 @@ SCHEMA: dict[str, Any] = {
                     "items": {"type": "string"},
                     "description": "**무엇이 이 격차를 메우나.** `tightening` 이면 필수",
                 },
+                "who_captures_it": {
+                    "type": "string",
+                    "description": (
+                        "**이 격차를 누가 가져가는가.** `tightening` 이면 필수. "
+                        "'아무도' 라면 그것은 타이트가 아니라 **산업의 축소**다 — "
+                        "그때는 verdict 를 loosening 이나 balanced 로 고쳐라"
+                    ),
+                },
                 "invalidations": {
                     "type": "array",
                     "minItems": 1,
                     "items": {"type": "string"},
                 },
             },
-            "required": ["verdict", "ratio_note", "what_would_close_it", "invalidations"],
+            "required": [
+                "verdict",
+                "ratio_note",
+                "what_would_close_it",
+                "who_captures_it",
+                "invalidations",
+            ],
         },
         "evidence": {
             "type": "array",
@@ -257,6 +271,14 @@ def validate(doc: Mapping[str, Any]) -> None:
         "(CLAUDE.md §5)",
     )
     if bal.get("verdict") == "tightening":
+        _need(
+            bool(str(bal.get("who_captures_it") or "").strip()),
+            "balance.who_captures_it 이 비었다 — **이 격차를 누가 가져가는가.** "
+            "2026-08-29 실측에서 managed_care 가 tightening 으로 나왔는데 분석가 스스로 "
+            "'격차의 실체는 초과수요가 아니라 무보험 전환' 이라고 적었다: 줄어드는 공급이 "
+            "곧 이 산업 자체의 축소였고, 그 격차를 가져가는 주체가 없었다. "
+            "가져가는 주체가 없으면 그것은 타이트가 아니라 축소다 (docs/26 §3.3 규칙 4)",
+        )
         _need(
             bool(list(bal.get("what_would_close_it") or [])),
             "balance.what_would_close_it 이 비었다 — '벌어진다' 는 그 격차가 **어떻게 "

@@ -345,6 +345,7 @@ def test_balance_block_exposes_verdicts_for_the_chain(tmp_path, monkeypatch) -> 
             "verdict": "tightening",
             "ratio_note": "r",
             "what_would_close_it": ["x"],
+            "who_captures_it": "생산자가 가격으로 가져간다",
             "invalidations": ["y"],
         },
         "evidence": [
