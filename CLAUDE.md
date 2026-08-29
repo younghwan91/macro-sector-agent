@@ -133,6 +133,7 @@ msa balance [themes]  # L3.5 수급 균형 조사 — "수요 나누기 공급" 
                       #   **트리아지 점수에 안 들어간다** (docs/26 §3.5) — 명단이 아니라 논지다.
                       #   공급 경직성은 5유형 중 하나로 분류(byproduct·lead_time·permitting·
                       #   capital·resource_depletion) — 분류 못 하면 그 주장을 안 싣는다
+                      #   → 관문 체인(msa.sector)의 ④ 관문이 이 판정을 읽는다
 msa regime            # P2 매크로 분석가 — cycle_class 8칸에 3값 판정 (docs/25 사전 등록).
                       #   **주간 1회.** --week --asof --provider --dry-run --no-write --show
                       #   산출물 state/regime/<YYYY-Www>.yaml. 트리아지 **R 축의 계수**로만 쓰인다
