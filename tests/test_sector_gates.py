@@ -808,3 +808,36 @@ def test_searchable_classes_does_not_treat_missing_as_tailwind() -> None:
     """
     doc = {"classes": {"inventory": {"verdict": "tailwind"}}}
     assert sector.searchable_classes(doc) == {"inventory"}
+
+
+def test_every_gate_is_evaluated_for_every_theme() -> None:
+    """**여섯 관문이 모든 테마에서 평가된다** — 하나라도 조용히 빠지면 종합이 아니다.
+
+    관문이 실패하는 것과 **평가되지 않는 것**은 다르다. 앞은 답이고 뒤는 침묵이다
+    (`CLAUDE.md` §2). 리포트가 "종합해서 결론을 낸다" 고 말하려면 78칸이 다 차야 한다.
+    """
+    rows = sector.evaluate(
+        _digest(
+            themes=[_theme(theme="a"), _theme(theme="b", pool=0.1), _theme(theme="c")],
+            judged=[
+                {"theme": "a", "portfolio_eligible": True, "trusted": True, "gate": "passed"}
+            ],
+            evidence_audit={},
+        )
+    )
+    assert rows
+    for r in rows:
+        got = [g.key for g in r.gates]
+        assert got == [g.key for g in sector.GATES], f"{r.theme}: 관문이 빠졌다 — {got}"
+        for g in r.gates:
+            assert g.why.strip(), f"{r.theme}/{g.key}: 사유가 비었다"
+            assert isinstance(g.passed, bool)
+
+
+def test_a_failing_gate_still_carries_a_reason() -> None:
+    """실패한 관문도 **왜** 인지를 말한다 — 투자자가 읽는 문서다."""
+    rows = sector.evaluate(_digest(themes=[_theme(pool=0.1)]))
+    blocked = [g for g in rows[0].gates if not g.passed]
+    assert blocked
+    for g in blocked:
+        assert len(g.why) > 5, f"{g.key}: 사유가 너무 짧다"
