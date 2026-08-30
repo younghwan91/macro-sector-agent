@@ -27,7 +27,7 @@
 
 > **차트 확인 대상 29종목 — 편입 가능 `cement_aggregates` · `specialty_chem` · `managed_care` · `shipping_container` 의 명단 63 중**
 >
-> **`AMRZ` -31% · `CRH` -26% · `CX` -20% · `EXP` -18% · `KNF` -32% · `LOMA` -26% · `MLM` -25% · ⚠`RETO` -97%** 외 21종목. 그중 **레드플래그·감점이 붙은 것 11종목**. 나머지는 52주 고점 −15%(선언값) 이내라 지금 자리가 아니다. **여섯 관문을 다 통과한 섹터는 없다.** 가장 멀리 간 것은 `cement_aggregates` (2/6 관문). 가장 많이 막은 곳은 **② 함정이 아닌가** (8개 테마) — 가치 함정 판별을 통과했나 (L3) ⚠ **상위 5 중 5개가 `shipping_container` 한 테마다 (100%) — 사실상 한 베팅이다.** ⚠ **판정을 만든 근거 97건 중 16건은 원문에서 못 찾은 숫자가 있고 20건은 문서를 읽지 못했다.** 그중 **먼저 열 것 7건** — `cement_aggregates` [24] · [36] · [42] / `specialty_chem` [5] · [10] · [31] · [33]. URL 과 무엇을 찾을지는 `msa ops audit-evidence cement_aggregates` · `msa ops audit-evidence specialty_chem` 가 적어 준다. (사람이 원문 대조를 끝낸 5건은 목록에서 뺐다.) 확인된 근거가 하나도 없는 축: capital_cycle, substitution, terminal_risk. **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.
+> **`AMRZ` -31% · `CRH` -26% · `CX` -20% · `EXP` -18% · `KNF` -32% · `LOMA` -26% · `MLM` -25% · ⚠`RETO` -97%** 외 21종목. 그중 **레드플래그·감점이 붙은 것 11종목**. 나머지는 52주 고점 −15%(선언값) 이내라 지금 자리가 아니다. **여섯 관문을 다 통과한 섹터는 없다.** 가장 멀리 간 것은 `cement_aggregates` (2/6 관문). 가장 많이 막은 곳은 **② 함정이 아닌가** (8개 테마) — 가치 함정 판별을 통과했나 (L3) ⚠ **상위 5 중 4개가 `specialty_chem` 한 테마다 (80%) — 사실상 한 베팅이다.** ⚠ **판정을 만든 근거 97건 중 16건은 원문에서 못 찾은 숫자가 있고 19건은 문서를 읽지 못했다.** 그중 **먼저 열 것 7건** — `cement_aggregates` [24] · [36] · [44] / `specialty_chem` [5] · [10] · [31] · [33]. URL 과 무엇을 찾을지는 `msa ops audit-evidence cement_aggregates` · `msa ops audit-evidence specialty_chem` 가 적어 준다. (사람이 원문 대조를 끝낸 5건은 목록에서 뺐다.) 확인된 근거가 하나도 없는 축: capital_cycle, substitution, terminal_risk. **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.
 
 <sub>`msa run daily` 가 자동으로 다시 쓴다. 스캔 기준일 **2026-08-28** · 가격 스토어 마지막 날 **2026-08-28** (최신 — 미 거래일 기준이다. KST 달력 날짜와 다른 것은 정상이다). 성과 수치는 없다 — 측정값과 판정뿐이다 (`CLAUDE.md` §7).</sub>
 
@@ -49,33 +49,33 @@
 ```
 FSI       -48%  ████████████
 ALHC      -45%  ███████████▏
-TGLS      -45%  ███████████▏
-RETO      -97%  ████████████████████████
-SMID      -42%  ██████████▍
 CNEY      -78%  ███████████████████▎
 HWKN      -34%  ████████▌
 ALTO      -32%  ████████
-KNF       -32%  ███████▉
-AMRZ      -31%  ███████▊
 BGLC      -74%  ██████████████████▍
 LWLG      -70%  █████████████████▍
 ESI       -29%  ███████▎
 CLOV      -22%  █████▌
-CRH       -26%  ██████▌
 PRM       -19%  ████▊
 YMAT      -80%  ███████████████████▉
-MLM       -25%  ██████▎
 SSL       -17%  ████▍
-LOMA      -26%  ██████▌
-EXP       -18%  ████▌
-RMIX      -30%  ███████▍
 NTIC      -18%  ████▌
-TTAM      -22%  █████▋
 WDFC      -18%  ████▍
-CX        -20%  ████▉
-VMC       -16%  ████▏
 MOH       -18%  ████▍
 MATV      -17%  ████▎
+RETO      -97%  ████████████████████████
+TGLS      -45%  ███████████▏
+SMID      -42%  ██████████▍
+KNF       -32%  ███████▉
+AMRZ      -31%  ███████▊
+CRH       -26%  ██████▌
+MLM       -25%  ██████▎
+LOMA      -26%  ██████▌
+RMIX      -30%  ███████▍
+EXP       -18%  ████▌
+TTAM      -22%  █████▋
+CX        -20%  ████▉
+VMC       -16%  ████▏
 ```
 
 <sub>막대는 크기만 — 부호는 숫자가 든다. 순서는 triage 이지 낙폭 순이 아니다.</sub>
@@ -84,33 +84,33 @@ MATV      -17%  ████▎
 |---|---|---:|---:|---:|---|
 | ⚠ `FSI` | `specialty_chem` | -48% | $5.80 | $115.6K | interest_coverage_lt1 |
 | `ALHC` | `managed_care` | -45% | $13.62 | $71.6M | — |
-| `TGLS` | `cement_aggregates` | -45% | $40.01 | $10.0M | — |
-| ⚠ `RETO` | `cement_aggregates` | -97% | $1.29 | $1.8M | dilution_gt15 |
-| `SMID` | `cement_aggregates` | -42% | $25.10 | $421.7K | — |
 | ⚠ `CNEY` | `specialty_chem` | -78% | $0.59 | $55.3K | dilution_gt15 |
 | `HWKN` | `specialty_chem` | -34% | $120 | $16.3M | — |
 | `ALTO` | `specialty_chem` | -32% | $4.07 | $8.5M | — |
-| `KNF` | `cement_aggregates` | -32% | $64.24 | $63.5M | — |
-| `AMRZ` | `cement_aggregates` | -31% | $44.67 | $180.8M | — |
 | ⚠ `BGLC` | `specialty_chem` | -74% | $1.55 | $23.2K | consecutive_operating_loss;zombie_streak |
 | ⚠ `LWLG` | `specialty_chem` | -70% | $5.49 | $20.2M | consecutive_operating_loss |
 | `ESI` | `specialty_chem` | -29% | $34.93 | $141.5M | — |
 | ⚠ `CLOV` | `managed_care` | -22% | $4.23 | $19.1M | consecutive_operating_loss |
-| `CRH` | `cement_aggregates` | -26% | $95.86 | $392.7M | — |
 | ⚠ `PRM` | `specialty_chem` | -19% | $30.62 | $40.3M | interest_coverage_lt1 |
 | ⚠ `YMAT` | `specialty_chem` | -80% | $1.88 | $43.2K | full_capital_impairment |
-| `MLM` | `cement_aggregates` | -25% | $531 | $272.1M | — |
 | `SSL` | `specialty_chem` | -17% | $11.82 | $12.2M | — |
-| `LOMA` | `cement_aggregates` | -26% | $9.69 | $4.2M | — |
-| `EXP` | `cement_aggregates` | -18% | $198 | $68.5M | — |
-| ⚠ `RMIX` | `cement_aggregates` | -30% | $17.50 | $5.1M | consecutive_operating_loss |
 | `NTIC` | `specialty_chem` | -18% | $8.13 | $43.9K | — |
-| `TTAM` | `cement_aggregates` | -22% | $15.02 | $3.3M | — |
 | `WDFC` | `specialty_chem` | -18% | $217 | $21.4M | — |
-| `CX` | `cement_aggregates` | -20% | $10.87 | $74.1M | — |
-| `VMC` | `cement_aggregates` | -16% | $275 | $224.4M | — |
 | ⚠ `MOH` | `managed_care` | -18% | $200 | $109.1M | interest_coverage_lt1 |
 | ⚠ `MATV` | `specialty_chem` | -17% | $12.13 | $7.7M | zombie_streak |
+| ⚠ `RETO` | `cement_aggregates` | -97% | $1.29 | $1.8M | dilution_gt15 |
+| `TGLS` | `cement_aggregates` | -45% | $40.01 | $10.0M | — |
+| `SMID` | `cement_aggregates` | -42% | $25.10 | $421.7K | — |
+| `KNF` | `cement_aggregates` | -32% | $64.24 | $63.5M | — |
+| `AMRZ` | `cement_aggregates` | -31% | $44.67 | $180.8M | — |
+| `CRH` | `cement_aggregates` | -26% | $95.86 | $392.7M | — |
+| `MLM` | `cement_aggregates` | -25% | $531 | $272.1M | — |
+| `LOMA` | `cement_aggregates` | -26% | $9.69 | $4.2M | — |
+| ⚠ `RMIX` | `cement_aggregates` | -30% | $17.50 | $5.1M | consecutive_operating_loss |
+| `EXP` | `cement_aggregates` | -18% | $198 | $68.5M | — |
+| `TTAM` | `cement_aggregates` | -22% | $15.02 | $3.3M | — |
+| `CX` | `cement_aggregates` | -20% | $10.87 | $74.1M | — |
+| `VMC` | `cement_aggregates` | -16% | $275 | $224.4M | — |
 
 <sub>상위 8개만 싣는다. 전문·제외 사유·판단 재료 열은 `state/daily/2026-08-29/digest.md`. **순위가 높다 = 오래 잊혀졌다** 이지 사라는 뜻이 아니다 — 판별(`msa research`)을 거치지 않은 테마는 후보가 아니다.</sub>
 
