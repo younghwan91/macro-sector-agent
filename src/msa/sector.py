@@ -584,3 +584,29 @@ def verdict_md(rows: Sequence[Row], *, limit: int = 3) -> list[str]:
         "",
     ]
     return out
+
+def searchable_classes(regime_doc: Mapping[str, Any] | None) -> set[str]:
+    """관문 ⑤ 를 통과할 수 있는 `cycle_class` 집합 — **탐색 공간을 손으로 세지 않게.**
+
+    2026-08-29 실측: 다음에 판별할 테마를 고르려고 탐색 공간을 손으로 셌는데 **순풍 3종만
+    세고 `secular_growth`(중립)를 빼먹어 9개 테마를 놓쳤다.** 관문 ⑤(`_macro`)는
+    `headwind` 만 막는데, 사람이 "순풍" 과 "막지 않음" 을 헷갈린 것이다.
+
+    같은 판정을 두 곳에서 내리지 않도록 이 함수가 `_macro` 와 **같은 규칙**을 쓴다.
+    """
+    from msa.l2.regime import CYCLE_CLASSES
+
+    classes = (regime_doc or {}).get("classes") or {}
+    if not classes:
+        return set(CYCLE_CLASSES)  # 레짐 문서가 아예 없으면 아무것도 막지 않는다
+    out: set[str] = set()
+    for name in CYCLE_CLASSES:
+        body = classes.get(name)
+        if not body:
+            # **판정이 없는 칸을 순풍으로 읽지 않는다.** `_macro` 는 계수가 없으면
+            # 막지 않지만, 탐색 공간을 짤 때 "모르는 칸" 을 후보에 넣으면 판별을 돌린 뒤
+            # ⑤ 에서 걸리는 일이 생긴다. 여기서는 **아는 것만** 센다 (`CLAUDE.md` §2).
+            continue
+        if REGIME_TILT.get(str(body.get("verdict")), 1.0) > REGIME_TILT["headwind"]:
+            out.add(str(name))
+    return out

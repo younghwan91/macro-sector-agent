@@ -759,3 +759,52 @@ def test_not_a_trap_distinguishes_low_confidence_from_missing_axes() -> None:
     assert "답한 축이 없다" in r2.why
     assert "0.6" in r2.why
     assert "확신도가 편입선에 못 미친다" not in r2.why
+
+
+# ---------------------------------------------------------------- 탐색 공간
+
+
+def test_neutral_regime_passes_gate_five() -> None:
+    """**중립은 역풍이 아니다.** 2026-08-29 실측: 탐색 공간을 짤 때 순풍 3종만 세고
+    `secular_growth`(중립)를 빼먹어 9개 테마를 놓쳤다. 관문 ⑤ 는 `headwind` 만 막는다.
+    """
+    from msa.l2.regime import REGIME_TILT
+
+    for verdict in ("tailwind", "neutral"):
+        d = _digest(regime={"tilts": {"t1": REGIME_TILT[verdict]}})
+        assert sector.evaluate(d)[0].gate("macro").passed, f"{verdict} 가 막혔다"
+    d = _digest(regime={"tilts": {"t1": REGIME_TILT["headwind"]}})
+    assert not sector.evaluate(d)[0].gate("macro").passed
+
+
+def test_searchable_classes_names_every_non_headwind_class() -> None:
+    """탐색 공간을 손으로 세지 않게 코드가 낸다 — 손으로 세다 9개를 놓쳤다."""
+    doc = {
+        "classes": {
+            "capex_program": {"verdict": "tailwind"},
+            "commodity_supply": {"verdict": "tailwind"},
+            "inventory": {"verdict": "tailwind"},
+            "secular_growth": {"verdict": "neutral"},
+            "credit_rate": {"verdict": "headwind"},
+        }
+    }
+    got = sector.searchable_classes(doc)
+    assert got == {"capex_program", "commodity_supply", "inventory", "secular_growth"}
+    assert "credit_rate" not in got
+
+
+def test_searchable_classes_without_a_regime_is_everything() -> None:
+    """레짐이 없으면 아무것도 막지 않는다 — 없는 것을 역풍으로 읽지 않는다."""
+    from msa.l2.regime import CYCLE_CLASSES
+
+    assert sector.searchable_classes(None) == set(CYCLE_CLASSES)
+
+
+def test_searchable_classes_does_not_treat_missing_as_tailwind() -> None:
+    """**판정이 없는 칸을 순풍으로 읽지 않는다** (`CLAUDE.md` §2).
+
+    `_macro` 는 계수가 없으면 막지 않지만, 탐색 공간을 짤 때 '모르는 칸' 을 후보에 넣으면
+    판별을 돌린 뒤 ⑤ 에서 걸리는 일이 생긴다 — 비싼 낭비다.
+    """
+    doc = {"classes": {"inventory": {"verdict": "tailwind"}}}
+    assert sector.searchable_classes(doc) == {"inventory"}
