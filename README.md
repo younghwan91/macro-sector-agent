@@ -23,70 +23,94 @@
 
 <!-- MSA:LATEST -->
 
-## 오늘의 결론 · 2026-08-30
+## 오늘의 결론 · 2026-08-31
 
-> **차트 확인 대상 16종목 — 편입 가능 `shipping_container` · `specialty_chem` · `managed_care` 의 명단 46 중**
+> **차트 확인 대상 29종목 — 편입 가능 `cement_aggregates` · `specialty_chem` · `managed_care` · `shipping_container` 의 명단 63 중**
 >
-> **`ALHC` -45% · ⚠`CLOV` -22% · ⚠`MOH` -18% · `ALTO` -32% · ⚠`BGLC` -75% · ⚠`CNEY` -77% · `ESI` -26% · ⚠`FSI` -47%** 외 8종목. 그중 **레드플래그·감점이 붙은 것 9종목**. 나머지는 52주 고점 −15%(선언값) 이내라 지금 자리가 아니다. **여섯 관문을 다 통과한 섹터는 없다.** 가장 멀리 간 것은 `shipping_container` (3/6 관문). 가장 많이 막은 곳은 **② 함정이 아닌가** (8개 테마) — 가치 함정 판별을 통과했나 (L3) ⚠ **상위 5 중 5개가 `shipping_container` 한 테마다 (100%) — 사실상 한 베팅이다.** ⚠ **판정을 만든 근거 64건 중 11건은 원문에서 못 찾은 숫자가 있고 14건은 문서를 읽지 못했다.** 그중 **먼저 열 것 4건** — `specialty_chem` [5] · [10] · [31] · [33]. URL 과 무엇을 찾을지는 `msa ops audit-evidence specialty_chem` 가 적어 준다. (사람이 원문 대조를 끝낸 4건은 목록에서 뺐다.) 확인된 근거가 하나도 없는 축: capital_cycle, terminal_risk. **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.
->
-> ⚠ **가격 스토어가 2026-08-27 에서 멈춰 있다 — 마지막 거래일보다 뒤처졌다.** 적재를 확인해라. 52주 고점 대비도 그 날짜 값이다.
+> **`AMRZ` -31% · `CRH` -26% · `CX` -20% · `EXP` -18% · `KNF` -32% · `LOMA` -26% · `MLM` -25% · ⚠`RETO` -97%** 외 21종목. 그중 **레드플래그·감점이 붙은 것 11종목**. 나머지는 52주 고점 −15%(선언값) 이내라 지금 자리가 아니다. **여섯 관문을 다 통과한 섹터는 없다.** 가장 멀리 간 것은 `cement_aggregates` (2/6 관문). 가장 많이 막은 곳은 **② 함정이 아닌가** (8개 테마) — 가치 함정 판별을 통과했나 (L3) ⚠ **상위 5 중 5개가 `shipping_container` 한 테마다 (100%) — 사실상 한 베팅이다.** ⚠ **판정을 만든 근거 97건 중 16건은 원문에서 못 찾은 숫자가 있고 20건은 문서를 읽지 못했다.** 그중 **먼저 열 것 8건** — `cement_aggregates` [24] · [36] · [42] · [44] / `specialty_chem` [5] · [10] · [31] · [33]. URL 과 무엇을 찾을지는 `msa ops audit-evidence cement_aggregates` · `msa ops audit-evidence specialty_chem` 가 적어 준다. (사람이 원문 대조를 끝낸 4건은 목록에서 뺐다.) 확인된 근거가 하나도 없는 축: capital_cycle, substitution, terminal_risk. **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.
 
-<sub>`msa run daily` 가 자동으로 다시 쓴다. 스캔 기준일 **2026-08-27** · 가격 스토어 마지막 날 **2026-08-27** (거래일 1일 뒤처짐 — 미 거래일 기준이다. KST 달력 날짜와 다른 것은 정상이다). 성과 수치는 없다 — 측정값과 판정뿐이다 (`CLAUDE.md` §7).</sub>
+<sub>`msa run daily` 가 자동으로 다시 쓴다. 스캔 기준일 **2026-08-28** · 가격 스토어 마지막 날 **2026-08-28** (최신 — 미 거래일 기준이다. KST 달력 날짜와 다른 것은 정상이다). 성과 수치는 없다 — 측정값과 판정뿐이다 (`CLAUDE.md` §7).</sub>
 
 | # | 테마 | 점수 | 판별 | 명단 | 플래그 |
 |---:|---|---:|---|---:|---|
-| 1 | `health_it` | 0.88 | 편입 불가 · 0.45 | 42 | SECULAR — 게이트 필요 |
+| 1 | `health_it` | 0.89 | 편입 불가 · 0.45 | 42 | SECULAR — 게이트 필요 |
 | 2 | `media_streaming` | 0.86 | 편입 불가 · 0.45 | 37 | SECULAR — 게이트 필요 |
-| 3 | `offshore_drilling` | 0.80 | 편입 불가 · 0.45 | 7 | SECULAR — 게이트 필요 |
-| 5 | `life_science_tools` | 0.78 | 편입 불가 · 0.45 | 32 | — |
-| 6 | `shipping_container` | 0.77 | **편입 가능** · 0.75 | 6 | — |
-| 7 | `home_improvement` | 0.71 | 편입 불가 · 0.6 | 6 | — |
-| 8 | `it_services` | 0.69 | 편입 불가 · 0.45 | 56 | SECULAR — 게이트 필요 |
-| 9 | `pharma_generic` | 0.69 | 편입 불가 · 0.45 | 53 | — |
+| 3 | `offshore_drilling` | 0.81 | 편입 불가 · 0.45 | 7 | SECULAR — 게이트 필요 |
+| 4 | `life_science_tools` | 0.77 | 편입 불가 · 0.45 | 32 | — |
+| 6 | `it_services` | 0.74 | 편입 불가 · 0.45 | 56 | SECULAR — 게이트 필요 |
+| 7 | `staffing_consulting` | 0.70 | 편입 불가 · 0.35 | 44 | — |
+| 8 | `insurance_brokers` | 0.69 | 편입 불가 · 0.6 | 19 | SECULAR — 게이트 필요 |
+| 9 | `pharma_generic` | 0.66 | 편입 불가 · 0.45 | 53 | — |
 
 **눌린 종목** (순서 = triage(읽는 순서) — 수익률 순서가 아니다)
 
 **52주 고점 대비**
 
 ```
-FSI       -47%  ██████████████▍
-ALHC      -45%  █████████████▌
-CNEY      -77%  ███████████████████████▎
-HWKN      -36%  ██████████▊
-CLOV      -22%  ██████▋
-SSL       -19%  █████▊
-BGLC      -75%  ██████████████████████▋
-ALTO      -32%  █████████▋
-LWLG      -68%  ████████████████████▌
-ESI       -26%  ███████▊
-YMAT      -80%  ████████████████████████
-NTIC      -18%  █████▋
-PRM       -15%  ████▋
-WDFC      -17%  █████▎
-MATV      -17%  █████▎
-MOH       -18%  █████▌
+FSI       -48%  ████████████
+ALHC      -45%  ███████████▏
+TGLS      -45%  ███████████▏
+RETO      -97%  ████████████████████████
+SMID      -42%  ██████████▍
+CNEY      -78%  ███████████████████▎
+HWKN      -34%  ████████▌
+ALTO      -32%  ████████
+KNF       -32%  ███████▉
+AMRZ      -31%  ███████▊
+BGLC      -74%  ██████████████████▍
+LWLG      -70%  █████████████████▍
+ESI       -29%  ███████▎
+CLOV      -22%  █████▌
+CRH       -26%  ██████▌
+PRM       -19%  ████▊
+YMAT      -80%  ███████████████████▉
+MLM       -25%  ██████▎
+SSL       -17%  ████▍
+LOMA      -26%  ██████▌
+EXP       -18%  ████▌
+RMIX      -30%  ███████▍
+NTIC      -18%  ████▌
+TTAM      -22%  █████▋
+WDFC      -18%  ████▍
+CX        -20%  ████▉
+VMC       -16%  ████▏
+MOH       -18%  ████▍
+MATV      -17%  ████▎
 ```
 
 <sub>막대는 크기만 — 부호는 숫자가 든다. 순서는 triage 이지 낙폭 순이 아니다.</sub>
 
 | 종목 | 테마 | 52wH | 가격 | ADV20 | 비고 |
 |---|---|---:|---:|---:|---|
-| ⚠ `FSI` | `specialty_chem` | -47% | $5.93 | $119.7K | interest_coverage_lt1 |
-| `ALHC` | `managed_care` | -45% | $13.56 | $82.4M | — |
-| ⚠ `CNEY` | `specialty_chem` | -77% | $0.61 | $56.9K | dilution_gt15 |
-| `HWKN` | `specialty_chem` | -36% | $118 | $17.2M | — |
-| ⚠ `CLOV` | `managed_care` | -22% | $4.23 | $18.9M | consecutive_operating_loss |
-| `SSL` | `specialty_chem` | -19% | $11.61 | $12.1M | — |
-| ⚠ `BGLC` | `specialty_chem` | -75% | $1.50 | $23.7K | consecutive_operating_loss;zombie_streak |
-| `ALTO` | `specialty_chem` | -32% | $4.09 | $8.8M | — |
-| ⚠ `LWLG` | `specialty_chem` | -68% | $5.87 | $20.9M | consecutive_operating_loss |
-| `ESI` | `specialty_chem` | -26% | $36.52 | $112.6M | — |
-| ⚠ `YMAT` | `specialty_chem` | -80% | $1.91 | $92.4K | full_capital_impairment |
-| `NTIC` | `specialty_chem` | -18% | $8.07 | $35.4K | — |
-| ⚠ `PRM` | `specialty_chem` | -15% | $32.03 | $49.0M | interest_coverage_lt1 |
-| `WDFC` | `specialty_chem` | -17% | $219 | $22.0M | — |
-| ⚠ `MATV` | `specialty_chem` | -17% | $12.18 | $7.6M | zombie_streak |
-| ⚠ `MOH` | `managed_care` | -18% | $199 | $106.1M | interest_coverage_lt1 |
+| ⚠ `FSI` | `specialty_chem` | -48% | $5.80 | $115.6K | interest_coverage_lt1 |
+| `ALHC` | `managed_care` | -45% | $13.62 | $71.6M | — |
+| `TGLS` | `cement_aggregates` | -45% | $40.01 | $10.0M | — |
+| ⚠ `RETO` | `cement_aggregates` | -97% | $1.29 | $1.8M | dilution_gt15 |
+| `SMID` | `cement_aggregates` | -42% | $25.10 | $421.7K | — |
+| ⚠ `CNEY` | `specialty_chem` | -78% | $0.59 | $55.3K | dilution_gt15 |
+| `HWKN` | `specialty_chem` | -34% | $120 | $16.3M | — |
+| `ALTO` | `specialty_chem` | -32% | $4.07 | $8.5M | — |
+| `KNF` | `cement_aggregates` | -32% | $64.24 | $63.5M | — |
+| `AMRZ` | `cement_aggregates` | -31% | $44.67 | $180.8M | — |
+| ⚠ `BGLC` | `specialty_chem` | -74% | $1.55 | $23.2K | consecutive_operating_loss;zombie_streak |
+| ⚠ `LWLG` | `specialty_chem` | -70% | $5.49 | $20.2M | consecutive_operating_loss |
+| `ESI` | `specialty_chem` | -29% | $34.93 | $141.5M | — |
+| ⚠ `CLOV` | `managed_care` | -22% | $4.23 | $19.1M | consecutive_operating_loss |
+| `CRH` | `cement_aggregates` | -26% | $95.86 | $392.7M | — |
+| ⚠ `PRM` | `specialty_chem` | -19% | $30.62 | $40.3M | interest_coverage_lt1 |
+| ⚠ `YMAT` | `specialty_chem` | -80% | $1.88 | $43.2K | full_capital_impairment |
+| `MLM` | `cement_aggregates` | -25% | $531 | $272.1M | — |
+| `SSL` | `specialty_chem` | -17% | $11.82 | $12.2M | — |
+| `LOMA` | `cement_aggregates` | -26% | $9.69 | $4.2M | — |
+| `EXP` | `cement_aggregates` | -18% | $198 | $68.5M | — |
+| ⚠ `RMIX` | `cement_aggregates` | -30% | $17.50 | $5.1M | consecutive_operating_loss |
+| `NTIC` | `specialty_chem` | -18% | $8.13 | $43.9K | — |
+| `TTAM` | `cement_aggregates` | -22% | $15.02 | $3.3M | — |
+| `WDFC` | `specialty_chem` | -18% | $217 | $21.4M | — |
+| `CX` | `cement_aggregates` | -20% | $10.87 | $74.1M | — |
+| `VMC` | `cement_aggregates` | -16% | $275 | $224.4M | — |
+| ⚠ `MOH` | `managed_care` | -18% | $200 | $109.1M | interest_coverage_lt1 |
+| ⚠ `MATV` | `specialty_chem` | -17% | $12.13 | $7.7M | zombie_streak |
 
 <sub>상위 8개만 싣는다. 전문·제외 사유·판단 재료 열은 `state/daily/2026-08-29/digest.md`. **순위가 높다 = 오래 잊혀졌다** 이지 사라는 뜻이 아니다 — 판별(`msa research`)을 거치지 않은 테마는 후보가 아니다.</sub>
 
