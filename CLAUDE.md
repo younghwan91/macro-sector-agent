@@ -119,6 +119,10 @@ msa portfolio-inputs --asof DATE --themes a,b,c   # L4 picks + L3/사람 thesis 
                       #   [--human-theses DIR] [--top N] [--no-write] · 산출물 state/portfolio_inputs/<date>/
                       #   (picks.csv·theses/·assemble_report.json·report.txt) → msa portfolio --inputs 그대로
 msa research <theme>  # L3 에이전트 4역할(supply·catalyst·bear·referee) → thesis 객체 (M7)
+                      #   **한 번에 하나씩 돌린다.** 2026-08-29 실측: 두 배치를 동시에 돌리자
+                      #   4건이 전부 ProviderError(종료코드 3)로 죽었다 — 속도 제한이다.
+                      #   순차로 돌리면 같은 테마가 그대로 통과한다. 종료코드: 2=스키마 거부
+                      #   (저장 안 함) · 3=제공자 오류(재시도하면 대개 된다)
                       #   실제 실행은 ANTHROPIC_API_KEY 필요 (--provider anthropic, 기본값)
                       #   오프라인: --dry-run (Mock) · --provider fixture (tests/fixtures/l3/)
                       #   산출물 state/theses/<date>/ (thesis.yaml·report.md·rejections-pending·contested)
