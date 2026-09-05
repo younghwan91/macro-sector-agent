@@ -299,7 +299,8 @@ def headline(rows: Sequence[Row]) -> str:
     g = _BY_KEY[worst[0]]
     return (
         f"**여섯 관문을 다 통과한 섹터는 없다.** 가장 멀리 간 것은 `{best.theme}` "
-        f"({best.depth}/{len(GATES)} 관문). 가장 많이 막은 곳은 **{g.title}** "
+        f"({_BY_KEY[best.blocked_at].title if best.blocked_at else ''} 관문에서 막혔다). "
+        f"가장 많이 막은 곳은 **{g.title}** "
         f"({worst[1]}개 테마) — {g.question}"
     )
 
@@ -458,13 +459,46 @@ def what_would_change(rows: Sequence[Row]) -> dict[str, list[str]]:
 # ---------------------------------------------------------------- 투자 판단
 
 
+def _label(r: Result) -> str:
+    return f"{_BY_KEY[r.key].title.split(' ', 1)[1]} — {r.why}"
+
+
 def _blocking_reasons(row: Row) -> list[str]:
     """이 테마가 막힌 **모든** 사유. 첫 번째만 적으면 나머지가 안 보인다."""
-    return [f"{_BY_KEY[r.key].title.split(' ', 1)[1]} — {r.why}" for r in row.gates if not r.passed]
+    return [_label(r) for r in row.gates if not r.passed]
 
 
 def _passing_reasons(row: Row) -> list[str]:
-    return [f"{_BY_KEY[r.key].title.split(' ', 1)[1]} — {r.why}" for r in row.gates if r.passed]
+    return [_label(r) for r in row.gates if r.passed]
+
+
+def _reached_passes(row: Row) -> list[str]:
+    """**막히기 전에** 통과한 관문. 체인이므로 이것만이 진짜 통과다."""
+    return [_label(r) for r in row.gates[: row.depth]]
+
+
+def _unreached(row: Row) -> list[str]:
+    """막힌 뒤의 관문 — **통과가 아니라 미도달**이다.
+
+    2026-08-31 리포트 검토: 이 구분이 없으면 "2/6 관문" 옆에 ✅ 가 넷 서서 독자가 둘 중
+    하나를 거짓으로 읽는다. 값은 계산돼 있으므로 버리지 않고 **참고로 내린다** — 무엇을
+    더 풀어야 하는지가 이 체인의 산출이기 때문이다 (모듈 머리말).
+    """
+    return [_label(r) for r in row.gates[row.depth + 1 :] if r.passed]
+
+
+def _stop_line(row: Row) -> str:
+    """`{테마} — {막힌 관문}에서 막혔다` — 분수를 쓰지 않는다.
+
+    `depth` 는 통과 **개수**가 아니라 멈춘 **자리**다. 분수로 적으면 개수로 읽힌다.
+    """
+    blocked = row.blocked_at
+    if blocked is None:
+        return f"**`{row.theme}`** — 여섯 관문 전부 통과"
+    title = _BY_KEY[blocked].title
+    if row.depth == 0:
+        return f"**`{row.theme}`** — 첫 관문 {title} 에서 막혔다"
+    return f"**`{row.theme}`** — {title} 관문에서 막혔다 (앞의 {row.depth}개는 통과)"
 
 
 def verdict_md(rows: Sequence[Row], *, limit: int = 3) -> list[str]:
@@ -498,21 +532,25 @@ def verdict_md(rows: Sequence[Row], *, limit: int = 3) -> list[str]:
         out += [
             "> **신규 편입 없음.** 여섯 관문을 모두 통과한 섹터가 오늘은 없다.",
             ">",
-            f"> 가장 가까웠던 것은 **`{best.theme}`** ({best.depth}/{len(GATES)} 관문). "
-            "아래가 그 테마가 통과한 것과 막힌 것이다.",
+            f"> 가장 가까웠던 것은 **`{best.theme}`** — "
+            f"{_BY_KEY[best.blocked_at].title if best.blocked_at else ''} 관문에서 막혔다. "
+            "아래가 그 테마가 어디까지 갔고 무엇에 막혔는지다.",
             "",
         ]
         # **판별을 통과한 테마만 길게 편다.** ② 에서 막힌 것은 아직 후보가 아니고,
         # 그 아래 관문의 ❌ 를 나열하면 할 일처럼 보여 소음이 된다.
         detailed = [r for r in rows if r.depth >= 2][:limit]
         for r in detailed:
-            out += [f"**`{r.theme}`** — {r.depth}/{len(GATES)} 관문", ""]
+            out += [_stop_line(r), ""]
             # **답이 '안 산다' 이므로 왜 안 사는지가 먼저다.** 통과 항목을 앞에 놓으면
             # 투자자가 세 줄을 읽고 "좋아 보인다" 고 오해한다 (2026-08-29 검토).
             for x in _blocking_reasons(r):
                 out.append(f"- ❌ {x}")
-            for x in _passing_reasons(r):
+            for x in _reached_passes(r):
                 out.append(f"- ✅ {x}")
+            for x in _unreached(r):
+                # 체인상 도달하지 못한 칸 — 값은 있으나 통과라고 부르지 않는다
+                out.append(f"- ◻ (미도달) {x}")
             out.append("")
         rest = [r for r in rows if r not in detailed]
         if rest:

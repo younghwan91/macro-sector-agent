@@ -154,17 +154,40 @@ def test_delisted_coverage_audit_over_common_stock(store: Store) -> None:
     assert cov.coverage >= 0.999
     # 펀드류는 prices 에 구조적으로 없다. 뺀 개수는 반환값에 남는다.
     assert cov.excluded_non_equity["ETF"] >= 1_900
-    # 남은 누락은 TFSA(비상장 BDC) 뿐이어야 한다 — 늘어나면 실제 회귀다.
-    assert cov.delisted_missing == ["TFSA"]
+    # **불변식은 개수이지 이름이 아니다.** 2026-08-30 재적재에서 누락 1건의 정체가
+    # `TFSA`(ETD, 비상장 BDC) → `EZT`(Entergy Texas, 관련티커 `ETI-P` — 보통주로
+    # 분류돼 있으나 SEP 에 가격이 없다) 로 바뀌었다. 이름을 박아 두면 **데이터 갱신마다
+    # 회귀로 위장한 실패**가 나고, 그 소음이 진짜 회귀를 가린다.
+    # 늘어나는 것이 회귀다 — 그것만 지킨다.
+    assert len(cov.delisted_missing) <= 1, cov.delisted_missing
 
 
 def test_only_spy_etf_lives_in_the_store(store: Store) -> None:
-    """`docs/08` §6.2 의 "SPY 외 ETF 가 있는지" 에 대한 답: 없다."""
+    """`docs/08` §6.2 의 "SPY 외 ETF 가 있는지" 에 대한 답: 없다.
+
+    **SPY 가 `prices` 에 있느냐는 검사하지 않는다.** `l1.panel._spy_series` 가 그것을
+    "스토어를 어떻게 빌드했느냐에 달린 우연" 이라고 적고 벌크 폴백을 두고 있다 —
+    2026-08-25 사고의 수정이다. 여기서 `store.prices(["SPY"])` 를 요구하면 테스트가
+    **코드가 명시적으로 부인한 불변식**을 주장하게 된다. 실제로 2026-08-30 재적재에서
+    SPY 가 다시 0행이 됐고(스토어의 ETF 20,968개 중 가격 보유 2개), 파이프라인은
+    폴백으로 멀쩡히 돌았는데 이 테스트만 깨졌다.
+
+    지켜야 할 것은 **다른 ETF 가 스토어에 스며들지 않는 것**이고, SPY 를 실제로 얻을 수
+    있는지는 `test_spy_series_falls_back_to_bulk` 와 파이프라인이 진다.
+    """
     assert ETF_IN_STORE == ("SPY",)
-    store.prices(["SPY"], min_rows=7_000)
     for t in ("GDX", "SIL", "REMX", "URA", "LIT"):
         with pytest.raises(ShortRead):
             store.prices([t], min_rows=1)
+
+
+def test_spy_is_obtainable_even_when_the_store_has_none(store: Store) -> None:
+    """SPY 는 **스토어든 벌크든 어디선가는** 나와야 한다 — RS·상대거래대금의 기준이다."""
+    from msa.l1.panel import _spy_series
+
+    spy = _spy_series(store)
+    assert len(spy) >= 7_000, "SPY 가 스토어에도 벌크에도 없으면 C 블록이 통째로 무의미하다"
+    assert set(spy.columns) >= {"date", "close", "dv"}
 
 
 def test_theme_etf_proxies_come_from_bulk_funds_zip() -> None:

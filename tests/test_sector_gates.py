@@ -841,3 +841,31 @@ def test_a_failing_gate_still_carries_a_reason() -> None:
     assert blocked
     for g in blocked:
         assert len(g.why) > 5, f"{g.key}: 사유가 너무 짧다"
+
+
+# ------------------------------------------- 체인 표기 (2026-08-31 리포트 검토)
+
+
+def test_verdict_does_not_print_two_of_six_beside_four_checkmarks() -> None:
+    """**`depth` 는 통과 개수가 아니라 '어디서 멈췄나' 다.**
+
+    2026-08-31 리포트 실측: `cement_aggregates` 가 "2/6 관문" 이라 적혀 있는데 바로 아래
+    ✅ 가 넷이었다. 둘 다 맞는 말이지만 **같이 놓으면 독자가 하나를 거짓으로 읽는다.**
+    투자자가 읽는 문서에서 그 모순은 그대로 신뢰 비용이다.
+
+    체인이므로 셋째 관문에서 멈췄다면 넷째 이후는 **통과가 아니라 미도달**이다.
+    """
+    d = _digest()
+    rows = sector.evaluate(d)
+    text = "\n".join(sector.verdict_md(rows))
+    assert "/6 관문" not in text, "분수 표기가 ✅ 개수와 충돌한다"
+    assert "에서 막혔다" in text
+
+
+def test_verdict_separates_reached_passes_from_unreached_gates() -> None:
+    """막힘 **앞**의 통과와 **뒤**의 칸은 다른 사실이다 (`CLAUDE.md` §2)."""
+    d = _digest(
+        balance={"surveyed": ["t1"], "missing": [], "lines": [], "verdicts": {"t1": "loosening"}}
+    )
+    text = "\n".join(sector.verdict_md(sector.evaluate(d)))
+    assert "미도달" in text
