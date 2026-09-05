@@ -23,96 +23,100 @@
 
 <!-- MSA:LATEST -->
 
-## 오늘의 결론 · 2026-08-31
+## 오늘의 결론 · 2026-09-06
 
-> **차트 확인 대상 29종목 — 편입 가능 `cement_aggregates` · `managed_care` · `shipping_container` · `specialty_chem` 의 명단 63 중**
+> **차트 확인 대상 30종목 — 편입 가능 `shipping_container` · `cement_aggregates` · `managed_care` · `specialty_chem` 의 명단 63 중**
 >
-> **`AMRZ` -31% · `CRH` -26% · `CX` -20% · `EXP` -18% · `KNF` -32% · `LOMA` -26% · `MLM` -25% · ⚠`RETO` -97%** 외 21종목. 그중 **레드플래그·감점이 붙은 것 11종목**. 나머지는 52주 고점 −15%(선언값) 이내라 지금 자리가 아니다. **여섯 관문을 다 통과한 섹터는 없다.** 가장 멀리 간 것은 `cement_aggregates` (③ 믿을 수 있나 관문에서 막혔다). 가장 많이 막은 곳은 **② 함정이 아닌가** (8개 테마) — 가치 함정 판별을 통과했나 (L3) ⚠ **상위 5 중 4개가 `specialty_chem` 한 테마다 (80%) — 사실상 한 베팅이다.** ⚠ **판정을 만든 근거 97건 중 16건은 원문에서 못 찾은 숫자가 있고 20건은 문서를 읽지 못했다.** 그중 **먼저 열 것 8건** (기계 순서 — 분류 실패) — `cement_aggregates` [24] · [36] · [44] · [47] / `specialty_chem` [5] · [10] · [31] · [33]. URL 과 무엇을 찾을지는 `msa ops audit-evidence cement_aggregates` · `msa ops audit-evidence specialty_chem` 가 적어 준다. (사람이 원문 대조를 끝낸 5건은 목록에서 뺐다.) 확인된 근거가 하나도 없는 축: capital_cycle, substitution, terminal_risk. **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.
+> **`AMRZ` -32% · `CRH` -29% · `CX` -20% · `EXP` -20% · `KNF` -34% · `LOMA` -23% · `MLM` -28% · ⚠`RETO` -98%** 외 22종목. 그중 **레드플래그·감점이 붙은 것 10종목**. 나머지는 52주 고점 −15%(선언값) 이내라 지금 자리가 아니다. **여섯 관문을 다 통과한 섹터는 없다.** 가장 멀리 간 것은 `shipping_container` (④ 수요/공급이 벌어지나 관문에서 막혔다). 가장 많이 막은 곳은 **② 함정이 아닌가** (7개 테마) — 가치 함정 판별을 통과했나 (L3) ⚠ **상위 5 중 4개가 `specialty_chem` 한 테마다 (80%) — 사실상 한 베팅이다.** ⚠ **판정을 만든 근거 97건 중 16건은 원문에서 못 찾은 숫자가 있고 21건은 문서를 읽지 못했다.** 그중 **먼저 열 것 6건** — `cement_aggregates` [24] · [36] / `specialty_chem` [5] · [10] · [31] · [33]. URL 과 무엇을 찾을지는 `msa ops audit-evidence cement_aggregates` · `msa ops audit-evidence specialty_chem` 가 적어 준다. (사람이 원문 대조를 끝낸 5건은 목록에서 뺐다.) 확인된 근거가 하나도 없는 축: capital_cycle, substitution, terminal_risk. **판정은 사람이 차트로 한다** — 시스템이 한 말은 '이 테마는 함정이 아니고 이 종목들은 재무가 버틴다' 까지다. ⚠ 는 레드플래그·감점이 붙은 종목이다.
+>
+> ⚠ **가격 스토어가 2026-09-03 에서 멈춰 있다 — 마지막 거래일보다 뒤처졌다.** 적재를 확인해라. 52주 고점 대비도 그 날짜 값이다.
 
-<sub>`msa run daily` 가 자동으로 다시 쓴다. 스캔 기준일 **2026-08-28** · 가격 스토어 마지막 날 **2026-08-28** (최신 — 미 거래일 기준이다. KST 달력 날짜와 다른 것은 정상이다). 성과 수치는 없다 — 측정값과 판정뿐이다 (`CLAUDE.md` §7).</sub>
+<sub>`msa run daily` 가 자동으로 다시 쓴다. 스캔 기준일 **2026-09-03** · 가격 스토어 마지막 날 **2026-09-03** (거래일 1일 뒤처짐 — 미 거래일 기준이다. KST 달력 날짜와 다른 것은 정상이다). 성과 수치는 없다 — 측정값과 판정뿐이다 (`CLAUDE.md` §7).</sub>
 
 | # | 테마 | 점수 | 판별 | 명단 | 플래그 |
 |---:|---|---:|---|---:|---|
-| 1 | `health_it` | 0.89 | 편입 불가 · 0.45 | 42 | SECULAR — 게이트 필요 |
-| 2 | `media_streaming` | 0.86 | 편입 불가 · 0.45 | 37 | SECULAR — 게이트 필요 |
-| 3 | `offshore_drilling` | 0.81 | 편입 불가 · 0.45 | 7 | SECULAR — 게이트 필요 |
-| 4 | `life_science_tools` | 0.77 | 편입 불가 · 0.45 | 32 | — |
+| 1 | `health_it` | 0.84 | 편입 불가 · 0.45 | 41 | SECULAR — 게이트 필요 |
+| 2 | `media_streaming` | 0.81 | 편입 불가 · 0.45 | 36 | SECULAR — 게이트 필요 |
+| 4 | `shipping_container` | 0.77 | **편입 가능** · 0.75 | 6 | — |
+| 5 | `life_science_tools` | 0.77 | 편입 불가 · 0.45 | 32 | — |
 | 6 | `it_services` | 0.74 | 편입 불가 · 0.45 | 56 | SECULAR — 게이트 필요 |
-| 7 | `staffing_consulting` | 0.70 | 편입 불가 · 0.35 | 44 | — |
-| 8 | `insurance_brokers` | 0.69 | 편입 불가 · 0.6 | 19 | SECULAR — 게이트 필요 |
-| 9 | `pharma_generic` | 0.66 | 편입 불가 · 0.45 | 53 | — |
+| 7 | `staffing_consulting` | 0.67 | 편입 불가 · 0.35 | 44 | — |
+| 8 | `fertilizer_potash` | 0.66 | 편입 불가 · 0.45 | 10 | — |
+| 9 | `reit_industrial` | 0.64 | 편입 불가 · 0.5 | 9 | — |
 
 **눌린 종목** (순서 = triage(읽는 순서) — 수익률 순서가 아니다)
 
 **52주 고점 대비**
 
 ```
-FSI       -48%  ████████████
+FSI       -47%  ███████████▋
 ALHC      -45%  ███████████▏
-CNEY      -78%  ███████████████████▎
-HWKN      -34%  ████████▌
-ALTO      -32%  ████████
-BGLC      -74%  ██████████████████▍
-LWLG      -70%  █████████████████▍
-CLOV      -22%  █████▌
-ESI       -29%  ███████▎
-PRM       -19%  ████▊
+CNEY      -80%  ███████████████████▋
+ALTO      -33%  ████████▏
+BGLC      -76%  ██████████████████▋
+HWKN      -29%  ███████▎
+LWLG      -72%  █████████████████▊
+CLOV      -21%  █████▍
+ESI       -29%  ███████▏
 YMAT      -80%  ███████████████████▉
-SSL       -17%  ████▍
-NTIC      -18%  ████▌
-WDFC      -18%  ████▍
-MOH       -18%  ████▍
-MATV      -17%  ████▎
-RETO      -97%  ████████████████████████
-TGLS      -45%  ███████████▏
-SMID      -42%  ██████████▍
-KNF       -32%  ███████▉
-AMRZ      -31%  ███████▊
-CRH       -26%  ██████▌
-MLM       -25%  ██████▎
-LOMA      -26%  ██████▌
-RMIX      -30%  ███████▍
-EXP       -18%  ████▌
-TTAM      -22%  █████▋
+ODC       -16%  ████
+WDFC      -20%  █████
+CMT       -15%  ███▊
+PRM       -15%  ███▊
+NTIC      -19%  ████▋
+MOH       -16%  ████▏
+TGLS      -46%  ███████████▍
+RETO      -98%  ████████████████████████
+SMID      -39%  █████████▊
+KNF       -34%  ████████▍
+AMRZ      -32%  ████████
+CRH       -29%  ███████▎
+MLM       -28%  ██████▉
+RMIX      -35%  ████████▋
+USLM      -17%  ████▎
+VMC       -21%  █████▏
+EXP       -20%  ████▉
+LOMA      -23%  █████▋
+TTAM      -21%  █████▎
 CX        -20%  ████▉
-VMC       -16%  ████▏
 ```
 
 <sub>막대는 크기만 — 부호는 숫자가 든다. 순서는 triage 이지 낙폭 순이 아니다.</sub>
 
 | 종목 | 테마 | 52wH | 가격 | ADV20 | 비고 |
 |---|---|---:|---:|---:|---|
-| ⚠ `FSI` | `specialty_chem` | -48% | $5.80 | $115.6K | interest_coverage_lt1 |
-| `ALHC` | `managed_care` | -45% | $13.62 | $71.6M | — |
-| ⚠ `CNEY` | `specialty_chem` | -78% | $0.59 | $55.3K | dilution_gt15 |
-| `HWKN` | `specialty_chem` | -34% | $120 | $16.3M | — |
-| `ALTO` | `specialty_chem` | -32% | $4.07 | $8.5M | — |
-| ⚠ `BGLC` | `specialty_chem` | -74% | $1.55 | $23.2K | consecutive_operating_loss;zombie_streak |
-| ⚠ `LWLG` | `specialty_chem` | -70% | $5.49 | $20.2M | consecutive_operating_loss |
-| ⚠ `CLOV` | `managed_care` | -22% | $4.23 | $19.1M | consecutive_operating_loss |
-| `ESI` | `specialty_chem` | -29% | $34.93 | $141.5M | — |
-| ⚠ `PRM` | `specialty_chem` | -19% | $30.62 | $40.3M | interest_coverage_lt1 |
-| ⚠ `YMAT` | `specialty_chem` | -80% | $1.88 | $43.2K | full_capital_impairment |
-| `SSL` | `specialty_chem` | -17% | $11.82 | $12.2M | — |
-| `NTIC` | `specialty_chem` | -18% | $8.13 | $43.9K | — |
-| `WDFC` | `specialty_chem` | -18% | $217 | $21.4M | — |
-| ⚠ `MOH` | `managed_care` | -18% | $200 | $109.1M | interest_coverage_lt1 |
-| ⚠ `MATV` | `specialty_chem` | -17% | $12.13 | $7.7M | zombie_streak |
-| ⚠ `RETO` | `cement_aggregates` | -97% | $1.29 | $1.8M | dilution_gt15 |
-| `TGLS` | `cement_aggregates` | -45% | $40.01 | $10.0M | — |
-| `SMID` | `cement_aggregates` | -42% | $25.10 | $421.7K | — |
-| `KNF` | `cement_aggregates` | -32% | $64.24 | $63.5M | — |
-| `AMRZ` | `cement_aggregates` | -31% | $44.67 | $180.8M | — |
-| `CRH` | `cement_aggregates` | -26% | $95.86 | $392.7M | — |
-| `MLM` | `cement_aggregates` | -25% | $531 | $272.1M | — |
-| `LOMA` | `cement_aggregates` | -26% | $9.69 | $4.2M | — |
-| ⚠ `RMIX` | `cement_aggregates` | -30% | $17.50 | $5.1M | consecutive_operating_loss |
-| `EXP` | `cement_aggregates` | -18% | $198 | $68.5M | — |
-| `TTAM` | `cement_aggregates` | -22% | $15.02 | $3.3M | — |
-| `CX` | `cement_aggregates` | -20% | $10.87 | $74.1M | — |
-| `VMC` | `cement_aggregates` | -16% | $275 | $224.4M | — |
+| ⚠ `FSI` | `specialty_chem` | -47% | $5.72 | $111.7K | interest_coverage_lt1 |
+| `ALHC` | `managed_care` | -45% | $13.54 | $57.9M | — |
+| ⚠ `CNEY` | `specialty_chem` | -80% | $0.53 | $38.9K | dilution_gt15 |
+| `ALTO` | `specialty_chem` | -33% | $4.03 | $7.6M | — |
+| ⚠ `BGLC` | `specialty_chem` | -76% | $1.47 | $14.5K | consecutive_operating_loss;zombie_streak |
+| `HWKN` | `specialty_chem` | -29% | $129 | $17.9M | — |
+| ⚠ `LWLG` | `specialty_chem` | -72% | $5.12 | $17.7M | consecutive_operating_loss |
+| ⚠ `CLOV` | `managed_care` | -21% | $4.25 | $16.7M | consecutive_operating_loss |
+| `ESI` | `specialty_chem` | -29% | $34.98 | $155.4M | — |
+| ⚠ `YMAT` | `specialty_chem` | -80% | $1.82 | $32.4K | full_capital_impairment |
+| `ODC` | `specialty_chem` | -16% | $89.14 | $11.4M | — |
+| `WDFC` | `specialty_chem` | -20% | $210 | $19.7M | — |
+| `CMT` | `specialty_chem` | -15% | $24.04 | $615.9K | — |
+| ⚠ `PRM` | `specialty_chem` | -15% | $32.05 | $33.1M | interest_coverage_lt1 |
+| `NTIC` | `specialty_chem` | -19% | $8.03 | $39.8K | — |
+| ⚠ `MOH` | `managed_care` | -16% | $203 | $111.9M | interest_coverage_lt1 |
+| `TGLS` | `cement_aggregates` | -46% | $39.26 | $9.1M | — |
+| ⚠ `RETO` | `cement_aggregates` | -98% | $1.06 | $1.8M | dilution_gt15 |
+| `SMID` | `cement_aggregates` | -39% | $26.27 | $405.1K | — |
+| `KNF` | `cement_aggregates` | -34% | $62.13 | $52.8M | — |
+| `AMRZ` | `cement_aggregates` | -32% | $44.01 | $193.0M | — |
+| `CRH` | `cement_aggregates` | -29% | $92.04 | $401.7M | — |
+| `MLM` | `cement_aggregates` | -28% | $509 | $294.7M | — |
+| ⚠ `RMIX` | `cement_aggregates` | -35% | $16.18 | $6.9M | consecutive_operating_loss |
+| `USLM` | `cement_aggregates` | -17% | $116 | $16.1M | — |
+| `VMC` | `cement_aggregates` | -21% | $260 | $231.4M | — |
+| `EXP` | `cement_aggregates` | -20% | $194 | $68.0M | — |
+| `LOMA` | `cement_aggregates` | -23% | $10.14 | $4.4M | — |
+| `TTAM` | `cement_aggregates` | -21% | $15.21 | $3.5M | — |
+| `CX` | `cement_aggregates` | -20% | $10.87 | $66.8M | — |
 
-<sub>상위 8개만 싣는다. 전문·제외 사유·판단 재료 열은 `state/daily/2026-08-31/digest.md`. **순위가 높다 = 오래 잊혀졌다** 이지 사라는 뜻이 아니다 — 판별(`msa research`)을 거치지 않은 테마는 후보가 아니다.</sub>
+<sub>상위 8개만 싣는다. 전문·제외 사유·판단 재료 열은 `state/daily/2026-09-06/digest.md`. **순위가 높다 = 오래 잊혀졌다** 이지 사라는 뜻이 아니다 — 판별(`msa research`)을 거치지 않은 테마는 후보가 아니다.</sub>
 
 <!-- /MSA:LATEST -->
 ## 1. 큰 그림
