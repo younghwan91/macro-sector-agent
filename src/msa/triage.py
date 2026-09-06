@@ -105,6 +105,25 @@ def evidence_quality(audit: Mapping[str, Any]) -> float:
     return int(counts.get("verified", 0)) / checked
 
 
+def _theme_evidence_cap(
+    audit: Mapping[str, Any] | None, resolutions: Sequence[Any] | None
+) -> float | None:
+    """이 테마의 J 에 걸리는 상한 — 없으면 `None`.
+
+    `theme_trust` 와 `score_digest` 가 **같은 상한**을 써야 한다 (P3 티커 블렌드
+    뒤에도 유지돼야 한다 — 2026-09 리뷰: 블렌드 전에만 잘라 상한의 2.5배까지
+    새는 결함이 있었다). 판정 로직을 한 곳에 둔다.
+    """
+    if audit is None:
+        return None
+    entries = list(resolutions or [])
+    if any(getattr(e, "verdict", None) == "refuted" for e in entries):
+        return EVIDENCE_CAP_REFUTED
+    if audit.get("unverified_axes"):
+        return EVIDENCE_CAP
+    return None
+
+
 def theme_trust(
     judged: Mapping[str, Any] | None,
     audit: Mapping[str, Any] | None,
@@ -114,8 +133,10 @@ def theme_trust(
     """J 축의 테마 성분.
 
     - 판별이 없으면 **0.0**. 증거품질 항은 아예 없다 — 평균 내지 않는다.
-    - 판별은 있는데 실사가 없으면 **None**(계산 불가). 0.5 로 채우지 않는다
-      (`CLAUDE.md` §2 조용한 절단 금지).
+    - 판별은 있는데 실사가 없거나(`audit is None`), 실사는 시작됐으나 `checked` 를
+      셀 수 없으면(네트워크 오류로 `{"error": ...}` 만 남은 경우 등) **None**(계산
+      불가). 0.5 로 채우거나 예외를 던지지 않는다 — 증거 실사 한 건의 네트워크
+      사고가 `msa run daily` 전체를 죽이면 안 된다 (`CLAUDE.md` §2).
     - 대장(`ops.resolutions`)에 `refuted` 가 하나라도 있으면 상한이
       `EVIDENCE_CAP_REFUTED` 로 내려간다 — 판별을 떠받친 증거가 반박됐다는 뜻이라
       `unverified_axes` 상한(0.50)보다 무겁다.
@@ -126,26 +147,28 @@ def theme_trust(
         return 0.0
     if audit is None:
         return None
+    checked_raw = audit.get("checked")
+    if not isinstance(checked_raw, int | float) or checked_raw <= 0:
+        # 실사가 에러 모양(`{"error": ...}`)이거나 0건이면 품질을 셀 수 없다 —
+        # 0.5 로 채우지도, 여기서 죽지도 않는다.
+        return None
+    checked = int(checked_raw)
     entries = list(resolutions or [])
     confirmed = sum(1 for e in entries if getattr(e, "verdict", None) == "confirmed")
-    refuted = any(getattr(e, "verdict", None) == "refuted" for e in entries)
 
     counts = audit.get("counts") or {}
-    checked = int(audit["checked"])
     # 사람이 확인한 건수가 실사 건수를 넘어도 품질은 1 을 넘지 않는다.
     quality = min(int(counts.get("verified", 0)) + confirmed, checked) / checked
 
     value = 0.5 * judgment_state(judged) + 0.5 * quality
-    if refuted:
-        return min(value, EVIDENCE_CAP_REFUTED)
-    if audit.get("unverified_axes"):
-        return min(value, EVIDENCE_CAP)
-    return value
+    cap = _theme_evidence_cap(audit, resolutions)
+    return value if cap is None else min(value, cap)
 
 
 def _red_flag_count(pick: Mapping[str, Any]) -> int:
+    """`l4.features` 가 `;` 로 잇는다 (`axes.py:122`) — `,` 로 자르면 항상 1건으로 뭉친다."""
     raw = pick.get("red_flags") or ""
-    return len([x for x in str(raw).split(",") if x.strip()])
+    return len([x for x in str(raw).split(";") if x.strip()])
 
 
 def clarity(pick: Mapping[str, Any]) -> float:
@@ -159,7 +182,10 @@ def clarity(pick: Mapping[str, Any]) -> float:
     가지가 아니다 (`test_clarity_worst_case_floor_is_point_one`).
     """
     value = 1.0
-    if pick.get("survival_unjudged") is not None:
+    # 진짜 부재(`None`)와 판정 통과(`""`)를 같이 falsy 로 둔다 — 페널티는 **사유
+    # 문자열이 실제로 있을 때만** 걸린다 (`l4.axes.survival_unjudged_reason` 은
+    # 판정을 통과한 종목에 빈 문자열을 낸다, 없음이 아니다).
+    if pick.get("survival_unjudged"):
         value -= UNJUDGED_PENALTY
     value -= RED_FLAG_PENALTY * min(_red_flag_count(pick), RED_FLAG_MAX)
     if pick.get("s_partial") or pick.get("composite_partial"):
@@ -272,7 +298,9 @@ def score_digest(
         theme = str(entry.get("theme"))
         jrow = judged.get(theme)
         arow = audits.get(theme)
-        j_value = theme_trust(jrow, arow, resolutions=(resolutions or {}).get(theme))
+        theme_resolutions = (resolutions or {}).get(theme)
+        j_value = theme_trust(jrow, arow, resolutions=theme_resolutions)
+        j_cap = _theme_evidence_cap(arow, theme_resolutions)
         if j_value is not None:
             note = ""
         elif not audit_ran:
@@ -284,11 +312,14 @@ def score_digest(
             note = f"`{theme}` 의 증거 실사 결과가 없다 — J 계산 불가"
         for pick in entry.get("picks") or []:
             part = partition(jrow, pick)
-            j_pick = (
-                None
-                if j_value is None
-                else blend_ticker_trust(j_value, notes.get(str(pick.get("ticker"))))
-            )
+            if j_value is None:
+                j_pick = None
+            else:
+                j_pick = blend_ticker_trust(j_value, notes.get(str(pick.get("ticker"))))
+                if j_cap is not None:
+                    # 티커 노트 블렌드가 테마 상한을 되살리지 않는다 — 반박된
+                    # 테마의 J 는 노트가 있어도 여전히 `EVIDENCE_CAP_REFUTED` 아래다.
+                    j_pick = min(j_pick, j_cap)
             staged.append((dict(pick), theme, part, j_pick, clarity(pick), note))
 
     # 낙폭 백분위의 모집단은 **구획**이다 (스펙 §5.3). 테마 안에서 재면 낙폭이 얕은

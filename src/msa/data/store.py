@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import os
 import zipfile
 from collections.abc import Iterable, Iterator, Sequence
 from contextlib import contextmanager
@@ -320,6 +321,8 @@ class Store:
             expect_tickers: 요청 티커 중 최소 몇 개가 결과에 있어야 하는지.
                 `None` 이면 검사하지 않는다.
         """
+        # 한 번만 소비되는 이터레이터를 받아도 `_guard` 의 결측 티커 검사가 살아 있게 한다
+        tickers = None if tickers is None else list(tickers)
         cols = PRICE_COLUMNS if columns is None else tuple(columns)
         unknown = [c for c in cols if c not in PRICE_COLUMNS]
         if unknown:
@@ -401,6 +404,8 @@ class Store:
         `assetsavg`·`equityavg`·`invcapavg` 는 655,000행 **전부 null** 이라 직접 계산해야 한다.
         `roic`·`grossmargin`·`evebitda`·`pb`·`ps` 도 스토어에 없다 (파생 계산 대상).
         """
+        # 한 번만 소비되는 이터레이터를 받아도 `_guard` 의 결측 티커 검사가 살아 있게 한다
+        tickers = None if tickers is None else list(tickers)
         if date_column not in ("datekey", "calendardate"):
             raise ValueError(f"date_column 은 datekey 또는 calendardate 여야 한다: {date_column!r}")
         available = set(self.columns("fundamentals"))
@@ -541,7 +546,11 @@ def _etf_close_from_bulk(
     """벌크에서 한 ETF 의 `date,close` — 조정 종가(`closeadj`)를 쓴다. 실패하면 빈 프레임."""
     try:
         raw = etf_prices([ticker], min_rows=1)
-    except Exception as e:  # 벌크가 없거나 읽히지 않는다 — 조용히 실패하지 않는다
+    except SchemaDrift:
+        # 벤더 스키마가 바뀐 것은 폴백 대상이 아니다 — 빈 프레임으로 내리면 조용한 절단이 된다
+        # (`CLAUDE.md` §2). 벌크가 없거나(StoreError) 이 티커가 없는 것(ShortRead)만 폴백한다.
+        raise
+    except (OSError, StoreError) as e:  # 벌크가 없거나 읽히지 않는다 — 조용히 실패하지 않는다
         log.warning("%s: 스토어에 없고 벌크도 읽지 못했다 — %s", ticker, e)
         return pd.DataFrame(columns=["date", "close"])
     if raw.empty:
@@ -607,16 +616,12 @@ def etf_prices(
         )
     cdir = cache_dir if cache_dir is not None else paths().cache
     cache = cdir / f"etf_{_etf_cache_key(want, zip_path)}.parquet"
-    if cache.exists():
+    fresh = not cache.exists()
+    if fresh:
+        df = _scan_funds_zip(zip_path, want)
+    else:
         log.info("etf_prices: 캐시 사용 %s", cache.name)
         df = pd.read_parquet(cache)
-    else:
-        df = _scan_funds_zip(zip_path, want)
-        try:
-            cdir.mkdir(parents=True, exist_ok=True)
-            df.to_parquet(cache)
-        except OSError as e:  # 캐시 실패는 결과를 막지 않는다 — 다음에 다시 훑을 뿐이다
-            log.warning("etf_prices: 캐시 저장 실패 %s: %s", cache, e)
     _guard(
         df,
         f"etf_prices({zip_path.name})",
@@ -624,6 +629,17 @@ def etf_prices(
         requested=sorted(want),
         absent_expected=absent_expected,
     )
+    # 검증을 통과한 뒤에만 캐시에 남긴다 — 통과 못 한 결과를 캐시에 넣으면 다음 호출이
+    # zip 을 다시 읽을 기회도 없이 같은 실패를 반복한다. 쓰기는 임시 파일 + `os.replace`
+    # (같은 캐시를 여러 프로세스가 동시에 만들 수 있다).
+    if fresh:
+        try:
+            cdir.mkdir(parents=True, exist_ok=True)
+            tmp = cache.with_name(f"{cache.name}.{os.getpid()}.tmp")
+            df.to_parquet(tmp)
+            os.replace(tmp, cache)
+        except OSError as e:  # 캐시 실패는 결과를 막지 않는다 — 다음에 다시 훑을 뿐이다
+            log.warning("etf_prices: 캐시 저장 실패 %s: %s", cache, e)
     return df
 
 

@@ -26,7 +26,8 @@
 - **`capex_to_da`** — 월별 TTM 비율의 36개월 이동평균 (최소 24개월). "12분기 이동평균" 의
   월말 표현.
 - **`capex_to_da_qtrs_below1`** — 평활 전 TTM 비율이 1.0 미만으로 연속된 개월 수 / 3.
-  문서의 "< 1.0 이 지속된 분기 수".
+  문서의 "< 1.0 이 지속된 분기 수". **결측 달은 연속을 끊지 않는다** — 끊는 것은 비율이
+  1.0 이상임을 확인한 달뿐이다 (결측을 "1.0 이상" 으로 세면 공시가 듬성한 테마가 짧게 나온다).
 - **자기이력 백분위** — 120개월 창 · 최소 84개월. 36~83개월이면 z-score → 정규 CDF 로
   대체하고 `*_short_hist` 표시. `docs/02` §9 "이력 < 7년이면 z-score".
 - **축 1 판정 공백** — `unit_cagr_10y < −2%` 인데 `unit_cagr_5y ≥ unit_cagr_10y` (감소
@@ -227,6 +228,19 @@ _SS_COLS = tuple(
     f"ss{y}_{c}"
     for y in (10, 5)
     for c in ("rev_t1", "rev_t0", "ratio_med", "n", "coverage", "ma_n")
+)
+#: 축 1 가격 폴백이 **실제로 참조하는** 동일 구성원 열. 하나라도 없으면 폴백은 불가능하다 —
+#: `_SS_COLS` 전체가 아니라 이 목록을 봐야 한다 (재무 이력이 10년 미만인 스토어는
+#: `build_fund_panel` 이 ss5_* 만 있는 표를 돌려주므로 "비어 있지 않다" 는 조건이 통과한다).
+_SS_FALLBACK_REQUIRED = (
+    "ss10_rev_t1",
+    "ss10_rev_t0",
+    "ss10_ratio_med",
+    "ss10_n",
+    "ss10_coverage",
+    "ss10_ma_n",
+    "ss5_rev_t1",
+    "ss5_rev_t0",
 )
 
 
@@ -664,9 +678,13 @@ def _block_e(
     out["capex_to_da_ttm"] = ratio_ttm
     out["capex_to_da"] = ratio_ttm.rolling(36, min_periods=24).mean()
     below = (ratio_ttm < 1.0) & ratio_ttm.notna()
-    # 연속 True 길이: 누적합에서 False 지점 값 빼기
+    # 연속 True 길이: 누적합에서 "끊긴" 지점 값 빼기.
+    # 끊는 것은 **비율이 1.0 이상임을 확인한 달**뿐이다. 결측 달은 "모른다" 이므로 연속을
+    # 끊지도, 개월 수를 늘리지도 않는다 — 예전에는 `~below` 가 결측을 끊는 쪽으로 세어
+    # 공시가 듬성한 테마의 자본 기근 구간이 짧게 나왔다 (2026-09-06 코드 리뷰).
+    broken = ratio_ttm >= 1.0  # 결측은 False
     cs = below.astype(float).cumsum()
-    reset = cs.where(~below).ffill().fillna(0.0)
+    reset = cs.where(broken).ffill().fillna(0.0)
     out["capex_to_da_qtrs_below1"] = ((cs - reset) / 3.0).where(ratio_ttm.notna())
     out["asset_growth"] = g["assets_ss"] / g["assets_prev_ss"].replace(0.0, np.nan) - 1.0
     pretax = g["netinc_ttm_sum"] + g["taxexp_ttm_sum"]
@@ -698,7 +716,11 @@ def _block_f(
     rev_yoy = g["revenue_ss"] / g["revenue_prev_ss"].replace(0.0, np.nan) - 1.0
     out["rev_yoy"] = rev_yoy
     out["rev_yoy_d2"] = (rev_yoy - rev_yoy.shift(3)) - (rev_yoy.shift(3) - rev_yoy.shift(6))
-    margin = g["ebitda_ttm_sum"] / g["revenue_ttm_sum"].where(g["revenue_ttm_sum"] > 0)
+    # 분자·분모는 **같은 종목 집합**이어야 한다 (`fundamentals._AGG_SQL` 의 짝 맞추기 주석).
+    # `ebitda_ttm_sum` 은 debt·cashneq 가 둘 다 있는 행만 더하는데 `revenue_ttm_sum` 은 전부
+    # 더하므로, 부채 항목이 빈 구성원의 매출만 분모에 들어가 마진이 낮게 나온다.
+    rev_for_margin = g["revenue_for_ebitda_ss"]
+    margin = g["ebitda_ss"] / rev_for_margin.where(rev_for_margin > 0)
     out["ebitda_margin"] = margin
     out["ebitda_margin_pct"], flags["short_hist_margin"] = own_history_pct(margin)
     out["ebitda_margin_d4"] = margin - margin.shift(12)
@@ -753,21 +775,24 @@ def _unit_block(
             continue
         ps = physical.refs.get(col)
         ok = ps is not None and ps.ok
-        unit_source[col] = f"{ref.source}:{ref.symbol}" + (f":{ref.kind}" if ok else "")
         if ref.kind == "nominal" and cpi_full is None:
             ok = False  # CPI 없이 nominal 은 실질화 불가
-        if ref.kind == "price" and not ss:
+        if ref.kind == "price" and not all(c in ss for c in _SS_FALLBACK_REQUIRED):
             ok = False  # 동일 구성원 매출 없이는 가격지수 폴백 불가
         # 축 1 은 **10년 CAGR** 을 낸다. 참조가 그만큼 없으면 판정이 원리적으로 불가능한데,
         # 예전에는 그것을 `data_ok` 로 세고 경고도 남기지 않았다 — "데이터 있음 27" 안에
         # 판정을 낼 수 없는 시리즈가 섞여 있었다 (2026-08-25 실측: `EXHOSLUSM495S` 가
         # 13개 관측뿐이라 `home_improvement`·`real_estate_services` 두 테마가 조용히 죽었다).
         # **"데이터 있음" 은 "판정할 수 있는 데이터가 있음" 이어야 한다** (`CLAUDE.md` §2).
+        n_obs_note = ""
         if ok and ps is not None and ps.series is not None:
             n_obs = int(ps.series.dropna().shape[0])
             if n_obs < MIN_REF_OBS:
                 ok = False
-                unit_source[col] = f"{ref.source}:{ref.symbol}:관측 {n_obs} < {MIN_REF_OBS}"
+                n_obs_note = f":관측 {n_obs} < {MIN_REF_OBS}"
+        # `unit_source` 는 **모든 강등을 거친 뒤**에 적는다 — 앞에서 적으면 CPI 없는 nominal ·
+        # 동일 구성원 없는 price 가 `data_missing` 인데도 쓸 수 있는 출처로 기록된다.
+        unit_source[col] = f"{ref.source}:{ref.symbol}" + (f":{ref.kind}" if ok else n_obs_note)
         if not ok:
             status[col] = Axis1Status.DATA_MISSING.value
             continue

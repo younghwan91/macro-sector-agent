@@ -414,6 +414,45 @@ def test_verdict_q3_judges_only_e1_e2_e3() -> None:
     assert q3["E1"]["mechanism_confirmed"] is True  # 사망률 차 CI 하한 > 0
 
 
+def test_verdict_nan_ci_is_undetermined_not_fail() -> None:
+    """관측이 0개라 CI 가 NaN 인 실행은 `fail` 도 `indistinguishable` 도 아니다.
+
+    `NaN > 0` 이 False 라 조용히 실질 결론이 나오던 자리 (2026-09-06 코드 리뷰 · CLAUDE.md §2).
+    """
+    nan = float("nan")
+    ic = pd.DataFrame([_summary_row(variant=v, mean=nan, ci_lo=nan, ci_hi=nan) for v in VARIANTS])
+    v = verdict(ic, pd.DataFrame(), {"dsr": [], "pbo": [], "trials": count_trials()})
+    assert v["q1"]["gate"] == "undetermined"
+    assert "NaN" in v["q1"]["reason"]
+    assert v["q2_axes_12m_primary"]["S"]["works"] == "undetermined"
+
+
+def test_verdict_q3_nan_excess_diff_is_not_applicable() -> None:
+    """제외군이 0종목이면 `hi < 0` 이 False 라 `sample_truncation_not_alpha` 가 나오던 자리.
+
+    사람이 읽는 리포트는 같은 칸을 "미적용" 이라 부른다 — verdict.json 도 그래야 한다.
+    """
+    nan = float("nan")
+    rows = [
+        {
+            "window": "primary",
+            "horizon": GATE_HORIZON,
+            "reason": "E3",
+            "gauge": g,
+            "basis": "base",
+            "mean": nan,
+            "ci_lo": nan,
+            "ci_hi": nan,
+        }
+        for g in ("excess", "death")
+    ]
+    ic = pd.DataFrame([_summary_row(variant=v) for v in VARIANTS])
+    v = verdict(ic, pd.DataFrame(rows), {"dsr": [], "pbo": [], "trials": count_trials()})
+    rec = v["q3_filters_12m_primary"]["E3"]
+    assert rec["verdict"].startswith("not_applicable")
+    assert rec["mechanism_confirmed"] is None
+
+
 # ---------------------------------------------------------------- axes 배선 (백테스트가 부르는 것)
 
 

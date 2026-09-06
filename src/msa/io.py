@@ -21,8 +21,27 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import yaml
+
+
+class _NoDuplicateKeyLoader(yaml.SafeLoader):
+    """중복 키를 마지막 값으로 조용히 덮어쓰지 않는다 — `yaml.safe_load` 의 기본 동작이다.
+
+    설정 파일에 같은 키가 두 번 있으면 앞의 값은 아무 말 없이 사라진다 (`CLAUDE.md` §2).
+    """
+
+    def construct_mapping(self, node: Any, deep: bool = False) -> dict[Any, Any]:
+        seen: list[Any] = []
+        for key_node, _ in node.value:
+            key = self.construct_object(key_node, deep=deep)
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    "매핑을 만드는 중", node.start_mark, f"중복 키 {key!r}", key_node.start_mark
+                )
+            seen.append(key)
+        return super().construct_mapping(node, deep=deep)
 
 
 def load_yaml_mapping(
@@ -39,7 +58,10 @@ def load_yaml_mapping(
     p = Path(path)
     if not p.exists():
         raise err(f"파일이 없다: {p}")
-    spec = yaml.safe_load(p.read_text(encoding="utf-8"))
+    try:
+        spec = yaml.load(p.read_text(encoding="utf-8"), Loader=_NoDuplicateKeyLoader)
+    except yaml.constructor.ConstructorError as e:
+        raise err(f"{p}: {e.problem}") from e
     if not isinstance(spec, Mapping):
         raise err(f"{p}: 최상위가 매핑이 아니다")
     for k in required_keys:
@@ -53,6 +75,8 @@ def to_plain(obj: Any, *, drop: frozenset[str] = frozenset()) -> Any:
 
     `drop` 에 든 키는 **어느 깊이의 dict 에서든** 뺀다 (`ops/check.py` 가 `alerts` 를 빼던 규약).
     """
+    if isinstance(obj, np.generic):  # np.float64/int64/bool_ — yaml 이 표현하지 못한다
+        return obj.item()
     if is_dataclass(obj) and not isinstance(obj, type):
         return to_plain(asdict(obj), drop=drop)
     if isinstance(obj, dict):

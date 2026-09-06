@@ -343,3 +343,16 @@ def test_suffix_cannot_escape_the_journal_directory() -> None:
     for bad in ("../etc", "a/b", "..", "x y"):
         tag = _theme_tag(bad)
         assert "/" not in tag and ".." not in tag, (bad, tag)
+
+
+def test_missing_date_key_is_incomplete_entry_not_keyerror() -> None:
+    with pytest.raises(IncompleteEntry, match="date"):
+        record_from_dict({"type": "reject", "theme": "uranium"})
+
+
+def test_non_mapping_axis_value_is_a_validation_error_not_attributeerror() -> None:
+    """`value_trap_axes: {unit_demand: null}` 은 스키마 위반이지 크래시가 아니다."""
+    t = make_thesis()
+    t["value_trap_axes"] = {k: None for k in t["value_trap_axes"]}
+    with pytest.raises(ThesisInvalid, match="value_trap_axes"):
+        validate_thesis(t)

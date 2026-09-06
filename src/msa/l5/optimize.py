@@ -35,7 +35,7 @@ import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from functools import cached_property
-from typing import Any
+from typing import Any, TypeGuard
 
 import cvxpy as cp
 import numpy as np
@@ -67,6 +67,17 @@ SOLVER_PREFERENCE: tuple[str, ...] = ("CLARABEL", "SCS", "ECOS")
 
 class OptimizeError(RuntimeError):
     """풀 수 없다 (완화를 다 써도 infeasible, 또는 솔버 실패)."""
+
+
+def c4_active(capital_usd: float | None) -> TypeGuard[float]:
+    """C4 유동성 제약이 **설 수 있는가** — 자본이 있고 양수인가.
+
+    `0.0` 과 `None` 은 같은 뜻이다: `w·Capital ≤ 0.10·ADV20` 이 식으로 서지 않는다.
+    이 판정이 세 군데(제약 생성 · 진단 `c4_applied` · 계획서 본문)에 흩어져 있었고
+    `0.0` 에서 서로 다른 답을 냈다 — 제약은 안 걸었는데 진단은 `true` 였다
+    (2026-09-06 코드 리뷰). 판정은 여기 한 곳이다.
+    """
+    return capital_usd is not None and capital_usd > 0
 
 
 def compress_confidence(c: Mapping[str, float], lam: float = LAMBDA_COMPRESS) -> dict[str, float]:
@@ -156,7 +167,9 @@ class Solution:
     #: 종목별 허용 구간 `(하한, 상한)` — 하한은 `min_weight`, 상한은 C3 종목 상한과
     #: C4 유동성 상한 중 **작은 쪽**. 해를 나중에 손보는 쪽(`l5.run`)이 제약을 다시
     #: 유도하지 않게 여기서 준다 — 유도가 두 벌이면 한쪽만 갱신돼도 조용히 어긋난다.
-    bounds: dict[str, tuple[float, float]]
+    #: 상한 `None` = **이 해에는 상한이 걸리지 않았다** (완화 1·2단은 C3 를 빼고 풀고,
+    #: C4 는 자본·ADV 가 있어야 선다).
+    bounds: dict[str, tuple[float, float | None]]
 
     def as_dict(self) -> dict[str, object]:
         """진단용 — `weights` 는 빼고 전부 (비중은 weights.csv·positions 가 들고 있다)."""
@@ -233,7 +246,7 @@ def _build(p: Problem, *, with_c3: bool) -> _Built:
         for k_, idx in _groups(p.classes).items():
             add(f"C3-class:{k_}", cp.sum(w[idx]) <= CAP_CLASS)
     # C4
-    if p.capital_usd is not None and p.capital_usd > 0:
+    if c4_active(p.capital_usd):
         for i, adv in enumerate(p.adv20_usd):
             if adv is not None and adv > 0:
                 add(f"C4:{p.tickers[i]}", w[i] <= LIQ_FRACTION_OF_ADV * adv / p.capital_usd)
@@ -291,7 +304,7 @@ def solve(p: Problem, *, relax: bool = True) -> Solution:
         if w is None:
             log.warning("optimize: stage %d (C3=%s, B=%.2f) → %s", stage, with_c3, budget, status)
             continue
-        return _finish(p, w, status, solver, stage, relaxed, budget, slacks)
+        return _finish(p, w, status, solver, stage, relaxed, budget, slacks, with_c3=with_c3)
     raise OptimizeError(
         f"완화를 전부 써도 infeasible (마지막 상태 {last_status}). 하한(min_weight·min_gross)이 "
         "C5·C4 와 양립하지 않는다 — 입력을 고쳐라. MDD 예산은 0.50 너머로 올리지 않는다."
@@ -307,6 +320,8 @@ def _finish(
     relaxed: tuple[str, ...],
     budget: float,
     slacks: Mapping[str, float],
+    *,
+    with_c3: bool,
 ) -> Solution:
     sigma_p = float(np.sqrt(max(float(w @ p.sigma @ w), 0.0)))
     mdd_vol = p.k * sigma_p
@@ -322,7 +337,7 @@ def _finish(
     def group_sums(keys: Sequence[str | None]) -> dict[str, float]:
         return {k: float(sum(float(w[i]) for i in idx)) for k, idx in _groups(keys).items()}
 
-    c4_applied = p.capital_usd is not None and p.capital_usd > 0
+    c4_applied = c4_active(p.capital_usd)
     c4_skipped = tuple(
         p.tickers[i] for i in range(p.n) if c4_applied and not (p.adv20_usd[i] or 0) > 0
     )
@@ -333,13 +348,17 @@ def _finish(
     )
     gross = float(w.sum())
     mw = np.asarray(p.min_weight, dtype=np.float64)
-    bounds: dict[str, tuple[float, float]] = {}
+    bounds: dict[str, tuple[float, float | None]] = {}
     for i, tk in enumerate(p.tickers):
-        hi = CAP_STOCK
+        # 완화 1·2단은 C3 를 아예 빼고 푼다 — 그때 종목 상한은 걸리지 않았다.
+        # `CAP_STOCK` 을 무조건 적으면 "솔버가 실제로 건 구간" 이라는 이 필드의 약속이 깨지고,
+        # 소비자(`l5.run.equalize_uninformed_themes`)가 걸린 적 없는 상한으로 경고를 낸다.
+        hi: float | None = CAP_STOCK if with_c3 else None
         adv = p.adv20_usd[i]
         if c4_applied and adv is not None and adv > 0 and p.capital_usd:
-            hi = min(hi, LIQ_FRACTION_OF_ADV * adv / p.capital_usd)
-        bounds[tk] = (float(mw[i]), float(hi))
+            liq = LIQ_FRACTION_OF_ADV * adv / p.capital_usd
+            hi = liq if hi is None else min(hi, liq)
+        bounds[tk] = (float(mw[i]), None if hi is None else float(hi))
     return Solution(
         weights={p.tickers[i]: float(w[i]) for i in range(p.n)},
         status=status,

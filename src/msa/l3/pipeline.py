@@ -133,6 +133,25 @@ def _remap_ids(obj: Any, m: dict[int, int]) -> Any:
     return obj
 
 
+#: referee 가 축 판정에서 증거를 가리킬 때 쓰는 키들. `evidence_ids` 와 이름이 다르다.
+REF_KEYS = ("evidence_refs", "referee_evidence_refs")
+
+
+def _remap_refs(obj: Any, m: dict[int, int]) -> Any:
+    """`evidence_refs`·`referee_evidence_refs` 배열의 번호를 바꾼다 (재귀)."""
+    if isinstance(obj, dict):
+        out: dict[str, Any] = {}
+        for k, v in obj.items():
+            if k in REF_KEYS and isinstance(v, list):
+                out[k] = [m.get(int(x), int(x)) for x in v]
+            else:
+                out[k] = _remap_refs(v, m)
+        return out
+    if isinstance(obj, list):
+        return [_remap_refs(x, m) for x in obj]
+    return obj
+
+
 #: 데이터 스냅샷이 판정일보다 이만큼 넘게 뒤처지면 리포트·thesis 에 경고로 남긴다.
 #: 임계가 아니라 **표시**다 — 판정을 막지 않는다. 오래된 가격으로 판단하고 있다는 사실이
 #: 보이지 않으면 나중에 원인을 못 찾는다 (CLAUDE.md §2).
@@ -187,15 +206,22 @@ def run_roles(
     )
     # referee 추가 증거 — 번호 충돌은 뒤로 민다 (조용히 덮어쓰지 않는다)
     known = {e["id"] for e in merged}
+    ref_remap: dict[int, int] = {}
     for e in referee.get("evidence", []):
         eid = int(e["id"])
         if eid in known:
-            log.warning(
-                "referee 증거 id %d 가 기존 번호와 충돌 — %d 로 재배정", eid, max(known) + 1
-            )
-            eid = max(known) + 1
+            new_id = max(known) + 1
+            log.warning("referee 증거 id %d 가 기존 번호와 충돌 — %d 로 재배정", eid, new_id)
+            ref_remap[eid] = new_id
+            eid = new_id
         known.add(eid)
         merged.append({**e, "id": eid, "role": "referee"})
+    if ref_remap:
+        # 재배정한 번호를 referee 자신의 참조에도 반영한다. 안 하면 축 판정이 **다른 역할의
+        # 증거**를 가리키게 되고, 그 번호가 실재하므로 스키마 검증도 통과한다.
+        # (referee 가 같은 번호로 남의 증거를 가리켰을 가능성은 남지만, 새 번호는
+        # `next_evidence_id` 부터 매기라고 지시받은 쪽이라 자기 것으로 보는 편이 맞다.)
+        referee = _remap_refs(referee, ref_remap)
     return RoleOutputs(supply=supply_g, catalyst=catalyst_g, bear=bear_g, referee=referee), merged
 
 
@@ -315,6 +341,41 @@ def _judge(
     return verdicts, conf, gate
 
 
+#: referee 산출에서 **중첩 키까지** 반드시 있어야 하는 것. 상위 키는
+#: `roles.check_role_output` 이 보지만 그 아래는 아무도 안 봤고, 없으면 `build_thesis` 가
+#: 날 `KeyError` 로 죽어 종료 코드 2(스키마 거부)가 아니라 트레이스백이 나왔다.
+_REFEREE_AXES = ("unit_demand", "capital_cycle", "substitution", "cost_curve", "terminal_risk")
+_REFEREE_TOP = ("claim", "mechanism", "horizon_months", "triggers", "invalidations")
+
+
+def _check_referee_shape(ref: dict[str, Any]) -> None:
+    """referee 산출의 중첩 구조를 확인한다. 어기면 `ThesisRejected` — 저장하지 않는다."""
+    r = ValidationResult()
+    for k in _REFEREE_TOP:
+        if k not in ref:
+            r.error("R_REFEREE_MISSING", f"referee 산출에 {k} 가 없다")
+    for k in ("triggers", "invalidations"):
+        rows = ref.get(k)
+        if k in ref and not isinstance(rows, list):
+            r.error("R_REFEREE_MISSING", f"referee 산출의 {k} 가 배열이 아니다")
+        elif isinstance(rows, list):
+            for i, t in enumerate(rows):
+                if not isinstance(t, dict):
+                    r.error("R_REFEREE_MISSING", f"referee 산출의 {k}[{i}] 가 객체가 아니다")
+    axes = ref.get("axes")
+    if not isinstance(axes, dict):
+        r.error("R_REFEREE_MISSING", "referee 산출에 axes 객체가 없다")
+    else:
+        for a in _REFEREE_AXES:
+            if not isinstance(axes.get(a), dict):
+                r.error("R_REFEREE_MISSING", f"referee 산출의 axes.{a} 가 객체가 아니다")
+            # 축 1 은 referee 가 판정하지 않는다 (L1 값을 그대로 옮긴다) — verdict 가 없다
+            elif a != "unit_demand" and "verdict" not in axes[a]:
+                r.error("R_REFEREE_MISSING", f"referee 산출의 axes.{a}.verdict 가 없다")
+    if r.errors:
+        raise ThesisRejected(r)
+
+
 def build_thesis(
     inputs: ResearchInputs,
     roles: RoleOutputs,
@@ -324,6 +385,7 @@ def build_thesis(
 ) -> tuple[dict[str, Any], GateResult, ConfidenceResult]:
     """referee 산출 + L1 축1 + 게이트/확신도 → thesis dict. 검증은 호출자가 한다."""
     ref = roles.referee
+    _check_referee_shape(ref)
     a1 = inputs.scorecard.axis1
     card = inputs.scorecard
     axes_in = ref["axes"]

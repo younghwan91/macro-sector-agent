@@ -43,7 +43,6 @@ from msa.ops.journal import (
     BLOCKS,
     JournalImmutable,
     RejectRecord,
-    Written,
     entry_filename,
     write_record,
 )
@@ -433,6 +432,8 @@ def ingest_round(
     ledger_keys = {r.key for r in ledger}
     watch = load_watchlist(watchlist_path)
     new_rows: list[Rejection] = []
+    #: 대장이 저장된 **뒤에** 쓸 저널 기각 항목 (레코드, 그 결과 줄).
+    deferred: list[tuple[RejectRecord, Ingested]] = []
     sb_cache: dict[Path | None, ScoreboardView] = {}
 
     for tp in files:
@@ -492,29 +493,23 @@ def ingest_round(
                 )
                 continue
             md_path = journal_dir / entry_filename(rec)
+            jpath = _journal_rel(md_path)
+            # **저널을 여기서 쓰지 않는다.** 대장 저장(`save_rejections`)이 루프 끝에 있고
+            # 거기서 예외가 나면, 대장에 없는 기각의 저널 항목만 남는다 (append-only 라 지울
+            # 수도 없다). 대장이 저장된 뒤에 쓴다 — 순서가 뒤집히면 안 되는 유일한 자리다.
             if md_path.exists():
                 detail = f"저널 기각 항목이 이미 있어 그 경로를 대장에 쓴다 (순위 출처 {rank_src})"
-                written: Written | None = Written(markdown=md_path, thesis_snapshot=None)
             elif write:
-                try:
-                    written = write_record(rec, journal_dir)
-                except JournalImmutable as e:
-                    report.rows.append(Ingested(theme, status, "reject_blocked", str(e)))
-                    continue
                 detail = f"저널 기각 항목 + 스냅샷 + 대장 행 (순위 출처 {rank_src})"
             else:
-                written = None
                 detail = f"(dry-run) 저널 기각 항목 + 대장 행 예정 (순위 출처 {rank_src})"
-            jpath = _journal_rel(md_path)
             row = rejection_from_record(rec, journal_path=jpath)
             new_rows.append(row)
             ledger_keys.add(key)
-            outs = [jpath] + (
-                [rel(written.thesis_snapshot)] if written and written.thesis_snapshot else []
-            )
-            report.rows.append(
-                Ingested(theme, status, "reject_ingested", detail, [*outs, rel(rejections_path)])
-            )
+            ing = Ingested(theme, status, "reject_ingested", detail, [jpath, rel(rejections_path)])
+            if write and not md_path.exists():
+                deferred.append((rec, ing))
+            report.rows.append(ing)
             continue
 
         if status == "contested":
@@ -592,6 +587,15 @@ def ingest_round(
     if write:
         if new_rows:
             save_rejections(rejections_path, [*ledger, *new_rows])  # 기존 행 불변 — 위반이면 예외
+        for rec, ing in deferred:  # 대장이 남은 뒤에야 저널을 쓴다
+            try:
+                w = write_record(rec, journal_dir)
+            except JournalImmutable as e:
+                ing.action = "reject_blocked"
+                ing.detail = f"대장 행은 남았으나 저널 항목을 쓰지 못했다: {e}"
+                continue
+            if w.thesis_snapshot:
+                ing.paths.append(rel(w.thesis_snapshot))
         if report.n_watchlist_upserts:
             save_watchlist(watchlist_path, watch)
     return report

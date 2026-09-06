@@ -171,3 +171,15 @@ def test_rejections_path_enum_and_confidence_key_required(tmp_path: Path) -> Non
     )
     with pytest.raises(StateFileError, match="cycle_confidence"):
         load_rejections(p)
+
+
+def test_hand_edited_top_level_key_is_a_clean_error_not_a_keyerror(tmp_path: Path) -> None:
+    """`cli_guard` 가 잡는 것은 `StateFileError` 다 — 맨 KeyError 는 역추적을 통째로 뱉는다."""
+    w = tmp_path / "watchlist.yaml"
+    w.write_text("watchlists: []\n", encoding="utf-8")  # 오타
+    with pytest.raises(StateFileError, match="watchlist"):
+        load_watchlist(w)
+    r = tmp_path / "rejections.yaml"
+    r.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(StateFileError, match="rejections"):
+        load_rejections(r)

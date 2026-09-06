@@ -129,6 +129,106 @@ def test_evidence_gate_fails_on_unverified_axes() -> None:
     assert "unit_demand" in r.why
 
 
+def test_evidence_gate_still_open_when_ledger_misses_the_specific_id(
+    tmp_path, monkeypatch
+) -> None:
+    """대장에 무언가 있다고 전부 처리됐다고 보면 안 된다 (2026-09 리뷰 회귀).
+
+    미처리 근거가 [7, 9] 인데 대장은 [7] 만 다루면, 9 는 여전히 열려 있어야 한다.
+    """
+    from msa.config import paths
+    from msa.ops import resolutions as res
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    res.append(
+        paths().evidence_resolutions,
+        "t1",
+        res.Resolution(7, "human", "2026-09-01", "confirmed", "원문에 있다"),
+    )
+    d = _digest(
+        evidence_audit={
+            "t1": {
+                "counts": {"verified": 18, "partial": 1, "unreachable": 1},
+                "checked": 20,
+                "unverified_axes": [],
+                "unresolved_ids": [7, 9],
+            }
+        }
+    )
+    r = sector.evaluate(d)[0].gate("evidence")
+    assert not r.passed
+    assert "미처리" in r.why
+    assert "9" in r.why
+
+
+def test_evidence_gate_passes_when_ledger_covers_every_unresolved_id(
+    tmp_path, monkeypatch
+) -> None:
+    from msa.config import paths
+    from msa.ops import resolutions as res
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    res.append(
+        paths().evidence_resolutions,
+        "t1",
+        res.Resolution(7, "human", "2026-09-01", "confirmed", "원문에 있다"),
+    )
+    res.append(
+        paths().evidence_resolutions,
+        "t1",
+        res.Resolution(9, "human", "2026-09-01", "unresolvable", "페이월"),
+    )
+    d = _digest(
+        evidence_audit={
+            "t1": {
+                "counts": {"verified": 18, "partial": 1, "unreachable": 1},
+                "checked": 20,
+                "unverified_axes": [],
+                "unresolved_ids": [7, 9],
+            }
+        }
+    )
+    assert sector.evaluate(d)[0].gate("evidence").passed
+
+
+def test_evidence_gate_fails_on_zero_checked_instead_of_auto_passing() -> None:
+    """`checked == 0` 을 100% 통과로 읽지 않는다 — 통과가 아니라 미확인이다."""
+    d = _digest(evidence_audit={"t1": {"counts": {}, "checked": 0, "unverified_axes": []}})
+    r = sector.evaluate(d)[0].gate("evidence")
+    assert not r.passed
+
+
+def test_one_themes_broken_ledger_does_not_blank_another_themes_refuted_count(
+    tmp_path, monkeypatch
+) -> None:
+    """한 테마의 손편집 대장 오타가 저장소 전체의 반박 건수를 리셋하면 안 된다."""
+    from msa.config import paths
+    from msa.ops import resolutions as res
+
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    root = paths().evidence_resolutions
+    res.append(root, "broken", res.Resolution(1, "human", "2026-09-01", "confirmed", "ok"))
+    # `broken` 테마의 대장 파일을 손으로 망가뜨린다 (오타/문법 오류를 흉내).
+    (root / "broken.yaml").write_text("not: [valid, yaml, - structure", encoding="utf-8")
+    res.append(root, "clean", res.Resolution(1, "human", "2026-09-01", "refuted", "원문에 없다"))
+
+    d = _digest(
+        themes=[_theme(theme="broken"), _theme(theme="clean")],
+        judged=[
+            {"theme": "broken", "portfolio_eligible": True, "trusted": True, "gate": "passed"},
+            {"theme": "clean", "portfolio_eligible": True, "trusted": True, "gate": "passed"},
+        ],
+        evidence_audit={
+            "broken": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []},
+            "clean": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []},
+        },
+    )
+    rows = {r.theme: r for r in sector.evaluate(d)}
+    # `clean` 의 반박은 `broken` 의 대장 오류와 무관하게 여전히 막혀야 한다.
+    assert not rows["clean"].gate("evidence").passed
+    assert "반박" in rows["clean"].gate("evidence").why
+
+
 def test_evidence_gate_is_unknown_without_an_audit() -> None:
     """실사를 안 돌린 것과 실사가 통과한 것은 다르다 (`CLAUDE.md` §2)."""
     d = _digest(evidence_audit={})
@@ -262,6 +362,29 @@ def test_headline_names_the_cleared_theme(tmp_path, monkeypatch) -> None:
     assert "`t1`" in line
 
 
+def test_render_marks_unreached_gates_instead_of_a_false_checkmark() -> None:
+    """체인이 ③에서 막히면 ⑥(뒤쪽 관문)이 자기 조건만으로 통과해도 ✅ 를 찍지 않는다.
+
+    2026-08-31 실측: `cement_aggregates` 가 ③에서 막혔는데 표에는 ✅ 가 넷 서서
+    `verdict_md` 의 미도달(◻) 표기와 모순됐다.
+    """
+    d = _digest(
+        evidence_audit={
+            "t1": {
+                "counts": {"verified": 10},
+                "checked": 20,
+                "unverified_axes": ["unit_demand"],
+            }
+        }
+    )
+    row = sector.evaluate(d)[0]
+    assert row.blocked_at == "evidence"
+    md = "\n".join(sector.render_md([row]))
+    line = next(x for x in md.split("\n") if x.startswith("| `t1`"))
+    cells = [c.strip() for c in line.split("|")[2:-2]]  # 테마·막힌곳 칸을 뺀 여섯 관문 칸
+    assert cells == ["✅", "✅", "❌", "◻", "◻", "◻"]
+
+
 def test_render_shows_the_chain_per_theme() -> None:
     md = "\n".join(sector.render_md(sector.evaluate(_digest())))
     assert "관문" in md
@@ -349,7 +472,13 @@ def test_balance_block_exposes_verdicts_for_the_chain(tmp_path, monkeypatch) -> 
             "invalidations": ["y"],
         },
         "evidence": [
-            {"id": 1, "claim": "c", "source_url": "https://x.example/a", "date": "2026-01-01"}
+            {
+                "id": 1,
+                "claim": "c",
+                "source_url": "https://x.example/a",
+                "date": "2026-01-01",
+                "reliability": "high",
+            }
         ],
     }
     bal.write(tmp_path / "balance", doc)
@@ -551,7 +680,13 @@ def _bal_doc(theme: str, verdict: str) -> dict[str, object]:
             "invalidations": ["수요 성장률이 4%대로 붙으면 이 판정은 무효다"],
         },
         "evidence": [
-            {"id": 1, "claim": "c", "source_url": "https://x.example/a", "date": "2026-01-01"}
+            {
+                "id": 1,
+                "claim": "c",
+                "source_url": "https://x.example/a",
+                "date": "2026-01-01",
+                "reliability": "high",
+            }
         ],
     }
 
@@ -673,6 +808,52 @@ def test_judged_out_and_unjudged_are_reported_separately() -> None:
     text = "\n".join(sector.verdict_md(sector.evaluate(d)))
     assert "확신도 미달 1개" in text and "`rejected`" in text
     assert "아직 판별을 안 받은 1개" in text and "`never`" in text
+
+
+def test_a_theme_that_passed_the_trap_gate_is_never_called_low_confidence(
+    tmp_path, monkeypatch
+) -> None:
+    """②(`not_a_trap`)를 통과했지만 `limit` 에 밀린 테마를 '확신도 미달' 로 부르면 안 된다.
+
+    2026-09 리뷰 회귀: `specialty_chem`(확신도 0.85, 33개 중 최고)이 `limit` 에 밀려
+    "확신도 미달" 문단에 실렸다 — 실제로는 판별을 통과했고 뒤쪽 관문에서만 막혔다.
+    """
+    monkeypatch.setenv("MSA_STATE", str(tmp_path))
+    themes = [_theme(theme="close")] + [_theme(theme=f"far{i}") for i in range(3)]
+    judged = [
+        {"theme": "close", "portfolio_eligible": True, "trusted": True, "gate": "passed"},
+    ] + [
+        {
+            "theme": f"far{i}",
+            "portfolio_eligible": True,
+            "trusted": True,
+            "gate": "passed",
+            "cycle_confidence": 0.85,
+        }
+        for i in range(3)
+    ]
+    evidence_audit = {
+        "close": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []},
+    } | {
+        f"far{i}": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []}
+        for i in range(3)
+    }
+    d = _digest(
+        themes=themes,
+        judged=judged,
+        evidence_audit=evidence_audit,
+        triage={
+            "rows": [{"ticker": "A", "theme": "close", "partition": "I-A", "triage": 0.8, "j": 0.9}]
+        },
+    )
+    # `close` 만 상세 표시 한도(`limit=1`) 안에 들고, `far0..2` 는 ②를 통과했지만 밀린다
+    # (balance 조사가 없어 ④에서 막힌다 — `not_a_trap` 은 통과).
+    text = "\n".join(sector.verdict_md(sector.evaluate(d), limit=1))
+    assert "확신도 미달" not in text
+    assert "판정 자체가 없는" not in text
+    assert "판별은 통과했으나 지면상 생략한 3개" in text
+    for i in range(3):
+        assert f"`far{i}`" in text
 
 
 # ---------------------------------------------------------------- 체인의 우주

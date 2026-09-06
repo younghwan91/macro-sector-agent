@@ -187,6 +187,36 @@ def test_spread_diff_series_is_paired_and_summarizes_with_the_same_machine() -> 
     assert cell.iloc[0]["ci_lo"] == pytest.approx(12.0)  # 상수열이라 CI 가 붙는다
 
 
+def test_spread_diff_series_survives_a_month_where_every_variant_is_nan() -> None:
+    """어느 변형도 스프레드를 못 낸 달 — `pivot_table` 이 그 행을 버려도 n 열이 어긋나지 않는가.
+
+    초기 창이나 자격 우주가 `MIN_THEMES_XS` 미만인 h 에서 실제로 나오는 모양이다.
+    """
+    from msa.l1.structures import spread_diff_series
+
+    dates = pd.date_range("2011-01-31", periods=6, freq="ME")
+    rows = []
+    for i, d in enumerate(dates):
+        for v in ("S2", "S3", "S2p"):
+            rows.append(
+                {
+                    "date": d,
+                    "variant": v,
+                    "horizon": 12,
+                    "spread": np.nan if i == 0 else float(i) + (1.0 if v == "S3" else 0.0),
+                    "ret_top": 0.0,
+                    "ret_bot": 0.0,
+                    "n_universe": 40 + i,
+                    "n_small_excluded": i,
+                }
+            )
+    out = spread_diff_series(pd.DataFrame(rows))
+    s3 = out[out["variant"] == "S3-S2"].sort_values("date")
+    assert len(s3) == 5  # 전부 NaN 인 첫 달은 pivot 에서 빠진다
+    assert list(s3["n_universe"]) == [41, 42, 43, 44, 45]  # 빠진 달이 밀려들어오지 않는다
+    assert np.allclose(s3["spread"].to_numpy(), 1.0)
+
+
 def test_diff_verdict_reads_one_side_only() -> None:
     from msa.l1.structures import _diff_verdict
 

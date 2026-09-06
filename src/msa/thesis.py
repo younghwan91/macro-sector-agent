@@ -117,7 +117,21 @@ def all_theses(asof: str, root: Path | str | None = None) -> list[ThesisHead]:
     if not r.is_dir():
         return []
     seen: dict[str, ThesisHead] = {}
-    for d in sorted((x for x in r.iterdir() if x.is_dir() and x.name <= asof), reverse=True):
+
+    def _is_round_dir(x: Path) -> bool:
+        # `find_thesis` 와 **정확히 같은 규칙**이어야 한다 (독스트링의 약속) —
+        # `.partial`·`2026-08-25-rerun`·에디터 백업처럼 날짜가 아닌 이름은 사전순으로
+        # `asof` 보다 작게 정렬될 수 있어(`<=` 비교만으로는 걸러지지 않는다) 여기서만
+        # 라운드로 잡히고 `find_thesis` 는 건너뛰는 표류가 생겼다 (2026-09 리뷰).
+        if not x.is_dir():
+            return False
+        try:
+            parse_date(x.name)
+        except ValueError:
+            return False
+        return x.name <= asof
+
+    for d in sorted((x for x in r.iterdir() if _is_round_dir(x)), reverse=True):
         for f in theses_in(d):
             t = theme_of(f)
             if t not in seen:  # 최신 라운드가 먼저 온다
@@ -297,9 +311,19 @@ def thesis_head(theme_id: str, asof: str, root: Path | str | None = None) -> The
         return ThesisHead(theme_id)
     try:
         raw = read_thesis_yaml(f)
-    except (OSError, ValueError):
-        # 읽지 못한 것과 없는 것은 다르다 — 사유를 claim 자리에 남긴다 (조용히 없는 척하지 않는다)
-        return ThesisHead(theme_id, claim=f"논지 파일을 읽지 못했다: {f}", source=str(f))
+    except (OSError, ValueError, yaml.YAMLError):
+        # `yaml.YAMLError`(예: `ParserError`)는 `ValueError` 의 하위가 아니다 — 문법이
+        # 깨진 YAML(사람이 손으로 고치다 만 파일 등)은 이 절 없이는 여기서 안 잡히고
+        # `msa run daily` 전체를 죽인다 (2026-09 리뷰, 이 회귀 테스트로 드러났다).
+        # 읽지 못한 것과 없는 것은 다르다 — 사유를 claim 자리에 남긴다 (조용히 없는 척하지 않는다).
+        # **`trusted=False` 도 함께 낸다** (2026-09 리뷰): 기본값 `True` 를 그대로 두면
+        # `portfolio_eligible=False` 와 겹쳐 하류(`sector._not_a_trap`)가 "판별 결과
+        # 편입 불가 — 가치 함정 혐의를 못 벗었다" 를 찍는다 — 파일을 읽은 적도 없는데
+        # 실제 판별을 마친 것처럼 세탁된다. `trusted=False` 면 "판별했으나 논지를
+        # 신뢰하지 못한다" 로 떨어져 최소한 거짓 판정으로 읽히지는 않는다.
+        return ThesisHead(
+            theme_id, claim=f"논지 파일을 읽지 못했다: {f}", trusted=False, source=str(f)
+        )
     hz = raw.get("horizon_months") or []
     if isinstance(hz, int | float):
         hz = [hz]

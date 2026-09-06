@@ -135,6 +135,8 @@ def run(
         build_request(theme, asof, unit_hint=unit_hint, thesis=thesis)
     ).json()
     out: dict[str, Any] = {"theme": theme, "asof": asof, **obj}
+    # 코드가 채운 식별자가 이긴다 — 모델이 같은 키를 되돌려줘도 덮어쓰지 못한다
+    out["theme"], out["asof"] = theme, asof
     if obj.get("synthetic"):
         out["synthetic"] = True
     return out

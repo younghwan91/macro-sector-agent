@@ -103,7 +103,7 @@ def validate_thesis(t: dict[str, Any]) -> None:
     axes = t.get("value_trap_axes")
     if isinstance(axes, dict):
         for a in AXES:
-            if a not in axes:
+            if not isinstance(axes.get(a), dict):
                 errors.append(f"value_trap_axes.{a} 없음")
             elif axes[a].get("verdict") not in AXIS_VERDICTS:
                 errors.append(f"value_trap_axes.{a}.verdict 값 불가: {axes[a].get('verdict')}")

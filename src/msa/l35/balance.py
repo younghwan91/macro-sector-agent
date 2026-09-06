@@ -22,7 +22,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -30,6 +30,7 @@ from typing import Any
 import yaml
 
 from msa.errors import Rejected
+from msa.thesis import RELIABILITY
 
 #: 수요 판정 3값.
 DEMAND_VERDICTS = ("expanding", "flat", "contracting")
@@ -103,6 +104,7 @@ SCHEMA: dict[str, Any] = {
                             "evidence_ids": {"type": "array", "items": {"type": "integer"}},
                         },
                         "required": ["name", "direction", "magnitude", "evidence_ids"],
+                        "additionalProperties": False,
                     },
                 },
                 "cagr_pct": {
@@ -115,6 +117,7 @@ SCHEMA: dict[str, Any] = {
                 },
             },
             "required": ["verdict", "drivers", "cagr_pct"],
+            "additionalProperties": False,
         },
         "supply": {
             "type": "object",
@@ -130,6 +133,7 @@ SCHEMA: dict[str, Any] = {
                             "evidence_ids": {"type": "array", "items": {"type": "integer"}},
                         },
                         "required": ["kind", "note", "evidence_ids"],
+                        "additionalProperties": False,
                     },
                     "description": "`constrained` 이면 **최소 1건 필수**",
                 },
@@ -143,6 +147,7 @@ SCHEMA: dict[str, Any] = {
                 },
             },
             "required": ["verdict", "rigidity", "new_capacity_3y", "cagr_pct"],
+            "additionalProperties": False,
         },
         "balance": {
             "type": "object",
@@ -175,6 +180,7 @@ SCHEMA: dict[str, Any] = {
                 "who_captures_it",
                 "invalidations",
             ],
+            "additionalProperties": False,
         },
         "evidence": {
             "type": "array",
@@ -186,13 +192,15 @@ SCHEMA: dict[str, Any] = {
                     "claim": {"type": "string"},
                     "source_url": {"type": "string"},
                     "date": {"type": "string"},
-                    "reliability": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "reliability": {"type": "string", "enum": list(RELIABILITY)},
                 },
-                "required": ["id", "claim", "source_url", "date"],
+                "required": ["id", "claim", "source_url", "date", "reliability"],
+                "additionalProperties": False,
             },
         },
     },
     "required": ["unit", "horizon_years", "demand", "supply", "balance", "evidence"],
+    "additionalProperties": False,
 }
 
 
@@ -202,11 +210,18 @@ def _need(cond: bool, msg: str) -> None:
 
 
 def _check_cagr(label: str, block: Mapping[str, Any]) -> None:
-    """`cagr_pct` 의 **단위**를 검사한다. 값의 좋고 나쁨은 보지 않는다."""
+    """`cagr_pct` 의 **단위**를 검사하고 실수로 정규화한다. 값의 좋고 나쁨은 보지 않는다."""
     raw = block.get("cagr_pct")
     if raw is None:
         return
-    v = float(raw)
+    try:
+        v = float(raw)
+    except (TypeError, ValueError) as e:
+        raise BalanceRejected(f"{label}.cagr_pct 를 숫자로 읽을 수 없다: {raw!r}") from e
+    # 문자열 "4.0" 은 검사만 통과하고 그대로 저장되어, 나중에 리포트 서식(`:+.1f`)이
+    # TypeError 로 죽는다 — 그 자리는 테마별 try/except 밖이라 남은 테마까지 같이 죽는다
+    if not isinstance(raw, float) and isinstance(block, MutableMapping):
+        block["cagr_pct"] = v
     _need(
         abs(v) <= CAGR_PCT_MAX,
         f"{label}.cagr_pct 가 ±{CAGR_PCT_MAX:.0f}%p 를 넘는다: {v} — 퍼센트 포인트 단위다",
@@ -232,12 +247,26 @@ def validate(doc: Mapping[str, Any]) -> None:
     _need(bool(ev), "evidence 가 비었다 — LLM 의 기억은 증거가 아니다 (CLAUDE.md §3)")
     ids: set[int] = set()
     for i, e in enumerate(ev):
+        _need(isinstance(e, Mapping), f"evidence[{i}] 가 객체가 아니다: {type(e).__name__}")
         _need(
             _URL.match(str((e or {}).get("source_url") or "")) is not None,
             f"evidence[{i}] 의 source_url 이 URL 이 아니다",
         )
         _need(bool(str((e or {}).get("claim") or "").strip()), f"evidence[{i}] 의 claim 이 비었다")
-        ids.add(int((e or {}).get("id", -1)))
+        rel = (e or {}).get("reliability")
+        _need(
+            rel in RELIABILITY,
+            f"evidence[{i}] 의 reliability {rel!r} ∉ {RELIABILITY} — "
+            "출처의 등급은 L3 와 같은 어휘를 쓴다 (CLAUDE.md §3)",
+        )
+        try:
+            eid = int((e or {}).get("id"))  # type: ignore[arg-type]
+        except (TypeError, ValueError) as exc:
+            raise BalanceRejected(
+                f"evidence[{i}] 의 id 를 정수로 읽을 수 없다: {(e or {}).get('id')!r}"
+            ) from exc
+        _need(eid not in ids, f"evidence 의 id 가 중복이다: {eid}")
+        ids.add(eid)
 
     demand = doc.get("demand") or {}
     _need(demand.get("verdict") in DEMAND_VERDICTS, f"demand.verdict 는 {DEMAND_VERDICTS} 중 하나")

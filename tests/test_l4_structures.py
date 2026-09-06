@@ -124,8 +124,13 @@ def test_count_trials_reconciles_docs15_section_4_3() -> None:
     assert t["docs14_base"] == N_TRIALS_L4 == 458
     assert t["docs15_declared_total"] == 524
     # 524 는 하한이다 (§4.3) — 더 본 칸은 세어서 더한다
-    assert t["added_beyond_docs15"] == t["turnover_added"] + t["level_1m_for_pbo_added"]
-    assert t["total"] == 524 + t["added_beyond_docs15"] > 524
+    assert (
+        t["added_beyond_docs15"]
+        == t["turnover_added"] + t["level_1m_for_pbo_added"] + t["diff_1m_added"]
+    )
+    # `overfitting_summary` 는 수준·차 양쪽에서 (1M, 3, 6, 12) 를 돈다 — 1M 차 칸도 시도다
+    assert t["diff_1m_added"] == len(PAIR_NAMES) * 2 == 10
+    assert t["total"] == 524 + t["added_beyond_docs15"] == 550
     assert t["declared_only"] == 4  # X−B3 셋 + B0−B1 하나
 
 
@@ -291,6 +296,45 @@ def test_call_is_one_sided_three_cells() -> None:
     assert _call(-0.01, 0.05, "beats_B3", "worse_than_B3") == "indistinguishable"
     assert _call(0.0, 0.05, "beats_B3", "worse_than_B3") == "indistinguishable"  # 하한 0 은 불합격
     assert _call(-0.05, 0.0, "beats_B3", "worse_than_B3") == "indistinguishable"
+
+
+def test_call_nan_ci_is_undetermined_not_indistinguishable() -> None:
+    """CI 가 NaN 인 것은 '0 을 포함한다' 가 아니라 '재지 못했다' 다 (CLAUDE.md §2).
+
+    `block_bootstrap_mean` 은 비중첩 관측이 4개 미만이면 NaN 경계를 낸다. 그것을
+    `indistinguishable` 로 접으면 못 잰 칸이 잰 칸으로 계상되어 `nobody_beats_b3` 가 켜진다.
+    """
+    nan = float("nan")
+    assert _call(nan, nan, "beats_B3", "worse_than_B3") == "undetermined"
+    assert _call(nan, 0.05, "beats_B3", "worse_than_B3") == "undetermined"
+    assert _call(-0.05, nan, "beats_B3", "worse_than_B3") == "undetermined"
+
+
+def test_verdict_nan_ci_does_not_trigger_nobody_beats_b3() -> None:
+    """NaN CI 셀은 `measured` 에서 빠지고 §5 의 '선정 규칙을 버린다' 를 켜지 않는다."""
+    nan = float("nan")
+    pair_summary = pd.DataFrame(
+        [
+            {
+                "window": "primary",
+                "horizon": GATE_HORIZON,
+                "pair": name,
+                "partition": PARTITION_ALL,
+                "mean": nan,
+                "ci_lo": nan,
+                "ci_hi": nan,
+                "n_months": 2,
+                "n_months_dropped": 0,
+                "n_eff": 0.0,
+            }
+            for name in PRIMARY_PAIRS
+        ]
+    )
+    v = verdict(pd.DataFrame(), pair_summary, {"dsr": [], "pbo": [], "trials": count_trials()})
+    for name in PRIMARY_PAIRS:
+        assert v["primary_vs_b3_12m"][name]["call"] == "undetermined"
+    assert v["n_primary_undetermined"] == len(PRIMARY_PAIRS)
+    assert v["nobody_beats_b3"] is False, "재지 못한 표본에서 폐기 트리거가 켜졌다"
 
 
 @pytest.mark.parametrize(

@@ -14,6 +14,8 @@ from collections.abc import Mapping, Sequence
 from datetime import date, datetime
 from typing import Any
 
+import pandas as pd
+
 #: 결측으로 읽는 문자열 (소문자 비교). `l5/inputs._opt_float` 의 집합 그대로.
 NA_TOKENS: frozenset[str] = frozenset({"", "na", "nan", "none", "null", "—"})
 
@@ -22,7 +24,15 @@ _FALSE = frozenset({"false", "0", "0.0", "no", "n", ""})
 
 
 def _is_nan(v: Any) -> bool:
-    return isinstance(v, float) and math.isnan(v)
+    """NaN 계열 결측 — `float("nan")` 뿐 아니라 `pd.NaT`·`pd.NA`·numpy NaN 도 포함한다.
+
+    스칼라만 본다. 배열류에 `pd.isna` 를 걸면 배열이 돌아와 `if` 가 터진다.
+    """
+    if isinstance(v, float):
+        return math.isnan(v)
+    if v is None or isinstance(v, str | bytes | bool | int):
+        return False
+    return bool(pd.api.types.is_scalar(v) and pd.isna(v))
 
 
 def opt_str(v: Any) -> str | None:
@@ -66,9 +76,14 @@ def opt_bool(v: Any) -> bool | None:
 
 
 def opt_date(v: Any, formats: Sequence[str] = ("%Y-%m-%d",)) -> date | None:
-    """`date`(`datetime` 포함)는 그대로, 문자열은 `formats` 순서로 시도. 실패/빈 값이면 None."""
+    """`date` 는 그대로(`datetime`·`Timestamp` 은 `.date()`), 문자열은 `formats` 순서로 시도.
+
+    실패/빈 값이면 None.
+    """
     if v is None or _is_nan(v):
         return None
+    if isinstance(v, datetime):  # datetime·pd.Timestamp 은 date 의 하위형이라 먼저 본다
+        return v.date()
     if isinstance(v, date):
         return v
     s = str(v).strip()
@@ -83,7 +98,14 @@ def opt_date(v: Any, formats: Sequence[str] = ("%Y-%m-%d",)) -> date | None:
 
 
 def require(d: Mapping[str, Any], key: str, ctx: str, exc: type[Exception] = ValueError) -> Any:
-    """`d[key]` 가 없거나 None 이면 `exc` (문구는 `ops/state_files._req` 와 같다). 있으면 값."""
-    if key not in d or d[key] is None:
+    """`d[key]` 가 없거나 비었으면 `exc` (문구는 `ops/state_files._req` 와 같다). 있으면 값.
+
+    빈 값 = 없음 · None · 빈 문자열(공백만인 것 포함) · NaN 계열. 빈 문자열을 통과시키면
+    `ticker: ""` 같은 행이 필수 필드를 갖춘 것처럼 지나간다 (`CLAUDE.md` §2).
+    """
+    if key not in d:
         raise exc(f"{ctx}: 필수 필드 없음 `{key}`")
-    return d[key]
+    v = d[key]
+    if v is None or _is_nan(v) or (isinstance(v, str) and not v.strip()):
+        raise exc(f"{ctx}: 필수 필드 없음 `{key}`")
+    return v

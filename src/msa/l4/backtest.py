@@ -166,7 +166,22 @@ LIMITATIONS: tuple[str, ...] = (
 #: `backtest` 자신도 넣는다 (`month_panel` 이 여기 있다). 리포트 문구만 고쳐도 캐시가
 #: 무효화되지만 **그쪽으로 틀리는 편이 낫다** — 조용히 낡은 패널로 DSR·PBO 를 내는 것보다
 #: 다시 만드는 비용이 싸다 (2026-08-26 코드 리뷰).
-PANEL_CODE_MODULES: tuple[str, ...] = ("msa.l4.features", "msa.l4.axes", "msa.l4.backtest")
+#: `code_fingerprint` 는 import 를 따라가지 않으므로 **직접 적는다** — `features.py` 가 쓰는
+#: `msa.data.pit`(TTM·PIT 집계)나 `axes.py` 가 쓰는 `msa.l1.scoreboard.xs_pct`(백분위)를 고쳐도
+#: `msa.l4.features` 의 바이트가 그대로면 낡은 parquet 이 재사용된다 (2026-09-06 코드 리뷰).
+PANEL_CODE_MODULES: tuple[str, ...] = (
+    "msa.l4.features",
+    "msa.l4.axes",
+    "msa.l4.backtest",
+    "msa.data.pit",
+    "msa.data.store",
+    "msa.dates",
+    "msa.l1.physical",
+    "msa.l1.scoreboard",
+    "msa.themes",
+    "msa.vendor.redflags",
+    "msa.vendor.vcp",
+)
 
 PANEL_COLUMNS: tuple[str, ...] = (
     "date",
@@ -967,6 +982,10 @@ def _cell(summ: pd.DataFrame, **where: Any) -> pd.Series | None:
 
 
 def _works(lo: float, hi: float) -> str:
+    """CI 경계가 NaN 이면 **재지 못했다** — `indistinguishable_from_0` 로 접지 않는다.
+    관측이 0개라 NaN 인 것과 CI 가 실제로 0 을 걸친 것은 다른 진술이다 (`CLAUDE.md` §2)."""
+    if pd.isna(lo) or pd.isna(hi):
+        return "undetermined"
     if lo > 0:
         return "works"
     if hi < 0:
@@ -998,6 +1017,20 @@ def verdict(
     )
     if r is None:
         out["q1"] = {"gate": "undetermined", "reason": "관문 셀이 비어 있다"}
+    elif pd.isna(r["ci_lo"]) or pd.isna(r["ci_hi"]):
+        # 관측이 없어 CI 가 NaN 이면 `NaN > 0` 이 False 라 조용히 `fail` 이 된다 — 아무것도
+        # 재지 못한 실행과 진짜 불합격이 구분되지 않는다 (`CLAUDE.md` §2).
+        out["q1"] = {
+            "gate": "undetermined",
+            "reason": "CI 경계가 NaN — 비중첩 관측이 부트스트랩에 못 미친다",
+            "mean_ic": float(r["mean"]),
+            "ci": [float(r["ci_lo"]), float(r["ci_hi"])],
+            "n_months": int(r["n_months"]),
+            "n_months_dropped": int(r["n_months_dropped"]),
+            "n_eff": float(r["n_eff"]),
+            "mean_n_themes": float(r.get("mean_n_themes", float("nan"))),
+            "mean_n_stocks": float(r.get("mean_n_stocks", float("nan"))),
+        }
     else:
         out["q1"] = {
             "gate": "pass" if bool(r["ci_lo"] > 0) else "fail",
@@ -1042,11 +1075,15 @@ def verdict(
         if ex is not None:
             lo, hi = float(ex["ci_lo"]), float(ex["ci_hi"])
             rec["excess_diff"] = {"mean": float(ex["mean"]), "ci": [lo, hi]}
-            rec["verdict"] = (
-                "not_judged (데이터 절단 — docs/14 §4.1)"
-                if code not in axes.HARD_REASON_ALPHA
-                else ("blocked_losses" if hi < 0 else "sample_truncation_not_alpha")
-            )
+            if code not in axes.HARD_REASON_ALPHA:
+                rec["verdict"] = "not_judged (데이터 절단 — docs/14 §4.1)"
+            elif pd.isna(hi):
+                # 제외군이 0종목이면 차가 전부 NaN 이라 `hi < 0` 이 False 가 되어
+                # `sample_truncation_not_alpha` 라는 **실질 결론**이 관측 0개에서 나온다.
+                # 사람이 읽는 리포트는 이 칸을 "미적용" 이라 부른다 (`CLAUDE.md` §2).
+                rec["verdict"] = "not_applicable (제외군 관측이 없다 — 미적용)"
+            else:
+                rec["verdict"] = "blocked_losses" if hi < 0 else "sample_truncation_not_alpha"
         d1 = _cell(
             filters_summary,
             window="primary",
@@ -1071,7 +1108,8 @@ def verdict(
         if dt is not None:
             lo, hi = float(dt["ci_lo"]), float(dt["ci_hi"])
             rec["death_diff"] = {"mean": float(dt["mean"]), "ci": [lo, hi]}
-            rec["mechanism_confirmed"] = bool(lo > 0)
+            # NaN 이면 확인도 부인도 아니다 — `False` 로 접으면 못 잰 것이 부인으로 읽힌다.
+            rec["mechanism_confirmed"] = None if pd.isna(lo) else bool(lo > 0)
         q3[code] = rec
     out["q3_filters_12m_primary"] = q3
 
@@ -1717,9 +1755,12 @@ def run_backtest(
     n_total: dict[str, int] = {
         str(k): int(v) for k, v in ms.counts()["n_total"].astype(int).items()
     }
-    all_ids = [t for t in themes.ids() if t in n_total]
-    skipped = [(t, n_total[t]) for t in all_ids if n_total[t] < MIN_MEMBERS_POSSIBLE]
-    ids = [t for t in all_ids if n_total[t] >= MIN_MEMBERS_POSSIBLE]
+    # `counts()` 는 groupby 라 **구성원 0인 테마의 행이 아예 없다.** `in n_total` 로 거르면
+    # 그런 테마가 `ids`·`skipped`·`n_themes_total`·`exclusions.json` 어디에도 안 남는다 —
+    # 조용한 절단이다 (`CLAUDE.md` §2). 선언된 테마 전부에서 출발해 없는 것을 0으로 읽는다.
+    all_ids = list(themes.ids())
+    skipped = [(t, n_total.get(t, 0)) for t in all_ids if n_total.get(t, 0) < MIN_MEMBERS_POSSIBLE]
+    ids = [t for t in all_ids if n_total.get(t, 0) >= MIN_MEMBERS_POSSIBLE]
     smoke = themes_filter is not None or max_months is not None
     if themes_filter:
         ids = [t for t in ids if t in set(themes_filter)]

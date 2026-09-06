@@ -44,6 +44,7 @@ from msa.l5.optimize import (
     MU_METHOD,
     Problem,
     Solution,
+    c4_active,
     compress_confidence,
     solve,
 )
@@ -218,7 +219,7 @@ def equalize_uninformed_themes(
     picks: Sequence[Pick],
     idio_vol_ann: Sequence[float | None],
     warnings: list[str],
-    bounds: Mapping[str, tuple[float, float]] | None = None,
+    bounds: Mapping[str, tuple[float, float | None]] | None = None,
 ) -> dict[str, float]:
     """고유분산이 하나도 없는 테마의 종목 비중을 **테마 내 동일가중으로 되돌린다.**
 
@@ -231,6 +232,10 @@ def equalize_uninformed_themes(
     같았다. 그런데 CMRE 4.81% 대 ZIM 3.57% 은 35% 큰 포지션이고, 사람은 그 차이를 정보로
     읽는다. 같은 날 L4 는 "적격 종목 사이를 가를 근거가 확인되지 않았다" 며 동일가중을
     선언했다 (`docs/06` §5.1) — L5 가 그것을 잡음으로 뒤집고 있었다.
+
+    **종목 수익률로 만든 `Σ` 에는 해당하지 않는다.** 그 경로(`cov.source == "stock_returns"`)는
+    종목별 분산·상관이 표본에서 직접 오므로 테마 내부 분배가 목적함수에 나타난다 — 솔버 값이
+    정보다. 호출자가 그 판별(`cov.source`)을 하고 여기는 부르지 않는다.
 
     **탐색이 아니다.** 값을 고르는 것이 아니라, 모델이 구분하지 못한다는 사실을 그대로
     표시하는 것이다 (`CLAUDE.md` §1 은 데이터에 맞춰 값을 옮기는 것을 금지한다).
@@ -254,7 +259,7 @@ def equalize_uninformed_themes(
         total = sum(out.get(m.ticker, 0.0) for m in members)
         each = total / len(members)
         band = {m.ticker: (bounds or {}).get(m.ticker, (0.0, CAP_STOCK)) for m in members}
-        over = [t for t, (_, hi) in band.items() if each > hi + 1e-12]
+        over = [t for t, (_, hi) in band.items() if hi is not None and each > hi + 1e-12]
         under = [t for t, (lo, _) in band.items() if each < lo - 1e-12]
         if over or under:
             why = []
@@ -292,8 +297,13 @@ def _solve_and_report(
     losses: Mapping[str, ScenarioLoss],
     cov: CovarianceResult,
     warnings: list[str],
-) -> tuple[Solution, ENBResult]:
-    """SOCP 를 풀고 완화·상태·C4·C1·경계 상한을 경고로 적는다. ENB 도 여기서."""
+) -> Solution:
+    """SOCP 를 풀고 완화·상태·C4·C1·경계 상한을 경고로 적는다.
+
+    ENB 는 여기서 재지 않는다 — 동일가중 되돌림(`equalize_uninformed_themes`) 뒤의
+    **실제로 실리는 비중**에 대해 호출자가 잰다. 솔버 원본에 재면 계획서가 싣지 않는
+    벡터의 집중도를 보고하게 된다 (2026-09-06 코드 리뷰).
+    """
     stock_themes = [p.theme for p in picks]
     prob = Problem(
         tickers=tuple(p.ticker for p in picks),
@@ -316,21 +326,20 @@ def _solve_and_report(
         )
     if solution.status != "optimal":
         warnings.append(f"솔버 상태 {solution.status} — 해의 정밀도를 의심하라")
-    if inputs.capital_usd is None:
+    if not c4_active(inputs.capital_usd):
         warnings.append(
-            "C4 유동성 미적용 — 자본(--capital) 미지정 → `w·Capital ≤ 10%·ADV20` 을 한 번도 "
+            "C4 유동성 미적용 — 자본(--capital) 미지정 또는 0 이하 → "
+            "`w·Capital ≤ 10%·ADV20` 을 한 번도 "
             "걸지 않았다. docs/07 §2.4 가 핵심 제약으로 세운 것이 이 산출물에는 없다 — "
             "비중이 하루 거래대금을 넘을 수 있다"
         )
     elif solution.c4_skipped:
         warnings.append(f"C4 유동성: ADV 없어 적용 못 한 종목 {list(solution.c4_skipped)}")
-    wv = np.array([solution.weights[p.ticker] for p in picks], dtype=np.float64)
-    enb = effective_number_of_bets(cov.sigma, wv)
     if solution.mdd_scenario is None:
         warnings.append("C1: 시나리오 기반(ii) 계산 불가 — 변동성 기반(i) 만 구속")
     if solution.binding_caps:
         warnings.append(f"경계에 붙은 상한: {list(solution.binding_caps)}")
-    return solution, enb
+    return solution
 
 
 def _theme_rows(
@@ -445,16 +454,25 @@ def build_portfolio(
             ts_asof=ts_asof,
             warnings=warnings,
         )
-        solution, enb = _solve_and_report(
+        solution = _solve_and_report(
             inputs, picks, by_id=by_id, c_tilde=c_tilde, losses=losses, cov=cov, warnings=warnings
         )
-        weights = equalize_uninformed_themes(
-            solution.weights,
-            picks,
-            [p.idio_vol_ann for p in picks],
-            warnings,
-            solution.bounds,
+        # 테마 내부 분배가 목적함수에 나타나지 않는 것은 **테마 지수 사상 경로**뿐이다.
+        # 종목 수익률로 만든 Σ 는 종목별 분산·상관을 직접 들고 있어 솔버 값이 정보다.
+        weights = (
+            equalize_uninformed_themes(
+                solution.weights,
+                picks,
+                [p.idio_vol_ann for p in picks],
+                warnings,
+                solution.bounds,
+            )
+            if cov.source == "theme_ew_monthly"
+            else dict(solution.weights)
         )
+        # ENB 는 **실리는 비중**에 대해 잰다 (동일가중 되돌림 뒤).
+        wv = np.array([weights[p.ticker] for p in picks], dtype=np.float64)
+        enb = effective_number_of_bets(cov.sigma, wv)
     else:
         warnings.append("편입 가능한 후보가 0개 — 포트폴리오를 만들지 않았다")
 
@@ -511,7 +529,7 @@ def build_portfolio(
         extra={
             "cluster_caps": dict(inputs.cluster_caps),
             "capital_usd": inputs.capital_usd,
-            "c4_applied": inputs.capital_usd is not None,
+            "c4_applied": c4_active(inputs.capital_usd),
             "anchor_labeled": anchor_labeled,
             "filled_gap_days": gaps,
             "tier2_budget": {

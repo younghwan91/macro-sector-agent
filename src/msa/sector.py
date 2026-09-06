@@ -31,6 +31,7 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -69,6 +70,8 @@ GATES: tuple[Gate, ...] = (
 )
 
 _BY_KEY = {g.key: g for g in GATES}
+
+_log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -152,7 +155,9 @@ def _not_a_trap(judged: Mapping[str, Any] | None) -> Result:
     return Result("not_a_trap", True, "판별 통과 · 편입 가능")
 
 
-def _evidence(theme: str, audit: Mapping[str, Any] | None, refuted: int, resolved: bool) -> Result:
+def _evidence(
+    theme: str, audit: Mapping[str, Any] | None, refuted: int, resolved_ids: set[int]
+) -> Result:
     if audit is None:
         return Result("evidence", False, "증거 실사를 안 돌렸다 — 통과가 아니라 미확인이다")
     if refuted:
@@ -162,15 +167,38 @@ def _evidence(theme: str, audit: Mapping[str, Any] | None, refuted: int, resolve
         return Result("evidence", False, f"확인된 근거가 없는 축: {', '.join(axes)}")
     counts = audit.get("counts") or {}
     checked = int(audit.get("checked") or 0)
-    partial = int(counts.get("partial", 0))
-    unread = int(counts.get("unreachable", 0)) + int(counts.get("unsupported", 0))
-    if (partial or unread) and not resolved:
+    if checked <= 0:
+        # 실사는 돌았으나 셀 것이 없다 — **통과가 아니라 미확인이다** (0/0 을 100%
+        # 통과로 읽지 않는다, `CLAUDE.md` §2).
         return Result(
-            "evidence",
-            False,
-            f"미처리 근거 {partial + unread}건 (못 찾은 숫자 {partial} · 못 읽음 {unread}) "
-            "— `msa ops audit-evidence` 로 열고 대장에 적어라",
+            "evidence", False, "실사가 확인할 근거를 못 찾았다 — 통과가 아니라 미확인이다"
         )
+
+    raw_ids = audit.get("unresolved_ids")
+    if raw_ids is not None:
+        # 신형 다이제스트 — **어느 증거가 미처리인지** 안다. 대장에 "무언가" 있다는
+        # 사실만으로 전부를 처리됐다고 보면(2026-09 리뷰 이전) 대장에 없는 다른 증거의
+        # 미처리 상태가 조용히 통과로 바뀐다 — 대장이 그 특정 id 를 덮는지 확인한다.
+        still_open = {int(x) for x in raw_ids} - resolved_ids
+        if still_open:
+            return Result(
+                "evidence",
+                False,
+                f"미처리 근거 {len(still_open)}건 (대장에 없음: {sorted(still_open)}) "
+                f"— `msa ops audit-evidence {theme}` 로 열고 대장에 적어라",
+            )
+    else:
+        # 구형 다이제스트(개별 id 없음) — 예전 규칙: 대장에 무엇이라도 있으면
+        # 처리된 것으로 본다.
+        partial = int(counts.get("partial", 0))
+        unread = int(counts.get("unreachable", 0)) + int(counts.get("unsupported", 0))
+        if (partial or unread) and not resolved_ids:
+            return Result(
+                "evidence",
+                False,
+                f"미처리 근거 {partial + unread}건 (못 찾은 숫자 {partial} · 못 읽음 {unread}) "
+                f"— `msa ops audit-evidence {theme}` 로 열고 대장에 적어라",
+            )
     verified = int(counts.get("verified", 0))
     return Result("evidence", True, f"근거 {verified}/{checked} 확인 · 반박 0건")
 
@@ -213,20 +241,35 @@ def _entry(theme: str, rows: Sequence[Mapping[str, Any]]) -> Result:
     return Result("entry", False, "명단에 종목이 없다")
 
 
-def _refuted_counts(themes: Sequence[str]) -> dict[str, tuple[int, bool]]:
-    """테마 → (반박 건수, 대장에 기록이 있나). 대장을 못 읽으면 전부 (0, False)."""
+def _refuted_counts(themes: Sequence[str]) -> dict[str, tuple[int, set[int]]]:
+    """테마 → (반박 건수, 대장에 기록된 `evidence_id` 집합).
+
+    **테마 하나가 실패해도 나머지는 영향받지 않는다** (2026-09 리뷰) — 예전에는
+    루프 전체를 `except Exception` 으로 감싸서, 한 테마의 손편집 대장 오타(엉뚱한
+    키·문법 오류)가 저장소 **전체**의 반박 건수를 조용히 0 으로 리셋했다. 그 상태에서
+    사람이 낸 `refuted` 판정이 ✅ 로 뒤집혀도 아무 로그가 안 남았다.
+    """
     try:
         from msa.config import paths
         from msa.ops import resolutions as res
+    except Exception as e:
+        _log.warning("증거 처리 대장 모듈을 불러오지 못했다: %s: %s", type(e).__name__, e)
+        return {t: (0, set()) for t in themes}
 
-        root = paths().evidence_resolutions
-        out: dict[str, tuple[int, bool]] = {}
-        for t in themes:
+    root = paths().evidence_resolutions
+    out: dict[str, tuple[int, set[int]]] = {}
+    for t in themes:
+        try:
             entries = res.effective(root, t)
-            out[t] = (sum(1 for e in entries if e.verdict == "refuted"), bool(entries))
-        return out
-    except Exception:
-        return {t: (0, False) for t in themes}
+        except Exception as e:
+            _log.warning("`%s` 의 증거 처리 대장을 읽지 못했다: %s: %s", t, type(e).__name__, e)
+            out[t] = (0, set())
+            continue
+        out[t] = (
+            sum(1 for e in entries if e.verdict == "refuted"),
+            {e.evidence_id for e in entries},
+        )
+    return out
 
 
 def evaluate(digest: Mapping[str, Any]) -> list[Row]:
@@ -256,14 +299,14 @@ def evaluate(digest: Mapping[str, Any]) -> list[Row]:
     rows: list[Row] = []
     for entry in entries:
         theme = str(entry.get("theme"))
-        refuted, has_ledger = ledger.get(theme, (0, False))
+        refuted, resolved_ids = ledger.get(theme, (0, set()))
         rows.append(
             Row(
                 theme,
                 (
                     _forgotten(entry),
                     _not_a_trap(judged.get(theme)),
-                    _evidence(theme, audits.get(theme), refuted, has_ledger),
+                    _evidence(theme, audits.get(theme), refuted, resolved_ids),
                     _balance(theme, bal),
                     _macro(theme, regime),
                     _entry(theme, tri_rows),
@@ -322,7 +365,15 @@ def render_md(rows: Sequence[Row], *, limit: int = 8) -> list[str]:
         "|---|" + "---|" * (len(GATES) + 1),
     ]
     for r in rows[:limit]:
-        cells = " | ".join("✅" if r.gate(g.key).passed else "❌" for g in GATES)
+        # **체인이므로 막힌 자리 뒤는 미도달이다** — `_entry`(⑥) 같은 뒤쪽 관문은 앞이
+        # 막혀도 자기 조건만으로 독립적으로 True/False 를 낸다(테스트
+        # `test_every_gate_is_evaluated_for_every_theme`). 그 원값을 그대로 ✅/❌ 로
+        # 찍으면 "③에서 막혔는데 ⑥은 통과" 처럼 읽혀 `verdict_md` 의 미도달(◻) 표기와
+        # 모순된다 (2026-08-31 리포트 실측). 막힌 자리까지만 실제 판정을 찍는다.
+        cells = " | ".join(
+            ("✅" if r.gate(g.key).passed else "❌") if i <= r.depth else "◻"
+            for i, g in enumerate(GATES)
+        )
         blocked = _BY_KEY[r.blocked_at].title if r.blocked_at else "**통과**"
         out.append(f"| `{r.theme}` | {cells} | {blocked} |")
     out.append("")
@@ -554,12 +605,22 @@ def verdict_md(rows: Sequence[Row], *, limit: int = 3) -> list[str]:
             out.append("")
         rest = [r for r in rows if r not in detailed]
         if rest:
+            # **"②에서 막혔다" 는 사실이 있는 것과 없는 것은 다른 인구다.** `rest` 에는
+            # ②(`not_a_trap`)를 실제로 통과했지만 `limit` 에 밀려 길게 못 편 테마도
+            # 섞여 있다 — 예전에는 그런 테마까지 아래 "확신도 미달"/"판정 자체가 없다"
+            # 분류에 넣어, ②를 통과한 테마(예: 확신도 0.85 로 33개 중 최고)가 "확신도
+            # 미달" 이라고 찍혔다(2026-09 리뷰. `limit` 값에 따라 누가 여기 걸리는지도
+            # 달라져 재현성까지 깨졌다). ②를 실제로 통과한 테마는 별도로 짧게만 언급한다.
+            blocked_at_trap = [r for r in rest if not r.gate("not_a_trap").passed]
+            near_miss = [r for r in rest if r not in blocked_at_trap]
             # **판정을 받고 떨어진 것과 아직 안 받은 것은 다른 사실이다.** 뭉뚱그리면
             # 투자자가 "돌리면 될 수도" 라고 읽는다 — 앞은 이미 답이 나온 것이다.
             judged_out = [
-                r for r in rest if "판별을 받은 적이 없다" not in r.gate("not_a_trap").why
+                r
+                for r in blocked_at_trap
+                if "판별을 받은 적이 없다" not in r.gate("not_a_trap").why
             ]
-            unjudged = [r for r in rest if r not in judged_out]
+            unjudged = [r for r in blocked_at_trap if r not in judged_out]
             if judged_out:
                 names = " · ".join(f"`{r.theme}`" for r in judged_out)
                 # 사유가 둘이다 — 뭉뚱그리면 거짓이 된다
@@ -585,6 +646,13 @@ def verdict_md(rows: Sequence[Row], *, limit: int = 3) -> list[str]:
                 out += [
                     f"**아직 판별을 안 받은 {len(unjudged)}개** — {names}. "
                     "후보가 아니라 미지수다.",
+                    "",
+                ]
+            if near_miss:
+                names = " · ".join(f"`{r.theme}`" for r in near_miss)
+                out += [
+                    f"**판별은 통과했으나 지면상 생략한 {len(near_miss)}개** — {names}. "
+                    "②는 넘었고 그 뒤 관문에서 막혔다 — 위 확신도 판정과는 무관하다.",
                     "",
                 ]
 
@@ -632,7 +700,7 @@ def searchable_classes(regime_doc: Mapping[str, Any] | None) -> set[str]:
 
     같은 판정을 두 곳에서 내리지 않도록 이 함수가 `_macro` 와 **같은 규칙**을 쓴다.
     """
-    from msa.l2.regime import CYCLE_CLASSES
+    from msa.l2.regime import CYCLE_CLASSES, tilt_for
 
     classes = (regime_doc or {}).get("classes") or {}
     if not classes:
@@ -645,6 +713,16 @@ def searchable_classes(regime_doc: Mapping[str, Any] | None) -> set[str]:
             # 막지 않지만, 탐색 공간을 짤 때 "모르는 칸" 을 후보에 넣으면 판별을 돌린 뒤
             # ⑤ 에서 걸리는 일이 생긴다. 여기서는 **아는 것만** 센다 (`CLAUDE.md` §2).
             continue
-        if REGIME_TILT.get(str(body.get("verdict")), 1.0) > REGIME_TILT["headwind"]:
+        verdict = body.get("verdict")
+        try:
+            # `l2.regime.tilt_for` 를 그대로 쓴다 — 오타난 verdict 를 순풍으로 읽지
+            # 않는다(`_macro` 와 **같은 규칙**이어야 한다는 이 함수의 존재 이유가
+            # 여기서도 성립해야 한다. 직접 `REGIME_TILT.get(..., 1.0)` 을 쓰면
+            # 오타·null 이 1.0(순풍)으로 떨어져 이 함수만 다른 규칙을 쓰게 된다).
+            tilt = tilt_for(verdict)
+        except ValueError:
+            _log.warning("%s: 모르는 레짐 판정 %r — 탐색 공간에서 뺀다", name, verdict)
+            continue
+        if tilt > REGIME_TILT["headwind"]:
             out.add(str(name))
     return out

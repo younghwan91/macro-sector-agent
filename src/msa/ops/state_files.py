@@ -319,6 +319,8 @@ def load_watchlist(path: Path) -> list[WatchItem]:
     raw = _load_yaml(path)
     if raw is None:
         return []
+    if isinstance(raw, dict) and "watchlist" not in raw:
+        raise StateFileError(f"{path}: 최상위에 `watchlist` 가 있어야 한다")
     items = raw["watchlist"] if isinstance(raw, dict) else raw
     return [watch_from_dict(x) for x in items or []]
 
@@ -396,6 +398,8 @@ def load_rejections(path: Path) -> list[Rejection]:
     raw = _load_yaml(path)
     if raw is None:
         return []
+    if isinstance(raw, dict) and "rejections" not in raw:
+        raise StateFileError(f"{path}: 최상위에 `rejections` 가 있어야 한다")
     rows = raw["rejections"] if isinstance(raw, dict) else raw
     return [rejection_from_dict(x) for x in rows or []]
 

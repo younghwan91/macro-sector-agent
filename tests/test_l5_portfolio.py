@@ -1089,3 +1089,90 @@ def test_solution_bounds_carry_the_liquidity_limit() -> None:
     assert lo == 0.0
     assert hi < CAP_STOCK, "ADV 가 작은 종목의 상한은 C4 가 정한다"
     assert sol.bounds["B"][1] == CAP_STOCK, "ADV 가 없으면 C3 상한 그대로"
+
+
+# --------------------------------------------- 되돌림은 테마 사상 경로에서만 (2026-09-06)
+
+
+def _stock_returns(tickers: list[str], *, seed: int = 3) -> pd.DataFrame:
+    rng = np.random.default_rng(seed)
+    idx = pd.bdate_range("2025-01-01", periods=300)
+    return pd.DataFrame({t: rng.normal(0.0004, 0.015, len(idx)) for t in tickers}, index=idx)
+
+
+def test_equalization_is_skipped_when_sigma_came_from_stock_returns(
+    tmp_path: Path, themes: ThemeSet, daily_ew: pd.DataFrame
+) -> None:
+    """`returns.csv` 경로에서는 테마 내부 분배가 **목적함수에 나타난다** — 되돌리면 안 된다.
+
+    `pipeline/assemble` 이 `idio_vol_ann` 열을 내지 않아 `have_idio` 가 항상 비어 있었고,
+    그 결과 종목 공분산으로 푼 해까지 전부 동일가중으로 눌렸다 (2026-09-06 코드 리뷰).
+    판별은 `idio_vol_ann` 이 아니라 `CovarianceResult.source` 다.
+    """
+    _write_inputs(tmp_path)
+    inputs = load_inputs(tmp_path, cases_path=None, capital_usd=2_000_000)
+    rets = _stock_returns([p.ticker for p in inputs.picks])
+    res = build_portfolio(inputs, asof=ASOF, themes=themes, daily_ew=daily_ew, stock_returns=rets)
+    assert res.cov is not None and res.cov.source == "stock_returns"
+    assert res.solution is not None
+    shipped = {p.ticker: p.target_weight for p in res.positions}
+    assert shipped == pytest.approx(res.solution.weights), "솔버 값이 그대로 실려야 한다"
+    assert not any("동일가중으로 되돌림" in w for w in res.warnings)
+
+
+def test_enb_is_measured_on_the_weights_that_ship(
+    tmp_path: Path, themes: ThemeSet, daily_ew: pd.DataFrame
+) -> None:
+    """ENB 는 **계획서에 실리는 비중**에 대해 잰다 — 되돌림 전 솔버 값이 아니다."""
+    from msa.l5.risk import effective_number_of_bets
+
+    _write_inputs(tmp_path)
+    inputs = load_inputs(tmp_path, cases_path=None, capital_usd=2_000_000)
+    res = build_portfolio(inputs, asof=ASOF, themes=themes, daily_ew=daily_ew)
+    assert res.cov is not None and res.cov.source == "theme_ew_monthly"
+    assert res.enb is not None and res.solution is not None
+    shipped = np.array([p.target_weight for p in res.positions], dtype=float)
+    assert res.enb.enb == pytest.approx(effective_number_of_bets(res.cov.sigma, shipped).enb)
+
+
+def test_bounds_report_no_cap_when_c3_was_relaxed() -> None:
+    """완화 1·2단은 C3 를 빼고 푼다 — 그때 종목 상한은 `None`(걸리지 않았다) 이다.
+
+    `CAP_STOCK` 을 무조건 적으면 `equalize_uninformed_themes` 가 **걸린 적 없는 상한**을
+    근거로 "상한 초과" 경고를 낸다.
+    """
+    from msa.l5.run import equalize_uninformed_themes
+
+    sol = solve(_problem(min_weight=(0.2, 0.2, 0.2)))
+    assert sol.stage > 0 and "C3" in sol.relaxed
+    assert all(hi is None for _, hi in sol.bounds.values()), sol.bounds
+
+    class _P:
+        def __init__(self, ticker: str, theme: str) -> None:
+            self.ticker, self.theme, self.idio_vol_ann = ticker, theme, None
+
+    picks = [_P("A", "t1"), _P("B", "t1")]
+    warns: list[str] = []
+    got = equalize_uninformed_themes(
+        {k: sol.weights[k] for k in ("A", "B")}, picks, [None, None], warns, sol.bounds
+    )
+    assert got["A"] == got["B"]
+    assert not any("상한 초과" in x for x in warns), warns
+
+
+def test_zero_capital_is_the_same_as_no_capital(
+    tmp_path: Path, themes: ThemeSet, daily_ew: pd.DataFrame
+) -> None:
+    """`capital_usd=0.0` 에서 C4 는 서지 않는다 — 진단·계획서·경고가 전부 그렇게 말해야 한다.
+
+    CLI 는 `0` 을 `None` 으로 정규화하지만 공개 API(`build_portfolio`)로는 그대로 들어온다.
+    예전에는 제약을 걸지 않은 채 `c4_applied: true` · "적용 — 자본 $0" 을 찍었다.
+    """
+    _write_inputs(tmp_path)
+    inputs = load_inputs(tmp_path, cases_path=None, capital_usd=0.0)
+    res = build_portfolio(inputs, asof=ASOF, themes=themes, daily_ew=daily_ew)
+    assert res.extra["c4_applied"] is False
+    assert res.solution is not None and res.solution.c4_applied is False
+    assert res.solution.c4_skipped == ()
+    assert any("C4 유동성 미적용" in w for w in res.warnings)
+    assert "C4 유동성: 미적용" in render_plan(res)

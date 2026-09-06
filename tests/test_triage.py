@@ -77,6 +77,46 @@ def test_theme_trust_rejects_zero_checked() -> None:
         triage.evidence_quality(_audit(0, 0))
 
 
+def test_theme_trust_is_none_not_a_crash_on_error_shaped_audit() -> None:
+    """네트워크 사고로 남은 `{"error": ...}` 는 계산 불가지 크래시가 아니다.
+
+    `pipeline.daily` 는 증거 감사가 HTTP 오류를 만나면 `{"error": "..."}`
+    만 남긴다 — 이 audit 에는 `checked` 자체가 없다. 한 테마의 네트워크
+    사고가 `msa run daily` 전체를 죽이면 안 된다 (`CLAUDE.md` §2).
+    """
+    assert triage.theme_trust(_judged(), {"error": "URLError: timed out"}) is None
+
+
+def test_theme_trust_is_none_when_checked_is_zero() -> None:
+    """`checked == 0` 은 품질을 셀 수 없다 — 0.5 로 채우지도, 여기서 죽지도 않는다."""
+    assert triage.theme_trust(_judged(), _audit(0, 0)) is None
+
+
+def test_theme_trust_cap_survives_ticker_note_blend() -> None:
+    """티커 노트 블렌드가 테마 상한을 되살리면 안 된다 (2026-09 리뷰 회귀).
+
+    `theme_trust` 자체는 상한을 지키지만, `score_digest` 가 그 값을 노트와
+    블렌드한 **뒤에도** 같은 상한 아래 있어야 한다.
+    """
+    from msa.ops import resolutions as res
+
+    judged = [_judged(theme="t1")]
+    themes = [{"theme": "t1", "picks": [_pick(ticker="AAA")]}]
+    resolutions = {"t1": [res.Resolution(1, "human", "2026-08-29", "refuted", "원문에 없다")]}
+
+    rows = triage.score_digest(
+        {
+            "themes": themes,
+            "judged": judged,
+            "evidence_audit": {"t1": _audit(20, 20)},
+            "stock_notes": {"AAA": 1.00},  # 최고 노트 신뢰도
+        },
+        resolutions=resolutions,
+    )
+    assert rows[0].j is not None
+    assert rows[0].j <= triage.EVIDENCE_CAP_REFUTED
+
+
 def _pick(**kw: object) -> dict[str, object]:
     d: dict[str, object] = {
         "ticker": "AAA",
@@ -102,12 +142,20 @@ def test_clarity_unjudged_survival_costs_half() -> None:
 
 
 def test_clarity_red_flags_capped_at_two() -> None:
+    """`l4.features` 는 `;` 로 잇는다 (`axes.py:122`) — 실제 산출물 형식으로 검증한다."""
     one = triage.clarity(_pick(red_flags="consecutive_operating_loss"))
-    two = triage.clarity(_pick(red_flags="a,b"))
-    three = triage.clarity(_pick(red_flags="a,b,c"))
+    two = triage.clarity(_pick(red_flags="a;b"))
+    three = triage.clarity(_pick(red_flags="a;b;c"))
     assert one == pytest.approx(0.85)
     assert two == pytest.approx(0.70)
     assert three == pytest.approx(0.70), "3건이 2건보다 두 배 나쁘다고 말할 근거가 없다"
+
+
+def test_clarity_red_flags_uses_semicolon_not_comma() -> None:
+    """생산자(`l4.features`)는 `;` 로 잇는다 — `,` 로 자르면 항상 1건으로 뭉친다."""
+    got = triage.clarity(_pick(red_flags="a;b;c"))
+    assert got == pytest.approx(0.70)
+    assert got != triage.clarity(_pick(red_flags="a"))
 
 
 def test_clarity_partial_inputs_small_penalty() -> None:
@@ -125,7 +173,7 @@ def test_clarity_worst_case_floor_is_point_one() -> None:
     `clarity` 의 `max(..., 0.0)` 은 **앞으로 감점이 늘어날 때를 위한 방어**이지 지금
     돌아가는 가지가 아니다. 그 사실을 테스트가 박아 둔다.
     """
-    got = triage.clarity(_pick(survival_unjudged="x", red_flags="a,b,c", s_partial=True))
+    got = triage.clarity(_pick(survival_unjudged="x", red_flags="a;b;c", s_partial=True))
     assert got == pytest.approx(0.10)
 
 

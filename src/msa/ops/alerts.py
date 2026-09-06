@@ -81,8 +81,19 @@ class WordingViolation(RefusedInput, ValueError):
     """알림 문구에 권유 표현이 들어 있다."""
 
 
-def assert_wording_ok(text: str) -> None:
-    hits = [p.pattern for p in _FORBIDDEN if p.search(text)]
+def assert_wording_ok(text: str, *, passthrough: Sequence[str] = ()) -> None:
+    """`passthrough` 는 **에이전트가 쓴 원문**(논지 주장·무효화 조건 등)이다 — 검사에서 뺀다.
+
+    규약이 막는 것은 **이 저장소가 기계로 만들어 내보내는 권유 문구**다. L3 산출물이
+    "업계 추천 관행" 같은 서술로 `추천` 을 담고 있다고 해서 알림 전체가 죽으면, 검사는
+    사실 전달을 막는 쪽으로 일한다. 원문은 그대로 싣되 검사 대상에서만 제외한다 —
+    조용히 지우지 않는다 (`CLAUDE.md` §2).
+    """
+    scanned = text
+    for s in passthrough:
+        if s:
+            scanned = scanned.replace(s, " ")
+    hits = [p.pattern for p in _FORBIDDEN if p.search(scanned)]
     if hits:
         raise WordingViolation(f"권유 표현: {hits} — 문구: {text[:120]!r}")
 
@@ -101,6 +112,22 @@ class Alert:
         d["kind"] = str(self.kind)
         d["date"] = self.date.isoformat()
         return d
+
+
+def agent_prose(a: Alert) -> list[str]:
+    """알림 본문에 **그대로 실린 에이전트/사람 원문** — 문구 검사에서 빼는 조각들.
+
+    기계가 쓴 템플릿과 통과시킨 원문을 가르는 유일한 지점이다. 여기 없는 것은 전부
+    코드가 쓴 문구로 취급하고 `FORBIDDEN_WORDING` 을 그대로 들이댄다.
+    """
+    f = a.facts
+    out: list[str] = []
+    if a.kind is AlertKind.DAILY_DIGEST:
+        for b in f.get("themes") or []:
+            out += [str(b.get("thesis") or ""), str(b.get("invalidation") or "")]
+    elif a.kind is AlertKind.INVALIDATION_FIRED:
+        out += [str(f.get("observable") or ""), str(f.get("detail") or "")]
+    return [s for s in out if s]
 
 
 def _esc(s: str) -> str:
@@ -128,7 +155,17 @@ def format_alert(a: Alert) -> str:
             f"트리거 {f.get('triggers_met')}/{f.get('triggers_total')} 충족"
         )
     elif a.kind is AlertKind.TIME_STOP_WARNING:
-        head = f"[시간 스탑 {f.get('days_left')}일 전] {who}"
+        # 같은 종류가 예고(D+n)와 경과(D−n) 양쪽에서 뜬다 (`check.py` — `ts_warn` · `ts_due`).
+        # 리포트는 "D{n:+d} 예고/경과" 로 나누는데 알림만 늘 "N일 전" 이라 "−12일 전" 이 됐다.
+        dl = f.get("days_left")
+        n_days = int(dl) if isinstance(dl, int | float) else None
+        if n_days is None:
+            when = "예고"
+        elif n_days > 0:
+            when = f"{n_days}일 전"
+        else:
+            when = f"{-n_days}일 경과"
+        head = f"[시간 스탑 {when}] {who}"
         body = (
             f"시간 스탑일 {f.get('time_stop_date')} · 충족 트리거 {f.get('triggers_met')}/"
             f"{f.get('triggers_total')}\n"
@@ -232,7 +269,7 @@ def format_alert(a: Alert) -> str:
     else:  # pragma: no cover — enum 이 막는다
         raise ValueError(a.kind)
     text = f"{head}\n{body}\n— {FOOTER}"
-    assert_wording_ok(text)
+    assert_wording_ok(text, passthrough=agent_prose(a))
     return text
 
 
@@ -269,11 +306,14 @@ def deliver(
     for a in alerts:
         if not a.text:
             a.text = format_alert(a)
-        assert_wording_ok(a.text)
+    # **파일을 먼저 쓴다.** 문구 검사가 걸리면 예외가 나가는데, 그게 검사 뒤였을 때는
+    # `alerts.json` 자체가 안 남아 "무엇이 걸렸는지" 를 볼 물건이 사라졌다 (docstring 위반).
     path = out_dir / "alerts.json"
     path.write_text(
         json.dumps([a.to_json() for a in alerts], ensure_ascii=False, indent=1), encoding="utf-8"
     )
+    for a in alerts:
+        assert_wording_ok(a.text, passthrough=agent_prose(a))
     if not alerts:
         return DeliveryResult(path, DeliveryStatus.NOTHING_TO_SEND, 0, 0)
     if not send:

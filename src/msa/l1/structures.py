@@ -200,8 +200,15 @@ def spread_diff_series(sp: pd.DataFrame) -> pd.DataFrame:
     if sp.empty:
         return sp
     wide = sp.pivot_table(index=["date", "horizon"], columns="variant", values="spread")
-    uni = sp.pivot_table(index=["date", "horizon"], columns="variant", values="n_universe")
-    sml = sp.pivot_table(index=["date", "horizon"], columns="variant", values="n_small_excluded")
+    # `pivot_table` 은 값이 전부 NaN 인 행을 **버린다** — 어느 변형도 스프레드를 못 낸 달
+    # (초기 창, 또는 자격 우주 < MIN_THEMES_XS 인 h=1)에서 `wide` 와 나머지 둘의 행 수가
+    # 어긋난다. 길이가 우연히 맞으면 조용히 다른 달의 n 이 붙는다 — `wide.index` 로 맞춘다.
+    uni = sp.pivot_table(index=["date", "horizon"], columns="variant", values="n_universe").reindex(
+        wide.index
+    )
+    sml = sp.pivot_table(
+        index=["date", "horizon"], columns="variant", values="n_small_excluded"
+    ).reindex(wide.index)
     out: list[pd.DataFrame] = []
     for a, b in DIFF_PAIRS:
         d = (wide[a] - wide[b]).rename("spread").reset_index()

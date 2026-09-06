@@ -549,3 +549,14 @@ def test_unreadable_confidence_by_is_refused_not_ignored() -> None:
     t["cycle_confidence_by"] = "누군가"
     with pytest.raises(AssembleError, match="cycle_confidence_by"):
         thesis_input_from_l3(t, confidence_source="referee")
+
+
+def test_zero_picks_from_ticker_overlap_states_the_real_reason() -> None:
+    """앞 테마가 티커를 다 가져간 것과 선정 라벨이 없는 것은 다른 사실이다 (CLAUDE.md §2)."""
+    first = _ranking([("A", "ANCHOR", 0.9, 10.0, 1e7), ("B", "TORQUE", 0.8, 10.0, 1e7)])
+    overlap = _ranking([("A", "ANCHOR", 0.7, 10.0, 1e7), ("B", "TORQUE", 0.6, 10.0, 1e7)])
+    unlabeled = _ranking([("Z", "", 0.3, 1.0, 1e6)])
+    pa = picks_csv_from_rankings({"t1": first, "t2": overlap, "t3": unlabeled})
+    assert pa.themes_without_picks == ("t2", "t3")
+    assert "앞 테마에 이미 배정" in pa.empty_reasons["t2"] and "t1" in pa.empty_reasons["t2"]
+    assert "t3" not in pa.empty_reasons  # 라벨 없음은 기존 사유 그대로

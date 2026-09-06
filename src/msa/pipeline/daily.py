@@ -49,7 +49,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Container, Sequence
 from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from pathlib import Path
@@ -137,7 +137,19 @@ PICK_COLUMNS: tuple[str, ...] = (
 
 #: `PICK_COLUMNS` 중 문자열 · 불리언 열 (나머지는 수치). 형을 여기서 한 번만 정한다.
 _PICK_TEXT: frozenset[str] = frozenset(
-    {"group", "barbell_obs", "penalties", "red_flags", "name", "nd_basis"}
+    {
+        "group",
+        "barbell_obs",
+        "penalties",
+        "red_flags",
+        "name",
+        "nd_basis",
+        # `survival_unjudged` 는 `l4.axes.survival_unjudged_reason` 이 내는 한글
+        # 사유 문자열이다(판정 통과면 `""`) — 수치 열로 두면 `_num()` 이
+        # `pd.to_numeric` 으로 항상 NaN→None 을 내서 `triage.clarity` 의 미판정
+        # 페널티가 절대 걸리지 않는다 (2026-09 리뷰).
+        "survival_unjudged",
+    }
 )
 _PICK_BOOL: frozenset[str] = frozenset(
     {"stage2", "above_50d", "vcp_base", "s_partial", "composite_partial"}
@@ -348,6 +360,15 @@ def _theme_entry(
         ex = res.excluded
         entry["picks"] = _pick_rows(rk)
         entry["eligible_tickers"] = [str(t) for t in rk.index]
+        if len(ex) and "stage" not in ex.columns:
+            # 제외 행이 있는데 `stage` 가 없으면 사유를 통째로 버리게 된다 — 조용히 버리지
+            # 않는다 (`CLAUDE.md` §2). L4 산출물 계약이 바뀐 신호다.
+            log.warning(
+                "%s: 제외 %d행에 stage 열이 없어 제외 명단을 싣지 못했다 (열: %s)",
+                theme,
+                len(ex),
+                list(ex.columns),
+            )
         if len(ex) and "stage" in ex.columns:
             entry["hard_excluded_tickers"] = [
                 str(t) for t in ex.index[ex["stage"] == "hard_filter"]
@@ -705,9 +726,7 @@ def render_digest_md(digest: dict[str, Any]) -> str:
         if t["picks_error"]:
             L += ["", f"- picks 실패: {t['picks_error']}"]
             continue
-        new_top = set(diff.get("stocks", {}).get(t["theme"], {}).get("new_in_top", []))
-        if diff.get("first_run"):
-            new_top = {p["ticker"] for p in t["picks"]}
+        new_top = _new_top_for(str(t["theme"]), t["picks"], diff)
         n_ok = len(t["eligible_tickers"])
         if th.get("found") and not th.get("portfolio_eligible"):
             L += [
@@ -790,17 +809,28 @@ FLAG_MEANING: tuple[tuple[str, str], ...] = (
 ALERT_CELLS: tuple[str, ...] = ("시총", "가격", "ADV20", "ND/EBITDA", "런웨이", "52wH", "RS")
 
 
-def _alert_pick_line(p: dict[str, Any]) -> str:
-    """알림용 종목 한 줄 — 사실만. 칸 포맷은 `judgment_cells` 하나를 쓴다 (리포트·md 와 같은 값)."""
+def _alert_pick_line(p: dict[str, Any], new_top: Container[str] = ()) -> str:
+    """알림용 종목 한 줄 — 사실만. 칸 포맷은 `judgment_cells` 하나를 쓴다 (리포트·md 와 같은 값).
+
+    `new_top` 은 diff 가 만든 "상위 N 신규" 집합이다 — **행 자체에는 그 표시가 없다**
+    (`PICK_COLUMNS` 는 랭킹 열만 담는다). md 표(`roster_table_md`)와 같은 근거를 쓴다.
+    """
     tk = str(p["ticker"])
     cells = dict(zip(TABLE_HEADERS, judgment_cells(tk, p), strict=True))
     bits = [tk]
     bits += [f"{h} {cells[h]}" for h in ALERT_CELLS if cells.get(h) not in (None, "", "n/a")]
     if cells.get("비고"):
         bits.append(cells["비고"])
-    if p.get("new_in_top"):
+    if tk in new_top:
         bits.append("NEW")
     return " · ".join(bits)
+
+
+def _new_top_for(theme: str, picks: list[dict[str, Any]], diff: dict[str, Any]) -> set[str]:
+    """md 표와 알림이 같은 "NEW" 를 쓰게 하는 한 곳 (`build_report_md` 의 `new_top` 과 같은 식)."""
+    if diff.get("first_run"):
+        return {str(p["ticker"]) for p in picks}
+    return {str(x) for x in (diff.get("stocks", {}).get(theme, {}) or {}).get("new_in_top", [])}
 
 
 def build_digest_alert(digest: dict[str, Any], asof_d: date, *, picks_per_theme: int = 3) -> Alert:
@@ -827,7 +857,9 @@ def build_digest_alert(digest: dict[str, Any], asof_d: date, *, picks_per_theme:
                 head += f" · 스코어보드 {int(t['rank'])}위"
             if t.get("flags"):
                 head += f" · {', '.join(t['flags'])}"
-            picks = [_alert_pick_line(p) for p in (t.get("picks") or [])[:n_picks]]
+            all_picks = t.get("picks") or []
+            new_top = _new_top_for(str(t["theme"]), all_picks, digest.get("diff") or {})
+            picks = [_alert_pick_line(p, new_top) for p in all_picks[:n_picks]]
             n_elig = len(t.get("eligible_tickers") or [])
             th = t.get("thesis") or {}
             out.append(
@@ -1073,10 +1105,20 @@ def _audit_eligible(
         # 기계 순서로 내려가되 그 사실을 적는다 (`CLAUDE.md` §2).
         thesis = read_thesis_yaml(path)
         items, why = run_triage(theme, res.checks, thesis.get("evidence") or [], res.axis_refs)
+        # 반박이 아니라 **미처리**(못 찾았거나 못 읽은) 증거의 id — 관문③(`sector._evidence`)
+        # 가 대장이 이 특정 id 들을 덮는지 확인하는 데 쓴다. 대장에 "무언가" 있다는 사실만으로
+        # 미처리 근거 전체를 지우면(2026-09 리뷰) 대장에 없는 다른 증거의 미처리 상태가
+        # 조용히 통과로 바뀐다.
+        unresolved_ids = [
+            c.evidence_id
+            for c in res.checks
+            if c.status in ("partial", "unreachable", "unsupported")
+        ]
         out[theme] = {
             "counts": res.counts(),
             "unverified_axes": res.unverified_axes(),
             "checked": len(res.checks),
+            "unresolved_ids": unresolved_ids,
             "triage": [
                 {
                     "evidence_id": x.evidence_id,
@@ -1143,8 +1185,15 @@ def _regime_block(digest: dict[str, Any]) -> dict[str, Any]:
             "declared": regime_mod.declared_constants(),
             "tilts": {},
         }
-    themes_now = [str(e.get("theme")) for e in (digest.get("themes") or [])]
-    tilts = regime_mod.tilts_by_theme(doc, {t: classes[t] for t in themes_now if t in classes})
+    # **관문⑤(`sector._macro`)가 평가하는 모집단과 같아야 한다** — `sector.evaluate` 는
+    # 상위 K 밖이라도 수급 조사(L3.5)를 돌린 테마를 체인에 끌어들인다(§우주). 여기서
+    # top-K 만 계수를 만들면 그 바깥 테마는 "레짐 계수 없음 — 막지 않는다" 로 읽히는데,
+    # 실제로는 계수가 있을 수 있다 (2026-09 리뷰).
+    themes_now = {str(e.get("theme")) for e in (digest.get("themes") or [])}
+    themes_now |= {str(t) for t in (digest.get("balance") or {}).get("surveyed") or []}
+    tilts = regime_mod.tilts_by_theme(
+        doc, {t: classes[t] for t in themes_now if t in classes}
+    )
     return {
         "week": (doc or {}).get("week"),
         "note": regime_analyst.summarize(doc),
@@ -1185,11 +1234,15 @@ def _stock_notes_block(digest: dict[str, Any]) -> dict[str, float]:
 def _scan_pools(sb: pd.DataFrame) -> dict[str, dict[str, Any]]:
     """테마 → 스코어보드의 `pool`·`score`. 상위 K 밖 테마의 ① 관문을 채우는 데 쓴다."""
     out: dict[str, dict[str, Any]] = {}
-    if sb is None or "theme" not in getattr(sb, "columns", []):
+    if sb is None or len(sb) == 0:
         return out
-    for _, row in sb.iterrows():
-        theme = str(row.get("theme"))
-        out[theme] = {"pool": _num(row.get("pool")), "score": _num(row.get("score"))}
+    # `theme` 은 열이 아니라 **인덱스 이름**이다 (`msa.l1.scoreboard` 가 그렇게 만든다).
+    # 열로 찾으면 항상 빈 dict 가 나오고 상위 K 밖 테마의 ① 관문이 통째로 비어버린다.
+    frame = sb.reset_index() if sb.index.name == "theme" else sb
+    if "theme" not in frame.columns:
+        return out
+    for _, row in frame.iterrows():
+        out[str(row["theme"])] = {"pool": _num(row.get("pool")), "score": _num(row.get("score"))}
     return out
 
 
@@ -1654,6 +1707,10 @@ def run_daily(
     # 트리아지 — **실사 뒤에 돈다.** J 축이 `evidence_audit` 을 읽으므로 순서가 규칙의
     # 일부다: 앞에 두면 오늘 실사한 결과가 오늘 점수에 안 들어간다.
     t = _Timer()
+    # 수급 조사(L3.5) — **읽기만 한다.** 트리아지에 전달하지 않는다 (`docs/26` §3.5).
+    # **레짐보다 먼저 돈다** — 레짐의 tilts 모집단이 수급 조사 대상(top-K 밖 포함)을
+    # 알아야 관문⑤ 가 평가하는 모집단과 일치한다 (2026-09 리뷰).
+    digest["balance"] = _balance_block(digest)
     # 매크로 레짐(P2) — **읽기만 한다. 여기서 분석가를 부르지 않는다.** 주간 케이던스를
     # 일간이 대신 돌리면 크레딧이 매일 들고 같은 날 두 번 돌렸을 때 값이 갈린다
     # (`docs/25` §4.3). 없으면 계수가 전부 1.0 이고, 그 사실을 리포트가 적는다.
@@ -1668,8 +1725,6 @@ def run_daily(
     # 리스크·PM(P4) — **점수 뒤에 붙는다. 점수를 바꾸지 않는다.** 경고를 달고 표시 슬롯을
     # 나눌 뿐이고, 자를지는 사람이 정한다 (설계 §9.3).
     digest["risk"] = _risk_block(digest)
-    # 수급 조사(L3.5) — **읽기만 한다.** 트리아지에 전달하지 않는다 (`docs/26` §3.5).
-    digest["balance"] = _balance_block(digest)
     # 스캔 전체의 pool — 상위 K 밖인데 수급 조사가 있는 테마의 ① 관문을 채운다.
     # **조사한 테마가 관문표에서 사라지지 않게** 하는 것이 목적이다 (`msa.sector` §우주).
     digest["scan_all"] = _scan_pools(sb)

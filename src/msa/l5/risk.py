@@ -41,12 +41,16 @@ Ledoit-Wolf(2004) 의 해석적 최적 강도를 쓰지 않는 이유는 둘이�
 ## 시나리오 손실 `L_i` (`docs/07` §2.4 C1-(ii))
 
 ```
-L_i = max(과거 유사 국면 최대 낙폭, 케이스 스터디 사망 사례 낙폭 × 0.5)
+L_i = max(과거 유사 국면 최대 낙폭, 사망 사례가 **지금 선 자리에서** 남긴 하락)
 ```
 
+둘째 항은 `further_loss_from(사례 낙폭, 현재 낙폭) = max(0, 1 − (1−c)/(1−e))` 다. 예전의
+`× 0.5`(`CASE_DEATH_FACTOR`)는 2026-08-28 에 **없앴다** (`docs/21`·`docs/22`) — 두 항의 기준점을
+`current_drawdown` 하나로 맞추자 스케일을 맞추던 그 상수가 사라졌다.
+
 두 항 **모두** 있어야 `L_i` 가 선다. 어느 한 항이라도 없으면 `L_i = None` 이고 사유가 남는다 —
-특히 케이스가 없으면 C1-(ii) 는 그 테마를 **계산할 수 없다** (`docs/11` M6). `× 0.5` 에는 근거가
-없다 (`docs/07` §2.4) — 그래서 결과는 항상 두 항과 어느 쪽이 구속했는지를 함께 들고 다닌다.
+특히 케이스가 없으면 C1-(ii) 는 그 테마를 **계산할 수 없다** (`docs/11` M6). 결과는 항상 두 항과
+어느 쪽이 구속했는지를 함께 들고 다닌다.
 """
 
 from __future__ import annotations
@@ -580,11 +584,11 @@ class ScenarioLoss:
 
     theme: str
     hist_term: float | None  # 과거 유사 국면 최대 낙폭
-    case_raw: float | None  # 사망 사례 낙폭 (× 0.5 전)
+    case_raw: float | None  # 사망 사례의 고점→저점 낙폭 (원값)
     #: 두 항의 **공통 기준점** — 지금 고점 대비 어디에 서 있는가. 예전 `case_factor`(0.5)를
     #: 대신한다: 사례를 임의로 깎는 것이 아니라 **여기서부터 남은 하락**을 잰다.
     entry_drawdown: float | None
-    case_term: float | None  # case_raw × factor
+    case_term: float | None  # further_loss_from(case_raw, entry_drawdown)
     case_id: str | None
     value: float | None  # max(hist, case_term) — 둘 다 있을 때만
     binding: str | None  # "hist" | "case" | None
@@ -710,7 +714,12 @@ def scenario_losses_for_themes(
             level = index_level(ser)
             entry_dd = current_drawdown(level)
             # 유사 국면의 조건점도 **지금 우리가 선 자리**다 — 임의의 −50% 가 아니다.
-            hist = similar_regime_drawdown(level, theme=t, threshold=entry_dd or 0.0)
+            # `entry_dd is None`(이력 없음)과 `0.0`(지금이 고점)은 다른 사실이다. 예전 코드는
+            # `entry_dd or 0.0` 으로 둘을 같은 0.0 으로 뭉갰고, 이력이 없어도 threshold=0 인
+            # 에피소드 탐색이 돌아 `max_loss` 가 나왔다. 이력이 없으면 hist 를 만들지 않는다 —
+            # `scenario_loss` 가 "테마 지수 이력 없음" 사유를 남긴다 (`CLAUDE.md` §2).
+            if entry_dd is not None:
+                hist = similar_regime_drawdown(level, theme=t, threshold=entry_dd)
         out[t] = scenario_loss(
             t, cluster=clusters.get(t), hist=hist, cases=cases, entry_drawdown=entry_dd
         )

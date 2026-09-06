@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from msa import fmt
 from msa.l5.ladders import RUNNER_MA_WEEKS, TIER2_RULE_CAPITAL, PositionPlan
+from msa.l5.optimize import c4_active
 from msa.l5.risk import ScenarioLoss
 
 if TYPE_CHECKING:
@@ -36,7 +37,9 @@ def _src_label(s: str) -> str:
 def _loss_line(sl: ScenarioLoss) -> str:
     if sl.computable:
         assert sl.hist_term is not None and sl.case_raw is not None and sl.case_term is not None
-        which = "과거 국면이 구속" if sl.binding == "hist" else "사망 사례 × 0.5 가 구속"
+        # `× 0.5`(CASE_DEATH_FACTOR)는 2026-08-28 에 없앴다 (docs/21·docs/22) — 사례 항은
+        # 이제 `further_loss_from(case_raw, entry_drawdown)`, 즉 **지금 선 자리에서 남은 하락**이다.
+        which = "과거 국면이 구속" if sl.binding == "hist" else "사망 사례의 남은 하락이 구속"
         return (
             f"  L = {sl.value:.2f}  (과거 유사 국면 {sl.hist_term:.2f} / 사망 사례 "
             f"사례 −{sl.case_raw:.0%} · 현재 −{(sl.entry_drawdown or 0):.0%} → "
@@ -86,8 +89,8 @@ def _c4_text(res: PortfolioResult) -> str:
     뿐 아니라 머리에도 그 사실을 적는다. 여기서 자본 기본값을 **정하지 않는다** (`CLAUDE.md` §1).
     """
     cap = res.extra.get("capital_usd")
-    if not isinstance(cap, int | float):
-        return "미적용 — 자본(--capital) 미지정 → w·Capital ≤ 10%·ADV20 을 걸지 않았다"
+    if not isinstance(cap, int | float) or not c4_active(float(cap)):
+        return "미적용 — 자본(--capital) 미지정 또는 0 이하 → w·Capital ≤ 10%·ADV20 을 걸지 않았다"
     skipped = res.solution.c4_skipped if res.solution is not None else ()
     txt = f"적용 — 자본 ${float(cap):,.0f} · w·Capital ≤ 10%·ADV20"
     if skipped:

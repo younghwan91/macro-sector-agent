@@ -854,8 +854,10 @@ def record_from_dict(d: dict[str, Any]) -> JournalRecord:
     """YAML 한 덩어리 → 레코드. `type` 키로 분기. 필드가 모자라면 dataclass 생성 자체가 실패한다."""
     t = d.get("type")
     body = {k: v for k, v in d.items() if k != "type"}
-    body["date"] = _date(body["date"])
     try:
+        if "date" not in body:
+            raise IncompleteEntry(f"{t} 항목 필드 오류: date 없음")
+        body["date"] = _date(body["date"])
         if t == "entry":
             if "l2_tailwind" in body:  # 2026-08-23 L2 제거 이전의 초안 — 조용히 버리지 않는다
                 raise IncompleteEntry(

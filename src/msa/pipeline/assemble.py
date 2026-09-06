@@ -144,6 +144,10 @@ _OBS_KEYS: tuple[str, ...] = ("observable", "source", "by", "action", "status")
 # ---------------------------------------------------------------- picks
 
 
+#: 티커 중복 제외 사유의 머리 — 장부 문구와 "0건 이유" 판정이 같은 문자열을 본다.
+_DUP_REASON = "티커 중복"
+
+
 @dataclass(frozen=True)
 class PicksAssembly:
     """`picks_csv_from_rankings` 의 결과 — 계약 프레임 + 제외 장부."""
@@ -153,6 +157,9 @@ class PicksAssembly:
     counts: dict[str, int]  # 제외 사유 → 건수
     themes_without_picks: tuple[str, ...]  # 한 행도 남지 않은 테마
     missing_inputs: dict[str, tuple[str, ...]]  # 테마 → ranking.csv 에 없던 내보내기 열
+    #: 테마 → 한 행도 안 남은 **실제** 이유. 라벨이 없어서인지, 앞 테마가 티커를 다 가져가서인지
+    #: 구별한다 — 뭉개면 "선정 라벨이 없다" 는 틀린 진단이 보고서에 남는다 (`CLAUDE.md` §2).
+    empty_reasons: Mapping[str, str] = field(default_factory=dict)
     columns_omitted: Mapping[str, str] = field(default_factory=lambda: dict(OMITTED_COLUMNS))
 
     @property
@@ -243,6 +250,7 @@ def picks_csv_from_rankings(
     ex_rows: list[dict[str, str]] = []
     seen: dict[str, str] = {}
     empty: list[str] = []
+    empty_reasons: dict[str, str] = {}
     missing_inputs: dict[str, tuple[str, ...]] = {}
     for theme, src in theme_to_ranking.items():
         rk = src if isinstance(src, pd.DataFrame) else read_ranking(src)
@@ -253,6 +261,7 @@ def picks_csv_from_rankings(
         if miss_val:
             missing_inputs[theme] = miss_val
         n_before = len(rows)
+        ex_before = len(ex_rows)
         kept = 0
         order = rk.sort_values("rank", kind="mergesort") if len(rk) else rk
         for tk, row in order.iterrows():
@@ -283,7 +292,7 @@ def picks_csv_from_rankings(
                     {
                         "theme": theme,
                         "ticker": ticker,
-                        "reason": f"티커 중복 — 이미 {seen[ticker]} 에 배정",
+                        "reason": f"{_DUP_REASON} — 이미 {seen[ticker]} 에 배정",
                     }
                 )
                 continue
@@ -302,6 +311,14 @@ def picks_csv_from_rankings(
             )
         if len(rows) == n_before:
             empty.append(theme)
+            mine = ex_rows[ex_before:]
+            dupes = [r for r in mine if r["reason"].startswith(_DUP_REASON)]
+            if mine and len(dupes) == len(mine):
+                owners = sorted({seen[r["ticker"]] for r in dupes if r["ticker"] in seen})
+                empty_reasons[theme] = (
+                    f"picks 0건 — 적격 {len(dupes)}종목이 전부 앞 테마에 이미 배정됐다"
+                    f" ({', '.join(owners)})"
+                )
     frame = pd.DataFrame(rows, columns=list(PICKS_COLUMNS))
     excluded = pd.DataFrame(ex_rows, columns=["theme", "ticker", "reason"])
     counts = dict(sorted(Counter(r["reason"] for r in ex_rows).items()))
@@ -311,6 +328,7 @@ def picks_csv_from_rankings(
         counts=counts,
         themes_without_picks=tuple(empty),
         missing_inputs=missing_inputs,
+        empty_reasons=empty_reasons,
     )
 
 
@@ -579,8 +597,8 @@ def assemble_inputs(
 
     pa = picks_csv_from_rankings(rankings, top_per_theme=top_per_theme)
     for theme in pa.themes_without_picks:
-        skipped[theme] = (
-            "picks 0건 — ranking.csv 에 선정 라벨(group=ELIGIBLE; 옛 ANCHOR/TORQUE)이 없다"
+        skipped[theme] = pa.empty_reasons.get(
+            theme, "picks 0건 — ranking.csv 에 선정 라벨(group=ELIGIBLE; 옛 ANCHOR/TORQUE)이 없다"
         )
         yamls.pop(theme, None)
         parsed.pop(theme, None)

@@ -663,6 +663,10 @@ def check_role_output(role: str, obj: dict[str, Any]) -> None:
     if not isinstance(ev, list):
         raise RoleOutputError(f"{role}: evidence 가 배열이 아니다")
     for i, e in enumerate(ev):
+        # dict 이 아니면 `in` 이 부분문자열 검사가 되어 맨 문자열이 통과한다 —
+        # 그 실패는 한참 뒤 `merge_evidence` 의 `e["id"]` 에서야 드러난다
+        if not isinstance(e, dict):
+            raise RoleOutputError(f"{role}: evidence[{i}] 가 객체가 아니다: {type(e).__name__}")
         miss = [k for k in EVIDENCE_ITEM_SCHEMA["required"] if k not in e]
         if miss:
             raise RoleOutputError(f"{role}: evidence[{i}] 필드 누락 {miss}")

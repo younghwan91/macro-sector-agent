@@ -257,10 +257,16 @@ def _panel_code_version() -> str:
 
     재무 SQL 까지 넣는 이유: 세 캐시(패널·재무·지표)가 **같은 지문 접미어**를 쓴다
     (`l1/cache.py`). 재무 캐시는 파일 존재만 보므로 지문이 안 바뀌면 옛 parquet 을 읽는다.
+
+    `blocks.py` 소스까지 넣는 이유: 지표 캐시는 SQL 이 아니라 **지표 식**의 산물이다. 식 ·
+    ORIENTATION · BLOCK_INDICATORS 를 고쳐도 SQL 이 그대로면 지문이 안 바뀌어 `msa scan` 이
+    `--force` 없이 옛 지표 parquet 을 조용히 낸다 (2026-09-06 코드 리뷰).
     """
+    from msa.io import code_fingerprint
     from msa.l1 import fundamentals as f
 
     parts = (
+        code_fingerprint("msa.l1.blocks"),
         _PANEL_SQL,
         _SPY_SQL,
         f._QUARTERLY_SQL,

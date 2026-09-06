@@ -762,7 +762,9 @@ def validate_thesis(
     _check_gate(r, thesis.get("gate_result"), ev_ids)
 
     c = thesis["cycle_confidence"]
-    if not isinstance(c, int | float) or not (0.0 <= float(c) <= 1.0):
+    # bool 은 int 의 하위형이다 — 걸러내지 않으면 `true` 가 1.0 으로 통과하고,
+    # 재도출 대조(`_confidence_candidates`)는 bool 을 빼므로 조용히 건너뛴다
+    if not isinstance(c, int | float) or isinstance(c, bool) or not (0.0 <= float(c) <= 1.0):
         r.error("R_CONFIDENCE_RANGE", f"cycle_confidence {c!r} ∉ [0, 1]")
 
     _check_recompute(r, thesis, ev_ids)

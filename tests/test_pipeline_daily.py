@@ -798,3 +798,34 @@ def test_triage_section_renders_uncomputable_rows_with_note() -> None:
     }
     text = "\n".join(D.triage_section_md(digest))
     assert "—" in text and "증거 실사 없음" in text
+
+
+def test_scan_pools_reads_the_theme_index_not_a_column() -> None:
+    """스코어보드는 `theme` 을 **인덱스 이름**으로 만든다 (`msa.l1.scoreboard`).
+
+    열로 찾던 예전 판은 언제나 빈 dict 를 돌려줬고, 상위 K 밖 테마의 관문 ①이
+    통째로 "계산 안 됨" 으로 떨어졌다.
+    """
+    sb = pd.DataFrame(
+        {"score": [0.9, 0.4], "pool": [0.8, 0.3]},
+        index=pd.Index(["uranium", "copper"], name="theme"),
+    )
+    got = D._scan_pools(sb)
+    assert got == {
+        "uranium": {"pool": 0.8, "score": 0.9},
+        "copper": {"pool": 0.3, "score": 0.4},
+    }
+    assert D._scan_pools(sb.iloc[:0]) == {}
+
+
+def test_alert_pick_line_marks_new_from_the_diff() -> None:
+    """NEW 표시는 diff 에서만 온다 — 랭킹 행에는 그 열이 없다."""
+    p = {"ticker": "CCJ", "rank": 1, "group": "ELIGIBLE"}
+    assert "NEW" in D._alert_pick_line(p, {"CCJ"})
+    assert "NEW" not in D._alert_pick_line(p, {"UEC"})
+    assert "NEW" not in D._alert_pick_line(p)
+    picks = [{"ticker": "CCJ"}, {"ticker": "UEC"}]
+    assert D._new_top_for("uranium", picks, {"first_run": True}) == {"CCJ", "UEC"}
+    diff = {"stocks": {"uranium": {"new_in_top": ["UEC"]}}}
+    assert D._new_top_for("uranium", picks, diff) == {"UEC"}
+    assert D._new_top_for("copper", picks, diff) == set()

@@ -106,6 +106,36 @@ class CompletionResult:
         return obj
 
 
+def _strip_trailing_commas(s: str) -> str:
+    """문자열 리터럴 **밖**의 꼬리 쉼표만 지운다.
+
+    정규식으로 전체를 훑으면 `claim` 본문 안의 `", ]"` 같은 대목까지 고쳐진다 — 문법 사고를
+    고치려다 **증거의 원문을 조용히 바꾸는 것**이라 §2 의 조용한 절단과 같은 종류다.
+    """
+    out: list[str] = []
+    in_str = esc = False
+    for ch in s:
+        if in_str:
+            out.append(ch)
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch in "}]":
+            j = len(out) - 1
+            while j >= 0 and out[j] in " \t\r\n":
+                j -= 1
+            if j >= 0 and out[j] == ",":
+                del out[j]
+        out.append(ch)
+    return "".join(out)
+
+
 def _parse_json(text: str) -> Any:
     t = text.strip()
     if t.startswith("```"):
@@ -127,7 +157,7 @@ def _parse_json(text: str) -> Any:
         # 하나로 두 번 다 죽었다. 내용이 아니라 문법 장식 때문에 라운드를 버리는 것은
         # 아깝고, 이것을 고쳐도 **잘못된 값을 받아들이는 것이 아니다** — 쉼표를 지운 뒤에도
         # 나머지가 유효한 JSON 이어야 통과한다.
-        fixed = re.sub(r",(\s*[}\]])", r"\1", cand)
+        fixed = _strip_trailing_commas(cand)
         if fixed != cand:
             try:
                 return json.loads(fixed)

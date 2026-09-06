@@ -175,6 +175,8 @@ def count_trials() -> dict[str, int]:
     - **회전율** B×W = 8 — §8.1 U5 가 "정의는 구현 시 적고 시도 수에 계상한다" 고 했다.
     - **1M 수준** B×W = 8 — §4.3 의 PBO 항이 "열 = 4 후보의 1M 월별 초과수익" 을 요구하는데
       위 산식에 그 칸이 없다. 요구된 입력이므로 만들고, 만든 만큼 센다.
+    - **1M 차** P×W = 10 — `overfitting_summary` 가 `(PBO_HORIZON, *HORIZONS)` 를 돌아
+      차 계열에도 1M DSR 칸을 쓴다. 들여다본 칸이므로 센다 (2026-09-06 코드 리뷰).
 
     선언만 세면 **4** 다 — 주 창·12M 의 `X − B3` 셋과 `B0 − B1` 하나 (§4.3). 둘 다 적는다.
     """
@@ -188,6 +190,7 @@ def count_trials() -> dict[str, int]:
     doc = levels + diff_b3 + diff_b0b1 + diff_b0b2 + mortality + sens_d1
     turnover = b * w
     level_1m = b * w
+    diff_1m = len(PAIR_NAMES) * w
     return {
         "candidates": b,
         "horizons": h,
@@ -203,9 +206,10 @@ def count_trials() -> dict[str, int]:
         "docs15_declared_total": N_TRIALS_L4 + doc,
         "turnover_added": turnover,
         "level_1m_for_pbo_added": level_1m,
-        "added_beyond_docs15": turnover + level_1m,
+        "diff_1m_added": diff_1m,
+        "added_beyond_docs15": turnover + level_1m + diff_1m,
         "declared_only": 4,
-        "total": N_TRIALS_L4 + doc + turnover + level_1m,
+        "total": N_TRIALS_L4 + doc + turnover + level_1m + diff_1m,
     }
 
 
@@ -594,7 +598,13 @@ def overfitting_summary(
 
 def _call(lo: float, hi: float, better: str, worse: str) -> str:
     """§4 의 세 칸. **부호는 한쪽만 본다** — 양측 검정으로 바꾸지 않는다 (§4.1 · §4.2).
-    "0 포함"을 "약한 증거"로 읽지 않는다."""
+    "0 포함"을 "약한 증거"로 읽지 않는다.
+
+    CI 경계가 NaN 이면 (`block_bootstrap_mean` 이 비중첩 관측 4개 미만에서 NaN 을 낸다)
+    "0 을 포함한다" 가 아니라 **재지 못했다** 이다 — `indistinguishable` 로 접으면 못 잰 칸이
+    잰 칸으로 계상되어 `nobody_beats_b3` 가 켜진다 (`CLAUDE.md` §2)."""
+    if pd.isna(lo) or pd.isna(hi):
+        return "undetermined"
     if lo > 0:
         return better
     if hi < 0:
@@ -672,6 +682,8 @@ def verdict(
             "n_eff": float(r["n_eff"]),
             "call": _call(lo, hi, "beats_B3", "worse_than_B3"),
         }
+        if primary[name]["call"] == "undetermined":
+            primary[name]["reason"] = "CI 경계가 NaN — 비중첩 관측이 부트스트랩에 못 미친다"
     out["primary_vs_b3_12m"] = primary
     beat = [k for k, v in primary.items() if v.get("call") == "beats_B3"]
     out["beating_b3"] = beat
@@ -910,7 +922,8 @@ def render_report(res: L4StructureResult) -> str:
         L.append("  ⇒ 스모크라 §5 의 조치를 읽지 않는다. 판정은 전체 실행에서만 나온다.")
     elif v.get("n_primary_undetermined", 0):
         L.append(
-            f"  ⇒ 관문 셀이 빈 쌍 {v['n_primary_undetermined']}개 — **판정하지 않는다.**"
+            f"  ⇒ 판정 불가한 쌍 {v['n_primary_undetermined']}개 (셀이 비었거나 CI 가 NaN)"
+            " — **판정하지 않는다.**"
             " 못 쟀다는 것은 졌다는 뜻이 아니다 (CLAUDE.md §2)."
         )
     elif v.get("nobody_beats_b3"):
@@ -1169,9 +1182,11 @@ def run_structures(
     )
     dates = month_grid(GRID_START, last_complete)
     n_total = {str(k): int(v) for k, v in ms.counts()["n_total"].astype(int).items()}
-    all_ids = [t for t in themes.ids() if t in n_total]
-    skipped = [(t, n_total[t]) for t in all_ids if n_total[t] < MIN_MEMBERS_POSSIBLE]
-    ids = [t for t in all_ids if n_total[t] >= MIN_MEMBERS_POSSIBLE]
+    # `counts()` 는 groupby 라 구성원 0인 테마의 행이 없다 — `in n_total` 로 거르면 그 테마가
+    # 어느 산출물에도 안 남는다 (`CLAUDE.md` §2 · `backtest.run_backtest` 와 같은 수정).
+    all_ids = list(themes.ids())
+    skipped = [(t, n_total.get(t, 0)) for t in all_ids if n_total.get(t, 0) < MIN_MEMBERS_POSSIBLE]
+    ids = [t for t in all_ids if n_total.get(t, 0) >= MIN_MEMBERS_POSSIBLE]
     smoke = themes_filter is not None or max_months is not None
     if themes_filter:
         ids = [t for t in ids if t in set(themes_filter)]
