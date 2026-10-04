@@ -355,7 +355,8 @@ Sharadar 스토어가 2026-08-14 에서 끊겼고 판정은 2026-08-25 에 내�
 
 **입력 계약.** L4·L5 모듈을 임포트하지 않는다. 스코어카드는 `state/scans/<date>/` 파일, 구성원 PIT 재무
 요약은 DuckDB 에서 직접(시총 상위 12), (거시 상태 입력은 2026-08-23 L2 제거로 없다 — `docs/13` §9),
-이전 thesis 는 `state/theses/<이전 date>/`, few-shot 은 `state/cases/*.md`(없으면 "few-shot 없음").
+이전 thesis 는 `state/theses/<이전 date>/`, few-shot 은 `docs/cases/*.md`(README 제외 · `Paths.case_studies`,
+없으면 "few-shot 없음". 2026-10-05 까지는 `state/cases/*.md` 를 찾아 늘 비어 있었다 — `journal/2026-10-05-few-shot-cases-wired.md`).
 
 **축 1 은 L1 값을 그대로 옮긴다.** `verdict_post_ss`·`axis1_contested`·`ss_n`·`ss_coverage`·`ma_flag` 를 thesis 에
 복사하고 `referee` 는 contested 일 때의 서술 판정만 낸다. 스캔 자체를 `reliability: medium` 증거로 한 줄 추가한다.

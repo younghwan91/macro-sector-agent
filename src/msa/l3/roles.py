@@ -88,7 +88,7 @@ def _fmt_members(inputs: ResearchInputs | BearInputs) -> str:
 def _fmt_cases(cases: tuple[CaseStudy, ...]) -> str:
     if not cases:
         return (
-            "## 케이스 스터디 few-shot\n(few-shot 없음 — `state/cases/` 가 비어 있다. "
+            "## 케이스 스터디 few-shot\n(few-shot 없음 — `docs/cases/` 가 비어 있다. "
             "M6 산출물이 들어오면 여기 실린다.)"
         )
     parts = ["## 케이스 스터디 few-shot (판정 감각 보정용 — 임계를 여기에 맞추지 않는다)"]

@@ -9,7 +9,7 @@ L3 는 다른 계층의 **파일 산출물**만 읽는다. L4·L5 모듈을 임�
 | 축 1 입력 (`Axis1Inputs`) | 같은 스캔의 `indicators.csv` (L1 계산) | `axis1_available=False` |
 | 구성원 재무 요약 (`MemberSummary`) | DuckDB 스토어 — 선택 | 경고 남기고 비운다 (`CLAUDE.md` §2) |
 | 이전 thesis | `state/theses/<이전 date>/<theme>.thesis.yaml` | `None` — drift diff 없음 |
-| 케이스 스터디 few-shot | `state/cases/*.md` | "few-shot 없음" 을 프롬프트에 적는다 |
+| 케이스 스터디 few-shot | `docs/cases/*.md` (README 제외) | "few-shot 없음" 을 프롬프트에 적는다 |
 
 **bear 는 `BearInputs` 만 받는다** — L1 스코어·순위·블록 점수·L1 축1 판정이 빠진 부분집합이다
 (`docs/05` §6 "에이전트가 항상 강세 논지를 만든다" 대응). 어떤 필드가 빠지는지는 `BearInputs` 자체가
@@ -323,12 +323,20 @@ def load_prior_thesis(path: Path | None) -> dict[str, Any] | None:
         return None
 
 
+#: 케이스 디렉터리 안에서 케이스가 아닌 파일 — 색인은 few-shot 이 아니다.
+CASE_STUDY_SKIP = frozenset({"README.md"})
+
+
 def load_case_studies(cases_dir: Path | None) -> tuple[CaseStudy, ...]:
-    """`state/cases/*.md` — M6 가 작성하는 6건. 없으면 빈 튜플 (프롬프트에 "few-shot 없음")."""
+    """`docs/cases/*.md`(`Paths.case_studies`) — M6 가 작성한 6건. 없으면 빈 튜플
+    (프롬프트에 "few-shot 없음"). 색인(`README.md`)은 뺀다 — 요약표는 판정 사례가 아니다.
+    """
     if cases_dir is None or not cases_dir.exists():
         return ()
     out = []
     for p in sorted(cases_dir.glob("*.md")):
+        if p.name in CASE_STUDY_SKIP:
+            continue
         out.append(CaseStudy(case_id=p.stem, text=p.read_text(encoding="utf-8")))
     return tuple(out)
 
@@ -445,9 +453,10 @@ def assemble_inputs(
     else:
         warnings.append("구성원 재무 요약 생략(--no-store)")
     prior_path = find_prior_thesis(p.theses, theme_id, asof_s)
-    cases = load_case_studies(cases_dir if cases_dir is not None else p.cases_dir)
+    cases_src = cases_dir if cases_dir is not None else p.case_studies
+    cases = load_case_studies(cases_src)
     if not cases:
-        warnings.append("케이스 스터디 few-shot 없음 (state/cases/ 비어 있음 — M6 산출물)")
+        warnings.append(f"케이스 스터디 few-shot 없음 ({cases_src} 비어 있음 — M6 산출물)")
     return ResearchInputs(
         theme_id=theme_id,
         theme_name=theme.name_ko,

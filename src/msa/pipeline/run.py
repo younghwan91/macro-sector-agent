@@ -898,7 +898,7 @@ def _research_step(
                 th,
                 state_dir=roots.state,
                 asof=asof_s,
-                cases_dir=p.cases_dir,
+                cases_dir=p.case_studies,
                 with_store=True,
             )
             prov = make_provider(provider, theme_id=th)

@@ -49,4 +49,5 @@ mall-reit-2018 은 축 1 이 저장소 설정상 n/a 라 `verified: false` → C
 
 - 임계값(−2%, 10%/35%, 0.5 등)과 §4 계수를 바꾸지 않는다.
 - 11건 중 나머지 5건(우라늄·희토류·유선통신·육상 시추·중국 사교육)은 작성하지 않았다 — `04` §5 의 우선 6건만.
-- M7 의 few-shot 투입은 별도 작업이다 (`11-roadmap.md`).
+- M7 의 few-shot 투입은 2026-10-05 에 됐다 — L3 네 역할이 이 디렉터리의 6건(README 제외)을 그대로 받는다
+  (`src/msa/l3/contracts.py` `load_case_studies` · `journal/2026-10-05-few-shot-cases-wired.md`).

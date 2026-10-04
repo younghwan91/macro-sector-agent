@@ -440,7 +440,9 @@ def test_assemble_inputs_from_scan_files(tmp_path: Path) -> None:
     assert card.capex_to_da_qtrs_below1 == 10.0
     with pytest.raises(InputsError):
         load_scorecard(tmp_path / "scans" / "2026-08-14", "coal")
-    inp = assemble_inputs("uranium", state_dir=tmp_path, with_store=False)
+    inp = assemble_inputs(
+        "uranium", state_dir=tmp_path, cases_dir=tmp_path / "no-cases", with_store=False
+    )
     assert inp.theme_name == "우라늄" and inp.members == ()
     assert any("--no-store" in w for w in inp.warnings)
     assert any("few-shot 없음" in w for w in inp.warnings)
@@ -454,7 +456,9 @@ def test_assemble_inputs_loads_prior_and_cases(tmp_path: Path) -> None:
     prev = tmp_path / "theses" / "2026-07-31"
     prev.mkdir(parents=True)
     (prev / "uranium.thesis.yaml").write_text(yaml.safe_dump({"claim": "이전"}), encoding="utf-8")
-    inp = assemble_inputs("uranium", state_dir=tmp_path, with_store=False)
+    inp = assemble_inputs(
+        "uranium", state_dir=tmp_path, cases_dir=tmp_path / "cases", with_store=False
+    )
     assert not hasattr(inp, "macro")  # L2 제거 — 거시 입력 자체가 없다
     assert inp.prior_thesis == {"claim": "이전"}
     assert inp.prior_thesis_path == "theses/2026-07-31/uranium.thesis.yaml"
@@ -465,6 +469,24 @@ def test_assemble_inputs_loads_prior_and_cases(tmp_path: Path) -> None:
     by_role = {r.role: r for r in prov.requests}
     assert "silver-2015" in by_role["bear"].as_text()  # few-shot 투입
     assert "## 이전 thesis (theses/2026-07-31" in by_role["referee"].as_text()
+
+
+def test_default_few_shot_source_is_the_committed_case_library(tmp_path: Path) -> None:
+    """2026-10-05: 로더가 `state/cases/` 를 보던 동안 M6 본문은 `docs/cases/` 에 있었다 —
+    기본 경로가 실제 6건을 읽고, 색인(README)은 끼지 않는다."""
+    from msa.config import paths
+    from msa.l3.contracts import load_case_studies
+
+    src = paths().case_studies
+    assert src.is_dir() and src.name == "cases" and src.parent.name == "docs"
+    cases = load_case_studies(src)
+    ids = [c.case_id for c in cases]
+    assert "README" not in ids and len(ids) == 6
+    assert {"coal-2013", "offshore-drilling-2016"} <= set(ids)
+    write_scan_dir(tmp_path, ASOF, ("uranium",))
+    inp = assemble_inputs("uranium", state_dir=tmp_path, with_store=False)
+    assert [c.case_id for c in inp.cases] == ids
+    assert not any("few-shot 없음" in w for w in inp.warnings)
 
 
 def test_missing_scan_dir_raises(tmp_path: Path) -> None:

@@ -156,6 +156,17 @@ class Paths:
         """L5 케이스 스터디 표 (`state/cases/cases.yaml`)."""
         return self.cases_dir / "cases.yaml"
 
+    @property
+    def case_studies(self) -> Path:
+        """케이스 스터디 **본문** 6건 (`docs/cases/*.md`) — L3 few-shot 의 출처.
+
+        2026-10-05 까지 L3 는 `state/cases/*.md` 를 찾았는데 M6 는 본문을 `docs/cases/` 에
+        썼다 — 로더가 늘 빈 튜플을 받아 "few-shot 없음" 으로 돌았다 (`docs/11` M7 미완 항목의
+        실제 원인). 본문은 저장소에 커밋된 문서라 `state/` 가 아니라 `docs/` 가 맞다.
+        `MSA_STATE` 를 옮겨도 이 경로는 저장소를 따른다.
+        """
+        return REPO_ROOT / "docs" / "cases"
+
     # ---- state/ 아래 파일
 
     @property
