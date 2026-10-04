@@ -56,6 +56,13 @@ log = logging.getLogger(__name__)
 MIN_PRICE_USD = 1.0
 RET_CAP_HI = 3.0
 RET_CAP_LO = -0.95
+
+#: SPY 최종일이 패널 최종일보다 이만큼(달력일) 넘게 뒤처지면 경고한다. 같은 거래일에 끝나는 것이
+#: 정상이고, 주말·연휴를 건너는 3일까지는 달력 탓이다. 그 이상은 **데이터 사정**이다 — SPY 가
+#: 스토어가 아니라 벌크 `funds.csv.zip` 에서 올 때(`_spy_series`) 두 소스의 갱신 주기가 달라
+#: 생긴다. 뒤처진 구간은 C 블록이 ffill 된 SPY 를 분모로 쓰므로(`blocks.py` `reindex().ffill()`)
+#: RS·상대거래대금이 그 구간에서 왜곡된다. 조용히 넘기지 않는다 (`CLAUDE.md` §2).
+SPY_LAG_WARN_DAYS = 3
 SMA_WINDOW = 200
 NH_WINDOW = 126
 
@@ -353,10 +360,33 @@ def build_panel(
         "ret_cap": [RET_CAP_LO, RET_CAP_HI],
         "n_capped_total": int(frame["n_capped"].sum()),
         "rows": len(frame),
+        **spy_coverage(frame, spy),
     }
     panel = ThemePanel(frame=frame, spy=spy, built_from=built)
     panel.save(fc.cache_dir)
     return panel
+
+
+def spy_coverage(frame: pd.DataFrame, spy: pd.DataFrame) -> dict[str, Any]:
+    """SPY 시계열이 패널의 끝까지 덮는지 — `built_from` 에 남기고, 뒤처지면 경고한다.
+
+    반환 `spy_end`(SPY 최종일) · `spy_lag_days`(패널 최종일 − SPY 최종일, 달력일; 양수면
+    SPY 가 뒤처진 것). 경고 임계는 `SPY_LAG_WARN_DAYS`. 스토어가 없는 경로(`panel_from_frames`)
+    에서도 같은 계산을 쓴다 — 캐시된 패널은 `built_from` 의 값을 그대로 읽는다.
+    """
+    frame_end = pd.Timestamp(frame.index.get_level_values("date").max())
+    spy_end = pd.Timestamp(spy.index.max())
+    lag = int((frame_end - spy_end).days)
+    if lag > SPY_LAG_WARN_DAYS:
+        log.warning(
+            "panel: SPY 최종일 %s 가 패널 최종일 %s 보다 %d일 뒤처진다 — 그 구간의 RS·상대"
+            "거래대금은 ffill 된 SPY 를 분모로 쓴다. SPY 가 벌크 funds.csv.zip 에서 왔다면 벌크"
+            " 갱신을 확인해라 (docs/18 §6)",
+            spy_end.date(),
+            frame_end.date(),
+            lag,
+        )
+    return {"spy_end": str(spy_end.date()), "spy_lag_days": lag}
 
 
 def panel_from_frames(frame: pd.DataFrame, spy: pd.DataFrame) -> ThemePanel:
@@ -368,5 +398,7 @@ def panel_from_frames(frame: pd.DataFrame, spy: pd.DataFrame) -> ThemePanel:
     if list(frame.index.names) != ["date", "theme"]:
         raise KeyError("frame 의 인덱스는 (date, theme) 여야 한다")
     return ThemePanel(
-        frame=frame.sort_index(), spy=spy.sort_index(), built_from={"synthetic": True}
+        frame=frame.sort_index(),
+        spy=spy.sort_index(),
+        built_from={"synthetic": True, **spy_coverage(frame, spy)},
     )

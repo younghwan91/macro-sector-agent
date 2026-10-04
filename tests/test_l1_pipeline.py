@@ -324,3 +324,60 @@ def test_asof_note_is_empty_unless_clamped() -> None:
         }
     )
     assert "2026-08-26" in note and "2026-08-24" in note
+
+
+# ---------------------------------------------------------------------------
+# SPY 가 패널 끝까지 덮는가 (2026-10-05) — 벌크 폴백은 스토어와 갱신 주기가 다르다
+# ---------------------------------------------------------------------------
+
+
+def _frame_and_spy(n_days: int, spy_days: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+    from msa.l1.panel import spy_coverage  # noqa: F401 — 존재 확인
+
+    days = pd.bdate_range("2026-01-05", periods=n_days)
+    idx = pd.MultiIndex.from_product([days, ["alpha"]], names=["date", "theme"])
+    frame = pd.DataFrame({"close": 1.0}, index=idx)
+    spy = pd.DataFrame({"close": 100.0, "dv": 1e10}, index=days[:spy_days])
+    return frame, spy
+
+
+def test_spy_coverage_records_end_and_lag_without_warning_when_aligned(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from msa.l1.panel import spy_coverage
+
+    frame, spy = _frame_and_spy(20, 20)
+    with caplog.at_level("WARNING", logger="msa.l1.panel"):
+        meta = spy_coverage(frame, spy)
+    assert meta == {"spy_end": str(spy.index.max().date()), "spy_lag_days": 0}
+    assert not [r for r in caplog.records if "SPY 최종일" in r.getMessage()]
+
+
+def test_spy_coverage_warns_when_spy_lags_the_panel(caplog: pytest.LogCaptureFixture) -> None:
+    """SPY 가 벌크에서 와서 스토어보다 뒤처지면 그 구간의 RS 는 ffill 분모다 — 조용히 넘기지
+    않는다.
+    """
+    from msa.l1.panel import SPY_LAG_WARN_DAYS, spy_coverage
+
+    frame, spy = _frame_and_spy(20, 10)  # 10 영업일 = 14 달력일 뒤처짐
+    with caplog.at_level("WARNING", logger="msa.l1.panel"):
+        meta = spy_coverage(frame, spy)
+    assert meta["spy_lag_days"] == 14 > SPY_LAG_WARN_DAYS
+    msgs = [r.getMessage() for r in caplog.records if "SPY 최종일" in r.getMessage()]
+    assert len(msgs) == 1 and "14일" in msgs[0]
+
+
+def test_spy_coverage_tolerates_a_weekend(caplog: pytest.LogCaptureFixture) -> None:
+    """금요일 SPY · 월요일 패널 — 달력 3일은 경고가 아니다 (SPY_LAG_WARN_DAYS 의 근거)."""
+    from msa.l1.panel import spy_coverage
+
+    frame, spy = _frame_and_spy(6, 5)  # 월~월(6영업일) vs 월~금
+    with caplog.at_level("WARNING", logger="msa.l1.panel"):
+        meta = spy_coverage(frame, spy)
+    assert meta["spy_lag_days"] == 3
+    assert not [r for r in caplog.records if "SPY 최종일" in r.getMessage()]
+
+
+def test_panel_from_frames_carries_spy_coverage(panel: ThemePanel) -> None:
+    assert panel.built_from["spy_lag_days"] == 0
+    assert "spy_end" in panel.built_from

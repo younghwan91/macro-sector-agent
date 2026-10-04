@@ -123,7 +123,8 @@ msa research <theme>  # L3 에이전트 4역할(supply·catalyst·bear·referee)
                       #   4건이 전부 ProviderError(종료코드 3)로 죽었다 — 속도 제한이다.
                       #   순차로 돌리면 같은 테마가 그대로 통과한다. 종료코드: 2=스키마 거부
                       #   (저장 안 함) · 3=제공자 오류(재시도하면 대개 된다)
-                      #   실제 실행은 ANTHROPIC_API_KEY 필요 (--provider anthropic, 기본값)
+                      #   기본 --provider claude_code = 로컬 claude CLI 하위 프로세스 (API 크레딧 0).
+                      #   --provider anthropic 은 ANTHROPIC_API_KEY 로 크레딧을 쓴다
                       #   오프라인: --dry-run (Mock) · --provider fixture (tests/fixtures/l3/)
                       #   산출물 state/theses/<date>/ (thesis.yaml·report.md·rejections-pending·contested)
 msa balance [themes]  # L3.5 수급 균형 조사 — "수요 나누기 공급" (docs/26 사전 등록).

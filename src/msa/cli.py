@@ -335,7 +335,8 @@ def scan(
 
 #: `prices` 가 오늘보다 이만큼 넘게 뒤처지면 `msa data status` 가 적재를 권한다.
 #: 거래일 기준 3일(주말+공휴일 한 번)이면 정상 범위다 — 그 이상은 적재를 건너뛴 것이다.
-#: 이 저장소는 적재를 하지 않는다 (`docs/18` §6): 실제 적재는 `opt_portfolio` 가 한다.
+#: 이 저장소는 적재를 하지 않는다 (`docs/18` §6): 실제 적재는 `portfolio-research`
+#: (`~/git/portfolio-research`, 옛 이름 `opt_portfolio`)의 `opt-factor ingest` 가 한다.
 STORE_LAG_WARN_DAYS = 4
 
 
@@ -356,7 +357,7 @@ def _echo_store_lag(stats: list[Any]) -> None:
     typer.echo(
         f"스토어 최신도: {end} · **{lag}일 전** — 뒤처져 있다 (기준 {STORE_LAG_WARN_DAYS}일).\n"
         "  스캔은 이 시점 가격으로 순위를 내고, 판별은 오늘 날짜 웹을 본다.\n"
-        "  적재는 이 저장소가 하지 않는다 (docs/18 §6) — opt_portfolio 에서:\n"
+        "  적재는 이 저장소가 하지 않는다 (docs/18 §6) — ~/git/portfolio-research 에서:\n"
         "    uv run opt-factor ingest --store ~/data/us_micro.duckdb \\\n"
         "        --provider sharadar --tables sf1,sep,daily --since $(date -d '-3 day' +%F)"
     )
@@ -370,16 +371,35 @@ def _echo_required_tickers(store: Any) -> None:
     행수도 비슷해서 `msa data status` 로는 아무 이상이 없어 보였다. 스캔을 돌려야 알았다.
     Sharadar 는 주식(`sep`)과 펀드(`sfp`)를 다른 테이블로 준다 (`docs/18` §6).
     """
-    from msa.data.store import ETF_IN_STORE
+    from msa.data.store import ETF_IN_STORE, etf_prices_or_empty
+    from msa.l1.panel import SPY_LAG_WARN_DAYS
 
     missing = [t for t in ETF_IN_STORE if not int(store.scalar(_TICKER_COUNT_SQL.format(t=t)))]
     if not missing:
         return
+    # 2026-10-05: "스캔이 멈춘다" 고 적혀 있었지만 사실이 아니었다 — `l1.panel._spy_series` 와
+    # `Store.close_series` 는 벌크 `funds.csv.zip` 으로 넘어간다. 멈추는 것이 아니라 **두 소스의
+    # 갱신 주기가 갈라지는 것**이 문제다. 그래서 벌크 쪽 SPY 의 끝 날짜를 함께 찍는다.
     typer.echo("")
     typer.echo(
-        f"**필수 종목이 prices 에 없다: {', '.join(missing)}** — 스캔이 멈춘다.\n"
-        "  SPY 는 RS·상대거래대금의 기준이라 없으면 C 블록이 통째로 무의미하다.\n"
-        "  원인은 대개 적재에서 `sfp`(펀드 가격) 테이블이 빠진 것이다 (docs/18 §6):\n"
+        f"**필수 종목이 prices 에 없다: {', '.join(missing)}** — 스캔은 벌크 funds.csv.zip 의 "
+        "가격으로 넘어간다 (l1.panel._spy_series · Store.close_series).\n"
+        "  SPY 는 RS·상대거래대금의 기준이다. 벌크가 prices 보다 뒤처지면 그 구간의 C 블록\n"
+        f"  상대지표가 ffill 된 SPY 를 분모로 쓴다 (경고 임계 {SPY_LAG_WARN_DAYS}일, docs/18 §6)."
+    )
+    bulk = etf_prices_or_empty(list(missing), absent_expected=True)
+    px_end = store.store_end()
+    for t in missing:
+        rows = bulk[bulk["ticker"] == t]
+        if rows.empty:
+            typer.echo(f"  {t}: 벌크에도 없다 — 스캔이 멈춘다 (StoreError)")
+            continue
+        b_end = rows["date"].max()
+        lag = (px_end - b_end).days if px_end is not None else None
+        tail = "" if lag is None else f" · prices 끝 {px_end} 대비 {lag:+d}일"
+        typer.echo(f"  {t}: 벌크 끝 {b_end}{tail}")
+    typer.echo(
+        "  prices 에 다시 넣으려면 `sfp`(펀드 가격) 테이블을 적재한다 (~/git/portfolio-research):\n"
         "    uv run opt-factor ingest --store ~/data/us_micro.duckdb \\\n"
         "        --provider sharadar --tables sfp --since 2020-01-01"
     )

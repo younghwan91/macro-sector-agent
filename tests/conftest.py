@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -17,6 +18,22 @@ def _plain_cli_output(monkeypatch: pytest.MonkeyPatch) -> None:
     """
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     monkeypatch.setenv("TERM", "dumb")
+
+
+@pytest.fixture(autouse=True)
+def _hermetic_git(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """임시 저장소를 만드는 테스트가 **개발자의 전역 git 설정**에 좌우되지 않게 한다.
+
+    2026-10-05 실측: 전역 `core.hooksPath`(~/.config/git/hooks) 의 pre-commit 이 커밋 신원을
+    허용 목록과 대조해, 테스트가 `t@example.com` 으로 만드는 커밋을 막았다 — `make check` 가
+    저장소 밖의 설정 때문에 빨개졌다. 전역·시스템 설정을 비우면 훅 경로는 저장소의
+    `.git/hooks` 로 돌아가고, 테스트가 거는 로컬 `user.*` 만 남는다. 저장소를 읽기만 하는
+    `verify_append_only` 도 같은 환경에서 돈다.
+    """
+    empty = tmp_path / ".gitconfig-empty"
+    empty.write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
 
 
 @pytest.fixture(scope="session")

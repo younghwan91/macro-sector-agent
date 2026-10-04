@@ -33,7 +33,7 @@
 ## 1. 세 개의 명령
 
 ```bash
-cd ~/Documents/git/macro-sector-agent
+cd ~/git/macro-sector-agent
 
 uv run msa scan --top 20                                    # ① 오늘의 테마 순위   (~2분)
 uv run msa research <theme> --record state/fixtures         # ② 함정 판별          (5~10분)
@@ -221,7 +221,7 @@ grep -H "편입 가능\|cycle_confidence" /tmp/msa_*.log
 
 | | 무엇 | 어떻게 | 주기 | 없으면 |
 |---|---|---|---|---|
-| **①** | 주가·재무·상장정보 → `~/data/us_micro.duckdb` | `opt-factor ingest` (**`opt_portfolio` 저장소**) | **매일** | 스캔이 묵은 가격으로 순위를 낸다 |
+| **①** | 주가·재무·상장정보 → `~/data/us_micro.duckdb` | `opt-factor ingest` (**`portfolio-research` 저장소** — 옛 이름 `opt_portfolio`) | **매일** | 스캔이 묵은 가격으로 순위를 낸다 |
 | **②** | ETF 가격 (`funds.csv.zip`) | Airflow DAG 가 **매일** 받는다 (287MB) | 자동 | ETF 프록시 검증만 흐려진다 |
 | **③** | 실물 수요 지표 · CPI | `msa data fred-fetch` | **월 1회** | 축 1 이 `data_missing` |
 | **④** | 에이전트 근거 | 판별 시 자동 (웹 검색) | 매번 | — |
@@ -229,7 +229,7 @@ grep -H "편입 가능\|cycle_confidence" /tmp/msa_*.log
 ### ① Sharadar 일간 증분 — 매일
 
 ```bash
-cd ~/Documents/git/opt_portfolio
+cd ~/git/portfolio-research   # 옛 이름 opt_portfolio
 uv run opt-factor ingest --store ~/data/us_micro.duckdb \
     --provider sharadar --tables sf1,sep,sfp,daily \
     --since $(date -d '-3 day' +%F)
@@ -291,7 +291,7 @@ uv run opt-factor status --store ~/data/us_micro.duckdb
 ### ③ FRED — 월 1회
 
 ```bash
-cd ~/Documents/git/macro-sector-agent
+cd ~/git/macro-sector-agent
 uv run msa data fred-fetch          # 실패한 시리즈는 이름을 전부 찍고 종료코드 1
 ```
 
@@ -306,11 +306,11 @@ uv run msa data fred-fetch          # 실패한 시리즈는 이름을 전부 �
 
 ```bash
 # ── 매일 (장 마감 후) ──────────────────────────────────
-cd ~/Documents/git/opt_portfolio
+cd ~/git/portfolio-research   # 옛 이름 opt_portfolio
 uv run opt-factor ingest --store ~/data/us_micro.duckdb \
     --provider sharadar --tables sf1,sep,daily --since $(date -d '-3 day' +%F)
 
-cd ~/Documents/git/macro-sector-agent
+cd ~/git/macro-sector-agent
 uv run msa scan --top 20        # 테마 순위
 uv run msa check --daily        # 보유 중일 때만 — 무효화·스탑 점검
 
