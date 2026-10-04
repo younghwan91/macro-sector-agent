@@ -119,9 +119,61 @@ def test_fallback_orders_by_ratio_and_says_it_cannot_tell() -> None:
 
 def test_disallowed_model_falls_back_loudly() -> None:
     """크레딧 경로에 haiku 아닌 모델을 주면 **조용히 낮추지 않는다** (`CLAUDE.md` §2)."""
-    items, why = run_triage("t", _checks(), _evidence(), AXES, model="claude-opus-5")
+    items, why = run_triage(
+        "t", _checks(), _evidence(), AXES, provider="anthropic", model="claude-opus-5"
+    )
     assert items and all(t.fallback for t in items)
     assert "허용되지 않은 모델" in why and "claude-opus-5" in why
+
+
+def test_default_provider_is_the_subscription_cli_like_every_other_llm_step() -> None:
+    """2026-10-05: 다른 단계는 전부 `claude_code` 인데 트리아지만 anthropic SDK 를 직접 불러
+    키 없는 운영 환경에서 매번 기계 순서로 내려갔다."""
+    from msa.l3.evidence_triage import TRIAGE_PROVIDER
+
+    assert TRIAGE_PROVIDER == "claude_code"
+
+
+def test_provider_path_uses_the_shared_request_contract() -> None:
+    """제공자 객체를 주면 `CompletionRequest`(역할 triage · 검색 없음 · 스키마)로 부르고,
+    응답을 `parse_triage` 로 읽는다 — 폴백이 아니다."""
+    from msa.l3.providers import MockProvider
+
+    prov = MockProvider(
+        responses={
+            "triage": {
+                "items": [
+                    {
+                        "evidence_id": 17,
+                        "verdict": "open_first",
+                        "why": "통째로 없음",
+                        "look_for": "x",
+                    },
+                    {"evidence_id": 1, "verdict": "minor", "why": "반올림", "look_for": "y"},
+                ]
+            }
+        }
+    )
+    items, why = run_triage("t", _checks(), _evidence(), AXES, provider=prov)
+    assert why == "" and [t.evidence_id for t in items] == [17, 1]
+    assert not any(t.fallback for t in items)
+    (req,) = prov.requests
+    assert req.role == "triage" and req.allow_search is False and req.json_schema is not None
+    assert '"evidence_id": 17' in req.as_text() and "terminal_risk" in req.as_text()
+
+
+def test_provider_failure_falls_back_loudly() -> None:
+    """CLI 가 없거나 죽으면 기계 순서로 내려가되 사유를 남긴다 (`CLAUDE.md` §2)."""
+
+    class Broken:
+        name = "broken"
+
+        def complete(self, request: Any) -> Any:
+            raise RuntimeError("claude CLI 없음")
+
+    items, why = run_triage("t", _checks(), _evidence(), AXES, provider=Broken())
+    assert items and all(t.fallback for t in items)
+    assert "RuntimeError" in why and "claude CLI 없음" in why
 
 
 def test_empty_agent_result_falls_back_with_a_reason() -> None:

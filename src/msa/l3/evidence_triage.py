@@ -76,8 +76,12 @@
 
 ## 비용
 
-haiku 4.5 · 검색 없음. 실측 견적: 테마당 입력 ~3,100 · 출력 ~1,000 토큰 → **약 $0.008**.
-편입 가능 2테마 기준 하루 $0.017 · 월 $0.5. 크레딧 경로는 haiku 만 허용된다
+**기본은 `claude_code`** — 로컬 claude CLI 하위 프로세스(구독 인증, API 크레딧 0). 다른 LLM
+단계(판별·레짐·종목 노트·수급)와 같은 경로다. 2026-10-05 까지는 `anthropic` SDK 를 직접 불렀고,
+키가 없는 운영 환경에서는 **매번** 기계 순서로 내려갔다 (`docs/16` 양식 ⑤ — 폴백이 상태였다).
+
+`provider="anthropic"` 은 크레딧 경로다 — haiku 4.5 · 검색 없음. 실측 견적: 테마당 입력 ~3,100 ·
+출력 ~1,000 토큰 → **약 $0.008**. 크레딧 경로는 haiku 만 허용된다
 (`providers.enforce_api_credit_models`, 2026-08-25 사용자 지시).
 """
 
@@ -87,7 +91,10 @@ import json
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from msa.l3.providers import LLMProvider
 
 from msa.l3.evidence_audit import PARTIAL, EvidenceCheck
 
@@ -357,15 +364,28 @@ TRIAGE_MODEL = "claude-haiku-4-5"
 TRIAGE_MAX_TOKENS = 4000
 
 
+#: 제공자 요청의 역할 이름 — L3 네 역할 밖이라 `MockProvider` 는 `register_mock_output` 으로
+#: 응답을 등록해야 한다 (`roles.default_mock_output`).
+TRIAGE_ROLE = "triage"
+
+#: 기본 제공자 — 다른 LLM 단계와 같은 구독 CLI 경로.
+TRIAGE_PROVIDER = "claude_code"
+
+
 def run_triage(
     theme: str,
     checks: Sequence[EvidenceCheck],
     evidence: Sequence[Mapping[str, Any]],
     axis_refs: Mapping[str, tuple[int, ...]],
     *,
+    provider: str | LLMProvider = TRIAGE_PROVIDER,
     model: str = TRIAGE_MODEL,
 ) -> tuple[tuple[Triage, ...], str]:
     """`(항목, 사유)` — 에이전트로 분류하고, **안 되면 결정론 순서로 내려간다.**
+
+    `provider` 는 `providers.make_provider` 의 이름(`claude_code` 기본 · `anthropic` · `mock` ·
+    `fixture`) 또는 이미 만든 제공자 객체. `model` 은 **`anthropic`(크레딧) 경로에서만** 읽힌다 —
+    구독 CLI 는 `ClaudeCodeProvider` 의 배치를 따른다.
 
     사유는 성공하면 빈 문자열, 폴백이면 왜 내려갔는지다. 조용히 폴백하지 않는다
     (`CLAUDE.md` §2) — 기계 순서는 반올림과 진짜 결함을 구분하지 못하므로, 그 목록을
@@ -379,6 +399,42 @@ def run_triage(
         return (), ""
     system, user = p
 
+    if provider == "anthropic":
+        return _run_triage_api(checks, axis_refs, system=system, user=user, model=model)
+
+    from msa.l3.providers import CompletionRequest, make_provider
+
+    try:
+        prov = (
+            provider if not isinstance(provider, str) else make_provider(provider, theme_id=theme)
+        )
+        req = CompletionRequest(
+            role=TRIAGE_ROLE,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            json_schema=TRIAGE_SCHEMA,
+            max_tokens=TRIAGE_MAX_TOKENS,
+            allow_search=False,  # 원문 대조는 이미 끝났다 — 분류만 한다
+        )
+        items = parse_triage(prov.complete(req).json(), axis_refs)
+    except Exception as e:  # CLI 없음·시간 초과·스키마 위반 — 다이제스트를 죽이지 않는다
+        log.info("트리아지 폴백: %s", e)
+        return deterministic_order(checks, axis_refs), f"{type(e).__name__}: {e}"
+
+    if not items:
+        return deterministic_order(checks, axis_refs), "에이전트가 빈 목록을 냈다"
+    return items, ""
+
+
+def _run_triage_api(
+    checks: Sequence[EvidenceCheck],
+    axis_refs: Mapping[str, tuple[int, ...]],
+    *,
+    system: str,
+    user: str,
+    model: str,
+) -> tuple[tuple[Triage, ...], str]:
+    """크레딧 경로 (`provider="anthropic"`) — haiku 만, 구조화 출력."""
     from msa.l3.providers import API_CREDIT_ALLOWED_MODELS
 
     if model not in API_CREDIT_ALLOWED_MODELS:
