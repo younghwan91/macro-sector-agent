@@ -560,3 +560,31 @@ def test_zero_picks_from_ticker_overlap_states_the_real_reason() -> None:
     assert pa.themes_without_picks == ("t2", "t3")
     assert "앞 테마에 이미 배정" in pa.empty_reasons["t2"] and "t1" in pa.empty_reasons["t2"]
     assert "t3" not in pa.empty_reasons  # 라벨 없음은 기존 사유 그대로
+
+
+def test_assemble_falls_back_to_the_real_theses_root(tmp_path: Path) -> None:
+    """샌드박스(`--no-write`) 실행: 샌드박스에 thesis 가 없으면 진짜 state/theses 를 본다
+    (`run._locate_theses` 와 같은 규칙, docs/16 #53)."""
+    picks, theses, out = _seed_state(tmp_path)
+    sandbox_theses = tmp_path / "sb" / "theses"
+    sandbox_theses.mkdir(parents=True)
+    with pytest.raises(AssembleError, match="thesis 없음"):
+        assemble_inputs(
+            asof=ASOF,
+            themes=["uranium"],
+            picks_root=picks,
+            theses_root=sandbox_theses,
+            out_dir=out,
+            write=False,
+        )
+    res = assemble_inputs(
+        asof=ASOF,
+        themes=["uranium"],
+        picks_root=picks,
+        theses_root=sandbox_theses,
+        theses_fallback_root=theses,
+        out_dir=out,
+        write=False,
+    )
+    assert res.themes_included == ["uranium"]
+    assert res.report["sources"]["uranium"]["thesis_date"] == "2026-08-12"

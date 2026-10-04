@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 import pandas as pd
@@ -230,7 +230,7 @@ class DuplicateMembership:
         return f"중복 소속: {len(self.duplicates)}개 · 예: {sample}"
 
 
-def audit_duplicate_membership(buckets: dict[str, Sequence[str]]) -> DuplicateMembership:
+def audit_duplicate_membership(buckets: Mapping[str, Sequence[str]]) -> DuplicateMembership:
     """버킷 → 티커 목록 매핑에서 중복 소속을 찾는다. 순수 함수."""
     owners: dict[str, list[str]] = {}
     for bucket, members in buckets.items():

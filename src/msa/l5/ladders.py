@@ -172,6 +172,9 @@ class PositionPlan:
     tp2_r_price: float | None  # 직전 고점 50% 회복가
     tp2_p75_price: float | None
     triggers: tuple[str, ...]
+    #: L4 가 `picks.csv` 에 적은 표기용 메모(선정 라벨·관찰 지표·플래그). 판단이 아니라 값이다 —
+    #: 2026-10-05 까지 L5 가 받기만 하고 계획서에 찍지 않았다 (`docs/16` #43).
+    notes: str = ""
 
     @property
     def tier2_vs_initial(self) -> float:
@@ -212,6 +215,7 @@ class PositionPlan:
             "r_unit": self.r_unit,
             "tp1_price": self.tp1_price,
             "tp1_p50_price": self.tp1_p50_price,
+            "notes": self.notes,
             "tp2_r_price": self.tp2_r_price,
             "tp2_p75_price": self.tp2_p75_price,
             "runner_trail": self.runner_trail,
@@ -279,4 +283,5 @@ def build_position_plan(
         tp2_r_price=tp2_px,
         tp2_p75_price=pick.tp_p75_price,
         triggers=thesis.triggers,
+        notes=pick.notes,
     )

@@ -866,6 +866,37 @@ def test_plan_tier2_line_names_the_applied_rule() -> None:
     assert "$67.10 (평단 −35% = 초기가 −40.5%" not in cap_line
 
 
+def test_plan_prints_l4_notes_when_present() -> None:
+    """`Pick.notes`(L4 표기용 메모)가 계획서에 찍힌다 — 2026-10-05 까지 받기만 하고 버렸다
+    (docs/16 #43).
+    """
+    from msa.l5.plan import _position_block
+
+    th = _thesis("uranium", 0.65)
+    with_notes = ladders.build_position_plan(
+        Pick(
+            theme="uranium",
+            ticker="CCJ",
+            role="anchor",
+            entry_price=100.0,
+            notes="L4 ELIGIBLE · 순위 3",
+        ),
+        th,
+        target_weight=0.16,
+        asof=ASOF,
+    )
+    without = ladders.build_position_plan(
+        Pick(theme="uranium", ticker="UEC", role="torque", entry_price=100.0),
+        th,
+        target_weight=0.16,
+        asof=ASOF,
+    )
+    assert with_notes.notes == "L4 ELIGIBLE · 순위 3"
+    assert any("L4 메모  L4 ELIGIBLE · 순위 3" in ln for ln in _position_block(with_notes))
+    assert not any("L4 메모" in ln for ln in _position_block(without))
+    assert with_notes.as_dict()["notes"] == "L4 ELIGIBLE · 순위 3"
+
+
 def test_weights_csv_tier2_columns_are_one_pair(tmp_path: Path) -> None:
     """`weights.csv` 의 tier2_price·tier2_vs_initial·tier2_rule 이 한 규칙에서 나온다."""
     avg_case, cap_case = _tier2_plans()

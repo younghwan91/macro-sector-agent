@@ -137,7 +137,9 @@ _RANKING_REQUIRED: tuple[str, ...] = ("group", "rank", "composite")
 _RANKING_VALUE_COLS: tuple[str, ...] = (ENTRY_PRICE_FEATURE, LIQUIDITY_FEATURE)
 
 #: thesis 객체에서 `picks` 묶음으로 옮기는 트리거/무효화 항목의 키 (`parse_thesis._observables`
-#: 가 읽는 `observable`·`source` + 상태·기한·행동).
+#: 가 읽는 `observable`·`source` + 상태·기한·행동). 가격 DSL `check` 는 **일부러** 옮기지 않는다 —
+#: `msa check` 는 묶음이 아니라 `positions.yaml` 의 `thesis_snapshot`(원본 L3 thesis 경로,
+#: `assemble_report.json` `sources[].thesis`)을 읽는다 (`docs/16` #42 는 "살아 있는 결함 아님").
 _OBS_KEYS: tuple[str, ...] = ("observable", "source", "by", "action", "status")
 
 
@@ -505,8 +507,14 @@ def assemble_inputs(
     human_theses_dir: Path | str | None = None,
     top_per_theme: int | None = None,
     write: bool = True,
+    theses_fallback_root: Path | str | None = None,
 ) -> AssembleResult:
     """테마 목록 → `<out>/picks.csv` · `<out>/theses/<theme>.yaml` · 리포트.
+
+    `theses_fallback_root` — `theses_root` 에 없을 때 한 번 더 보는 곳. `msa run monthly --no-write`
+    는 샌드박스를 `theses_root` 로 주는데, 그 안에는 이번 실행이 쓴 thesis 만 있다 — 직전 라운드의
+    thesis 는 진짜 `state/theses/` 에 있다. `run._locate_theses` 는 그 폴백을 하면서 이 함수는
+    하지 않아, 같은 실행 안에서 "논지 찾음" 과 "thesis 없음" 이 엇갈렸다 (`docs/16` #53).
 
     테마별로 (1) 논지 — `human_theses_dir/<theme>.yaml` 이 있으면 그것(`human`), 없으면
     `theses_root/<date≤asof>/<theme>.thesis.yaml` 의 최신(`referee`) — 을 찾아 L5 부분집합으로
@@ -550,8 +558,12 @@ def assemble_inputs(
                 csrc = "human"
         if tpath is None:
             tpath = _find_latest(troot, asof_s, thesis_filename(theme))
+        if tpath is None and theses_fallback_root is not None:
+            tpath = _find_latest(Path(theses_fallback_root), asof_s, thesis_filename(theme))
         if tpath is None:
             where = f"{troot}/<≤{asof_s}>/{thesis_filename(theme)}"
+            if theses_fallback_root is not None:
+                where += f" · {theses_fallback_root}/<≤{asof_s}>/{thesis_filename(theme)}"
             if hdir is not None:
                 where += f" · {hdir}/{theme}.yaml"
             skipped[theme] = f"thesis 없음 ({where})"

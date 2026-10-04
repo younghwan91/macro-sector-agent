@@ -1151,6 +1151,8 @@ def _portfolio_step(
             out_dir=out_dir,
             human_theses_dir=hdir,
             write=True,
+            # 샌드박스 실행: 직전 라운드 thesis 는 진짜 state/ 에 있다 (`_locate_theses` 와 같다)
+            theses_fallback_root=(roots.real / "theses") if roots.sandbox else None,
         )
     except AssembleError as e:
         if ASSEMBLE_EMPTY_MARKER in str(e):  # 정상적인 "0건" — 오류가 아니다

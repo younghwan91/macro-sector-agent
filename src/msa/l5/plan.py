@@ -166,6 +166,9 @@ def _position_block(p: PositionPlan) -> list[str]:
     lines.append(f"         {tp1}  {tp2}  러너 트레일 {p.runner_trail:.0%} / {RUNNER_MA_WEEKS}주선")
     if p.triggers:
         lines.append(f"         트리거  {' / '.join(p.triggers)}")
+    if p.notes:
+        # L4 의 표기용 메모 — 선정에 쓰이지 않은 관찰 지표(순위·바벨·3축)와 플래그. 값만 옮긴다.
+        lines.append(f"         L4 메모  {p.notes}")
     return lines
 
 

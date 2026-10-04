@@ -257,12 +257,18 @@ def data_audit(
             typer.echo(f"  누락: {cov.delisted_missing[:20]}")
 
         typer.echo("")
-        typer.echo("[3] 중복 소속")
-        typer.echo("  테마 버킷 정의가 없다 (M2). 검사기는 있으나 입력이 없어 실행하지 않는다.")
-        typer.echo("  → msa.data.universe.audit_duplicate_membership(buckets)")
+        typer.echo("[3] 중복 소속 (docs/01 §5 — 한 티커가 두 버킷에 들면 L5 집중도가 오염된다)")
+        # 2026-10-05 까지 "버킷 정의가 없다 (M2)" 고 찍고 검사기를 부르지 않았다 — M2 는
+        # 2026-08-23 에 끝났다 (`docs/16` #6). 스캔과 같은 배정 규칙(`assign_members`)으로 만든
+        # 버킷을 그대로 검사한다.
+        from msa.data.universe import audit_duplicate_membership
+        from msa.themes import assign_members, load_themes
+
+        dup = audit_duplicate_membership(assign_members(load_themes(), meta).by_theme())
+        typer.echo(f"  {dup.report()}")
 
     typer.echo("")
-    if not cov.ok:
+    if not cov.ok or not dup.ok:
         raise typer.Exit(code=1)
 
 
