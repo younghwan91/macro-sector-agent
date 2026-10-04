@@ -22,6 +22,10 @@ jobs:
       - name: ruff
         run: uv run ruff check src tests
 
+      # `make fmt` 의 산출과 같아야 한다 — 2026-10-05 에 21개 파일이 조용히 벗어나 있었다.
+      - name: ruff format
+        run: uv run ruff format --check src tests
+
       - name: mypy
         run: uv run mypy src/
 

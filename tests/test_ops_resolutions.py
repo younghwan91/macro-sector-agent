@@ -81,9 +81,7 @@ def test_confirmed_cannot_exceed_checked() -> None:
     """확인 건수가 실사 건수를 넘어도 증거품질이 1 을 넘지 않는다."""
     judged = {"portfolio_eligible": True, "trusted": True, "gate": "passed"}
     audit = {"counts": {"verified": 2}, "checked": 2, "unverified_axes": []}
-    got = triage.theme_trust(
-        judged, audit, resolutions=[_entry(evidence_id=i) for i in range(5)]
-    )
+    got = triage.theme_trust(judged, audit, resolutions=[_entry(evidence_id=i) for i in range(5)])
     assert got == pytest.approx(1.0)
 
 
@@ -95,9 +93,7 @@ def test_unresolvable_neither_helps_nor_caps() -> None:
     judged = {"portfolio_eligible": True, "trusted": True, "gate": "passed"}
     audit = {"counts": {"verified": 10}, "checked": 20, "unverified_axes": []}
     base = triage.theme_trust(judged, audit, resolutions=[])
-    got = triage.theme_trust(
-        judged, audit, resolutions=[_entry(verdict="unresolvable")]
-    )
+    got = triage.theme_trust(judged, audit, resolutions=[_entry(verdict="unresolvable")])
     assert got == base
 
 
@@ -142,8 +138,12 @@ def test_summary_of_effective_does_not_double_count(tmp_path: Path) -> None:
     res.append(tmp_path, "t", _entry(evidence_id=1, verdict="unresolvable"))
     res.append(tmp_path, "t", _entry(evidence_id=1, verdict="refuted", supersedes=True))
     assert res.summary(res.load(tmp_path, "t")) == {
-        "confirmed": 0, "refuted": 1, "unresolvable": 1,
+        "confirmed": 0,
+        "refuted": 1,
+        "unresolvable": 1,
     }
     assert res.summary(res.effective(tmp_path, "t")) == {
-        "confirmed": 0, "refuted": 1, "unresolvable": 0,
+        "confirmed": 0,
+        "refuted": 1,
+        "unresolvable": 0,
     }

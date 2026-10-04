@@ -160,8 +160,7 @@ def declared_constants() -> dict[str, Any]:
         "regime_tilt": dict(REGIME_TILT),
         "cycle_classes": list(CYCLE_CLASSES),
         "cadence": (
-            "weekly — 매일 돌리지 않는다 "
-            "(docs/25 §4.3: 같은 날 두 번 돌리면 재현성을 잃는다)"
+            "weekly — 매일 돌리지 않는다 (docs/25 §4.3: 같은 날 두 번 돌리면 재현성을 잃는다)"
         ),
         "applies_to": "트리아지 R 축에만 곱한다. J·C·구획은 못 건드린다 (docs/25 §3.3)",
         "claim": "읽는 순서를 민다 — 수익률을 주장하지 않는다 (docs/25 §3)",

@@ -131,9 +131,7 @@ def run(
     thesis: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """조사를 한 번 부르고 수급 문서 모양으로 돌려준다. 검증은 호출자(`balance.write`)가."""
-    obj = provider.complete(
-        build_request(theme, asof, unit_hint=unit_hint, thesis=thesis)
-    ).json()
+    obj = provider.complete(build_request(theme, asof, unit_hint=unit_hint, thesis=thesis)).json()
     out: dict[str, Any] = {"theme": theme, "asof": asof, **obj}
     # 코드가 채운 식별자가 이긴다 — 모델이 같은 키를 되돌려줘도 덮어쓰지 못한다
     out["theme"], out["asof"] = theme, asof

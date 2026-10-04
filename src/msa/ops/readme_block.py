@@ -106,11 +106,7 @@ def _triage_order(digest: dict[str, Any]) -> dict[str, float]:
     "모른다" 와 "가장 낮다" 는 다른 말이다 (`CLAUDE.md` §2).
     """
     rows = (digest.get("triage") or {}).get("rows") or []
-    return {
-        str(r["ticker"]): float(r["triage"])
-        for r in rows
-        if r.get("triage") is not None
-    }
+    return {str(r["ticker"]): float(r["triage"]) for r in rows if r.get("triage") is not None}
 
 
 def _pullbacks(
@@ -144,7 +140,7 @@ def _resolved_ids(digest: dict[str, Any]) -> dict[str, set[int]]:
     out: dict[str, set[int]] = {}
     try:
         root = paths().evidence_resolutions
-        for th in (digest.get("evidence_audit") or {}):
+        for th in digest.get("evidence_audit") or {}:
             ids = {e.evidence_id for e in res.effective(root, str(th))}
             if ids:
                 out[str(th)] = ids
@@ -335,9 +331,7 @@ def _headline(digest: dict[str, Any]) -> tuple[str, str]:
     )
 
 
-def _dip_lines(
-    themes: list[dict[str, Any]], order: dict[str, float] | None = None
-) -> list[str]:
+def _dip_lines(themes: list[dict[str, Any]], order: dict[str, float] | None = None) -> list[str]:
     """눌린 종목 표.
 
     **이전 판은 테마·티커 순이었고 그 이유가 옳았다**: 낙폭 순 정렬은 "더 눌린 것이 더
@@ -356,9 +350,7 @@ def _dip_lines(
         order_note = "순서 = triage(읽는 순서) — 수익률 순서가 아니다"
         bar_note = "막대는 크기만 — 부호는 숫자가 든다. 순서는 triage 이지 낙폭 순이 아니다."
     else:
-        dips = sorted(
-            _pullbacks(themes), key=lambda d: (str(d.get("theme")), str(d.get("ticker")))
-        )
+        dips = sorted(_pullbacks(themes), key=lambda d: (str(d.get("theme")), str(d.get("ticker"))))
         order_note = "순서 = 테마·티커 순, 볼 만한 순서가 아니다"
         bar_note = "막대는 크기만 — 부호는 숫자가 든다. 순서는 테마·티커 순이지 우선순위가 아니다."
     if not dips:

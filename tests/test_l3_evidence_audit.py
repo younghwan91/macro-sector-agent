@@ -290,9 +290,7 @@ def test_word_numbers_respect_word_boundaries() -> None:
 
     # 맨 단위 낱말은 값이 아니다 — `five hundred ships` 가 claim 의 `100` 을 통과시키면 안 된다
     assert "hundred" not in _word_forms("100")
-    assert not check_one(
-        _ev(3, "100개 이상"), lambda _u: "<p>five hundred ships</p>"
-    ).ok
+    assert not check_one(_ev(3, "100개 이상"), lambda _u: "<p>five hundred ships</p>").ok
 
     # 없는 수는 여전히 없다
     assert check_one(_ev(4, "13척"), lambda _u: "<p>twelve ships</p>").status == PARTIAL

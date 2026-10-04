@@ -1152,14 +1152,29 @@ def _audit_eligible(
 
 #: `triage.csv` 의 앞 열 — 점수와 그 성분. 뒤에는 참고 열이 붙는다.
 TRIAGE_LEAD_COLUMNS = (
-    "partition", "triage", "ticker", "theme", "j", "c", "r", "from_52w_high",
+    "partition",
+    "triage",
+    "ticker",
+    "theme",
+    "j",
+    "c",
+    "r",
+    "from_52w_high",
 )
 
 #: **참고 열 — 점수 입력이 아니다.** 사람이 읽으라고 싣는다 (스펙 §5.2·§5.3).
 #: `s_pct`·`composite`·`rs_rating` 이 여기 있는 것은 의도다: 실리되 점수에는 안 들어간다.
 TRIAGE_REFERENCE_COLUMNS = (
-    "price", "adv20_usd", "red_flags", "survival_unjudged",
-    "s_pct", "t_pct", "m_pct", "composite", "rs_rating", "from_52w_low",
+    "price",
+    "adv20_usd",
+    "red_flags",
+    "survival_unjudged",
+    "s_pct",
+    "t_pct",
+    "m_pct",
+    "composite",
+    "rs_rating",
+    "from_52w_low",
 )
 
 
@@ -1191,9 +1206,7 @@ def _regime_block(digest: dict[str, Any]) -> dict[str, Any]:
     # 실제로는 계수가 있을 수 있다 (2026-09 리뷰).
     themes_now = {str(e.get("theme")) for e in (digest.get("themes") or [])}
     themes_now |= {str(t) for t in (digest.get("balance") or {}).get("surveyed") or []}
-    tilts = regime_mod.tilts_by_theme(
-        doc, {t: classes[t] for t in themes_now if t in classes}
-    )
+    tilts = regime_mod.tilts_by_theme(doc, {t: classes[t] for t in themes_now if t in classes})
     return {
         "week": (doc or {}).get("week"),
         "note": regime_analyst.summarize(doc),
@@ -1213,9 +1226,7 @@ def _stock_notes_block(digest: dict[str, Any]) -> dict[str, float]:
     from msa.l4 import analyst as stock_analyst
 
     tickers = [
-        str(p.get("ticker"))
-        for e in (digest.get("themes") or [])
-        for p in (e.get("picks") or [])
+        str(p.get("ticker")) for e in (digest.get("themes") or []) for p in (e.get("picks") or [])
     ]
     try:
         root = paths().stock_notes
@@ -1719,9 +1730,7 @@ def run_daily(
     # 종목 노트(P3) — **읽기만 한다. 여기서 분석가를 부르지 않는다.** 온디맨드 케이던스를
     # 일간이 대신 돌리면 같은 종목의 판정이 매일 흔들려 사람이 무엇을 믿을지 모르게 된다.
     digest["stock_notes"] = _stock_notes_block(digest)
-    digest["triage"] = build_triage_block(
-        digest, resolutions_root=paths().evidence_resolutions
-    )
+    digest["triage"] = build_triage_block(digest, resolutions_root=paths().evidence_resolutions)
     # 리스크·PM(P4) — **점수 뒤에 붙는다. 점수를 바꾸지 않는다.** 경고를 달고 표시 슬롯을
     # 나눌 뿐이고, 자를지는 사람이 정한다 (설계 §9.3).
     digest["risk"] = _risk_block(digest)
@@ -1737,11 +1746,7 @@ def run_daily(
     }
     triage_csv = render_triage_csv(digest["triage"]["rows"], picks_by_ticker)
     result.digest_md = render_digest_md(digest)
-    n_ia = sum(
-        1
-        for r in digest["triage"]["rows"]
-        if r["partition"] == triage_mod.PARTITION_IA
-    )
+    n_ia = sum(1 for r in digest["triage"]["rows"] if r["partition"] == triage_mod.PARTITION_IA)
     if write and out_dir is not None:
         write_snapshot(
             out_dir,
@@ -1762,11 +1767,7 @@ def run_daily(
             )
         )
     else:
-        report.add(
-            StepResult(
-                "triage", "ok", f"no-write — 구획 I-A {n_ia}종목", seconds=t.seconds
-            )
-        )
+        report.add(StepResult("triage", "ok", f"no-write — 구획 I-A {n_ia}종목", seconds=t.seconds))
 
     # README 블록 — 건너뛰어도 **단계로 보고한다.** 단계가 통째로 사라지면 "안 돌았다" 와
     # "돌았는데 할 게 없었다" 를 구분할 수 없다 (`CLAUDE.md` §2).

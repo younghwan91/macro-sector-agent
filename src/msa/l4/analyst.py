@@ -66,9 +66,7 @@ def candidates(
     *누구에게 분석가를 붙일 것인가* 뿐이다.
     """
     rows = [
-        r
-        for r in triage_rows
-        if r.get("partition") == partition and r.get("triage") is not None
+        r for r in triage_rows if r.get("partition") == partition and r.get("triage") is not None
     ]
     rows.sort(key=lambda r: (-float(r["triage"]), str(r.get("ticker"))))
     return [

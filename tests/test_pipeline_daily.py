@@ -697,9 +697,7 @@ def test_digest_carries_triage_block() -> None:
                 ],
             }
         ],
-        "judged": [
-            {"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}
-        ],
+        "judged": [{"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}],
         "evidence_audit": {
             "t1": {"counts": {"verified": 10}, "checked": 20, "unverified_axes": []}
         },
@@ -715,21 +713,30 @@ def test_digest_carries_triage_block() -> None:
 def test_triage_csv_has_reference_columns_but_they_are_not_inputs() -> None:
     rows = [
         {
-            "ticker": "AAA", "theme": "t1", "partition": "I-A", "triage": 0.8,
-            "j": 0.7, "c": 1.0, "r": 0.7, "note": "",
+            "ticker": "AAA",
+            "theme": "t1",
+            "partition": "I-A",
+            "triage": 0.8,
+            "j": 0.7,
+            "c": 1.0,
+            "r": 0.7,
+            "note": "",
         }
     ]
     picks = {
         "AAA": {
-            "ticker": "AAA", "s_pct": 0.5, "composite": 0.6, "rs_rating": 90.0,
-            "price": 10.0, "adv20_usd": 1e7, "from_52w_high": -0.4,
+            "ticker": "AAA",
+            "s_pct": 0.5,
+            "composite": 0.6,
+            "rs_rating": 90.0,
+            "price": 10.0,
+            "adv20_usd": 1e7,
+            "from_52w_high": -0.4,
         }
     }
     text = D.render_triage_csv(rows, picks)
     header = text.splitlines()[0].split(",")
-    assert header[:8] == [
-        "partition", "triage", "ticker", "theme", "j", "c", "r", "from_52w_high"
-    ]
+    assert header[:8] == ["partition", "triage", "ticker", "theme", "j", "c", "r", "from_52w_high"]
     assert "s_pct" in header and "composite" in header and "rs_rating" in header
     body = text.splitlines()[1].split(",")
     assert body[0] == "I-A" and body[2] == "AAA"
@@ -738,9 +745,7 @@ def test_triage_csv_has_reference_columns_but_they_are_not_inputs() -> None:
 def test_build_triage_block_survives_missing_evidence_audit() -> None:
     digest = {
         "themes": [{"theme": "t1", "picks": [{"ticker": "AAA", "from_52w_high": -0.40}]}],
-        "judged": [
-            {"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}
-        ],
+        "judged": [{"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}],
     }
     block = D.build_triage_block(digest)
     row = block["rows"][0]
@@ -753,8 +758,14 @@ def test_triage_csv_renders_none_as_empty_not_zero() -> None:
     """계산 불가가 0 으로 보이면 '가장 낮은 점수' 로 오해된다 (`CLAUDE.md` §2)."""
     rows = [
         {
-            "ticker": "AAA", "theme": "t1", "partition": "I-A", "triage": None,
-            "j": None, "c": 1.0, "r": 0.7, "note": "증거 실사 없음 — J 계산 불가",
+            "ticker": "AAA",
+            "theme": "t1",
+            "partition": "I-A",
+            "triage": None,
+            "j": None,
+            "c": 1.0,
+            "r": 0.7,
+            "note": "증거 실사 없음 — J 계산 불가",
         }
     ]
     text = D.render_triage_csv(rows, {})
@@ -768,10 +779,26 @@ def test_triage_section_leads_with_partition_ia_and_claim_note() -> None:
             "claim_note": "**triage 는 읽는 순서다. 수익률 순서가 아니다.**",
             "declared": {},
             "rows": [
-                {"ticker": "AAA", "theme": "t1", "partition": "I-A", "triage": 0.81,
-                 "j": 0.74, "c": 1.0, "r": 0.70, "note": ""},
-                {"ticker": "BBB", "theme": "t1", "partition": "I-B", "triage": 0.85,
-                 "j": 0.74, "c": 1.0, "r": 0.85, "note": ""},
+                {
+                    "ticker": "AAA",
+                    "theme": "t1",
+                    "partition": "I-A",
+                    "triage": 0.81,
+                    "j": 0.74,
+                    "c": 1.0,
+                    "r": 0.70,
+                    "note": "",
+                },
+                {
+                    "ticker": "BBB",
+                    "theme": "t1",
+                    "partition": "I-B",
+                    "triage": 0.85,
+                    "j": 0.74,
+                    "c": 1.0,
+                    "r": 0.85,
+                    "note": "",
+                },
             ],
         }
     }
@@ -791,8 +818,16 @@ def test_triage_section_renders_uncomputable_rows_with_note() -> None:
             "claim_note": "x",
             "declared": {},
             "rows": [
-                {"ticker": "AAA", "theme": "t1", "partition": "I-A", "triage": None,
-                 "j": None, "c": 1.0, "r": 0.7, "note": "증거 실사 없음 — J 계산 불가"},
+                {
+                    "ticker": "AAA",
+                    "theme": "t1",
+                    "partition": "I-A",
+                    "triage": None,
+                    "j": None,
+                    "c": 1.0,
+                    "r": 0.7,
+                    "note": "증거 실사 없음 — J 계산 불가",
+                },
             ],
         }
     }

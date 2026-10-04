@@ -137,16 +137,19 @@ def test_triage_scores_are_identical_with_and_without_risk_review() -> None:
                 ],
             }
         ],
-        "judged": [
-            {"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}
-        ],
+        "judged": [{"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}],
         "evidence_audit": {
             "t1": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []}
         },
     }
     rows = [
-        {"ticker": r.ticker, "theme": r.theme, "partition": r.partition, "triage": r.triage,
-         "j": r.j}
+        {
+            "ticker": r.ticker,
+            "theme": r.theme,
+            "partition": r.partition,
+            "triage": r.triage,
+            "j": r.j,
+        }
         for r in triage.score_digest(digest)
     ]
     before = {r["ticker"]: r["triage"] for r in rows}

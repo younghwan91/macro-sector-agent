@@ -29,16 +29,12 @@ def _theme(**kw: object) -> dict[str, object]:
 def _digest(**kw: object) -> dict[str, object]:
     d: dict[str, object] = {
         "themes": [_theme()],
-        "judged": [
-            {"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}
-        ],
+        "judged": [{"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}],
         "evidence_audit": {
             "t1": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []}
         },
         "triage": {
-            "rows": [
-                {"ticker": "AAA", "theme": "t1", "partition": "I-A", "triage": 0.8, "j": 0.9}
-            ]
+            "rows": [{"ticker": "AAA", "theme": "t1", "partition": "I-A", "triage": 0.8, "j": 0.9}]
         },
         "regime": {"tilts": {}},
         "balance": {"surveyed": [], "missing": ["t1"], "lines": []},
@@ -129,9 +125,7 @@ def test_evidence_gate_fails_on_unverified_axes() -> None:
     assert "unit_demand" in r.why
 
 
-def test_evidence_gate_still_open_when_ledger_misses_the_specific_id(
-    tmp_path, monkeypatch
-) -> None:
+def test_evidence_gate_still_open_when_ledger_misses_the_specific_id(tmp_path, monkeypatch) -> None:
     """대장에 무언가 있다고 전부 처리됐다고 보면 안 된다 (2026-09 리뷰 회귀).
 
     미처리 근거가 [7, 9] 인데 대장은 [7] 만 다루면, 9 는 여전히 열려 있어야 한다.
@@ -161,9 +155,7 @@ def test_evidence_gate_still_open_when_ledger_misses_the_specific_id(
     assert "9" in r.why
 
 
-def test_evidence_gate_passes_when_ledger_covers_every_unresolved_id(
-    tmp_path, monkeypatch
-) -> None:
+def test_evidence_gate_passes_when_ledger_covers_every_unresolved_id(tmp_path, monkeypatch) -> None:
     from msa.config import paths
     from msa.ops import resolutions as res
 
@@ -284,9 +276,7 @@ def test_entry_gate_needs_a_partition_ia_stock() -> None:
 
     none_ia = _digest(
         triage={
-            "rows": [
-                {"ticker": "BBB", "theme": "t1", "partition": "I-B", "triage": 0.9, "j": 0.9}
-            ]
+            "rows": [{"ticker": "BBB", "theme": "t1", "partition": "I-B", "triage": 0.9, "j": 0.9}]
         }
     )
     r2 = sector.evaluate(none_ia)[0].gate("entry")
@@ -453,9 +443,7 @@ def test_balance_block_exposes_verdicts_for_the_chain(tmp_path, monkeypatch) -> 
         "horizon_years": 5,
         "demand": {
             "verdict": "expanding",
-            "drivers": [
-                {"name": "d", "direction": "up", "magnitude": "m", "evidence_ids": [1]}
-            ],
+            "drivers": [{"name": "d", "direction": "up", "magnitude": "m", "evidence_ids": [1]}],
             "cagr_pct": 4.0,
         },
         "supply": {
@@ -506,7 +494,10 @@ def test_readme_line_names_the_cleared_sector(tmp_path, monkeypatch) -> None:
     digest = dict(
         _digest(
             balance={
-                "surveyed": ["t1"], "missing": [], "lines": [], "verdicts": {"t1": "tightening"}
+                "surveyed": ["t1"],
+                "missing": [],
+                "lines": [],
+                "verdicts": {"t1": "tightening"},
             }
         )
     )
@@ -741,9 +732,7 @@ def test_verdict_skips_themes_blocked_at_the_first_two_gates() -> None:
             "close": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []},
         },
         triage={
-            "rows": [
-                {"ticker": "A", "theme": "close", "partition": "I-A", "triage": 0.8, "j": 0.9}
-            ]
+            "rows": [{"ticker": "A", "theme": "close", "partition": "I-A", "triage": 0.8, "j": 0.9}]
         },
     )
     text = "\n".join(sector.verdict_md(sector.evaluate(d)))
@@ -800,9 +789,7 @@ def test_judged_out_and_unjudged_are_reported_separately() -> None:
             "close": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []},
         },
         triage={
-            "rows": [
-                {"ticker": "A", "theme": "close", "partition": "I-A", "triage": 0.8, "j": 0.9}
-            ]
+            "rows": [{"ticker": "A", "theme": "close", "partition": "I-A", "triage": 0.8, "j": 0.9}]
         },
     )
     text = "\n".join(sector.verdict_md(sector.evaluate(d)))
@@ -1000,9 +987,7 @@ def test_every_gate_is_evaluated_for_every_theme() -> None:
     rows = sector.evaluate(
         _digest(
             themes=[_theme(theme="a"), _theme(theme="b", pool=0.1), _theme(theme="c")],
-            judged=[
-                {"theme": "a", "portfolio_eligible": True, "trusted": True, "gate": "passed"}
-            ],
+            judged=[{"theme": "a", "portfolio_eligible": True, "trusted": True, "gate": "passed"}],
             evidence_audit={},
         )
     )

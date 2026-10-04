@@ -365,9 +365,7 @@ def is_stale(doc: Mapping[str, Any] | None, *, today: date) -> bool:
     return (today - d).days > BALANCE_STALE_DAYS
 
 
-def rotation(
-    root: Path, themes: Iterable[str], *, n: int, today: date
-) -> list[str]:
+def rotation(root: Path, themes: Iterable[str], *, n: int, today: date) -> list[str]:
     """다음에 조사할 테마 — **조사 없는 것 먼저, 그다음 가장 낡은 것.**
 
     `n` 은 한 번에 부를 개수다. 134 테마를 다 돌지 않는 것이 설계이지 제약이 아니다

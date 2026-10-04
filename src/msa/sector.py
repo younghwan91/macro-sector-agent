@@ -402,6 +402,7 @@ def declared_constants() -> dict[str, Any]:
         ),
     }
 
+
 # ---------------------------------------------------------------- 다음 행동
 
 
@@ -446,9 +447,7 @@ def _action_for(row: Row) -> Action | None:
         return None
     if key == "balance":
         if "수급 조사가 없다" in why:
-            return Action(
-                row.theme, f"msa balance {row.theme}", "수급 조사가 없다 — 회전을 돌린다"
-            )
+            return Action(row.theme, f"msa balance {row.theme}", "수급 조사가 없다 — 회전을 돌린다")
         return None  # loosening·balanced 는 답이다
     # forgotten · macro · entry 는 기다리는 것이지 실행할 명령이 없다
     return None
@@ -629,8 +628,7 @@ def verdict_md(rows: Sequence[Row], *, limit: int = 3) -> list[str]:
                 if low_conf:
                     n2 = " · ".join(f"`{r.theme}`" for r in low_conf)
                     out += [
-                        f"**확신도 미달 {len(low_conf)}개** — {n2}. "
-                        "가치 함정 혐의를 못 벗었다.",
+                        f"**확신도 미달 {len(low_conf)}개** — {n2}. 가치 함정 혐의를 못 벗었다.",
                         "",
                     ]
                 if no_axis:
@@ -644,8 +642,7 @@ def verdict_md(rows: Sequence[Row], *, limit: int = 3) -> list[str]:
             if unjudged:
                 names = " · ".join(f"`{r.theme}`" for r in unjudged)
                 out += [
-                    f"**아직 판별을 안 받은 {len(unjudged)}개** — {names}. "
-                    "후보가 아니라 미지수다.",
+                    f"**아직 판별을 안 받은 {len(unjudged)}개** — {names}. 후보가 아니라 미지수다.",
                     "",
                 ]
             if near_miss:
@@ -690,6 +687,7 @@ def verdict_md(rows: Sequence[Row], *, limit: int = 3) -> list[str]:
         "",
     ]
     return out
+
 
 def searchable_classes(regime_doc: Mapping[str, Any] | None) -> set[str]:
     """관문 ⑤ 를 통과할 수 있는 `cycle_class` 집합 — **탐색 공간을 손으로 세지 않게.**

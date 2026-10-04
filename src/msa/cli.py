@@ -644,9 +644,7 @@ def balance(
         tp = find_thesis(theme, today.isoformat(), p.theses)
         if tp is not None:
             thesis = read_thesis_yaml(tp)
-        prov = _make(
-            kind, theme_id=theme, fixture_root=Path(fixtures) if fixtures else None
-        )
+        prov = _make(kind, theme_id=theme, fixture_root=Path(fixtures) if fixtures else None)
         try:
             doc = _ba.run(prov, theme, today.isoformat(), unit_hint=unit, thesis=thesis)
             _bal.validate(doc)
@@ -743,9 +741,7 @@ def stock_notes(
     fails = 0
     saved = 0
     for c in cands:
-        prov = _make(
-            kind, theme_id=c.ticker, fixture_root=Path(fixtures) if fixtures else None
-        )
+        prov = _make(kind, theme_id=c.ticker, fixture_root=Path(fixtures) if fixtures else None)
         try:
             note = _sa.run(prov, c, picks.get(c.ticker, {}), digest.get("asof") or days[-1])
             _sa.validate(note)

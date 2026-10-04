@@ -50,10 +50,26 @@ def test_readme_block_orders_pullbacks_by_triage() -> None:
     from msa.ops import readme_block as RB
 
     rows = [
-        {"ticker": "DEEP", "theme": "th", "partition": "I-A", "triage": 0.60,
-         "j": 0.74, "c": 0.70, "r": 0.70, "note": ""},
-        {"ticker": "SHAL", "theme": "th", "partition": "I-A", "triage": 0.81,
-         "j": 0.74, "c": 1.00, "r": 0.35, "note": ""},
+        {
+            "ticker": "DEEP",
+            "theme": "th",
+            "partition": "I-A",
+            "triage": 0.60,
+            "j": 0.74,
+            "c": 0.70,
+            "r": 0.70,
+            "note": "",
+        },
+        {
+            "ticker": "SHAL",
+            "theme": "th",
+            "partition": "I-A",
+            "triage": 0.81,
+            "j": 0.74,
+            "c": 1.00,
+            "r": 0.35,
+            "note": "",
+        },
     ]
     order = RB._triage_order({"triage": {"rows": rows}})
     assert order == {"DEEP": 0.60, "SHAL": 0.81}

@@ -161,9 +161,9 @@ def test_clarity_red_flags_uses_semicolon_not_comma() -> None:
 def test_clarity_partial_inputs_small_penalty() -> None:
     assert triage.clarity(_pick(s_partial=True)) == pytest.approx(0.90)
     assert triage.clarity(_pick(composite_partial=True)) == pytest.approx(0.90)
-    assert triage.clarity(_pick(s_partial=True, composite_partial=True)) == pytest.approx(
-        0.90
-    ), "둘 다 참이어도 한 번만 깎는다 — 같은 사실의 두 표시다"
+    assert triage.clarity(_pick(s_partial=True, composite_partial=True)) == pytest.approx(0.90), (
+        "둘 다 참이어도 한 번만 깎는다 — 같은 사실의 두 표시다"
+    )
 
 
 def test_clarity_worst_case_floor_is_point_one() -> None:
@@ -260,8 +260,6 @@ def test_note_distinguishes_audit_not_run_from_theme_missing() -> None:
     assert not_run[0].triage is None
     assert "실사 단계가 돌지 않았다" in not_run[0].note
 
-    ran_but_empty = triage.score_digest(
-        {"themes": themes, "judged": judged, "evidence_audit": {}}
-    )
+    ran_but_empty = triage.score_digest({"themes": themes, "judged": judged, "evidence_audit": {}})
     assert ran_but_empty[0].triage is None
     assert "`t1` 의 증거 실사 결과가 없다" in ran_but_empty[0].note

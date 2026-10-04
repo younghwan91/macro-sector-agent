@@ -88,8 +88,7 @@ def concentration_warnings(
             out.append(
                 Warning_(
                     "theme_concentration",
-                    f"상위 {n} 중 {count}개가 `{name}` 한 테마다 ({frac:.0%}) — "
-                    "사실상 한 베팅이다",
+                    f"상위 {n} 중 {count}개가 `{name}` 한 테마다 ({frac:.0%}) — 사실상 한 베팅이다",
                 )
             )
 

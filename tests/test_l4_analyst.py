@@ -150,9 +150,7 @@ def _digest(notes: dict[str, float] | None) -> dict[str, object]:
                 ],
             }
         ],
-        "judged": [
-            {"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}
-        ],
+        "judged": [{"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}],
         "evidence_audit": {
             "t1": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []}
         },

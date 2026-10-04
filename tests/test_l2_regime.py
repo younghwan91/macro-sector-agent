@@ -130,9 +130,7 @@ def _pick(**kw: object) -> dict[str, object]:
 def _digest(tilt: float | None) -> dict[str, object]:
     d: dict[str, object] = {
         "themes": [{"theme": "t1", "picks": [_pick(), _pick(ticker="BBB", from_52w_high=-0.05)]}],
-        "judged": [
-            {"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}
-        ],
+        "judged": [{"theme": "t1", "portfolio_eligible": True, "trusted": True, "gate": "passed"}],
         "evidence_audit": {
             "t1": {"counts": {"verified": 20}, "checked": 20, "unverified_axes": []}
         },

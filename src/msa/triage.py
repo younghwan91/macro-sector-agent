@@ -228,9 +228,7 @@ def _percentile(x: float, peers: Sequence[float]) -> float:
     return sum(1 for v in peers if v < x) / (len(peers) - 1)
 
 
-def readiness(
-    pick: Mapping[str, Any], peer_drawdowns: Sequence[float], tilt: float = 1.0
-) -> float:
+def readiness(pick: Mapping[str, Any], peer_drawdowns: Sequence[float], tilt: float = 1.0) -> float:
     """R 축 — **지금 이 차트가 할 말이 있는가.**
 
     `peer_drawdowns` 는 **같은 구획** 종목들의 낙폭이다. 테마 안에서 재면 낙폭이 얕은
@@ -341,9 +339,7 @@ def score_digest(
             + TRIAGE_WEIGHTS["R"] * r_value
         )
         rows.append(
-            TriageRow(
-                str(pick.get("ticker")), theme, part, total, j_value, c_value, r_value, note
-            )
+            TriageRow(str(pick.get("ticker")), theme, part, total, j_value, c_value, r_value, note)
         )
 
     rows.sort(
@@ -359,8 +355,8 @@ def score_digest(
 #: 리포트에 매번 싣는 고정 문장 (`CLAUDE.md` §7 · 스펙 §8.1). 토씨를 바꾸지 않는다.
 CLAIM_NOTE = (
     "**triage 는 읽는 순서다. 수익률 순서가 아니다.** 이 점수는 초과수익을 주장하지 "
-    "않으며 그렇게 검정된 적도 없다. 높은 triage 는 \"먼저 차트를 열어라\" 이지 "
-    "\"먼저 사라\" 가 아니다."
+    '않으며 그렇게 검정된 적도 없다. 높은 triage 는 "먼저 차트를 열어라" 이지 '
+    '"먼저 사라" 가 아니다.'
 )
 
 
@@ -376,9 +372,7 @@ def declared_constants() -> dict[str, Any]:
         "red_flag_max": RED_FLAG_MAX,
         "partial_penalty": PARTIAL_PENALTY,
         "pullback_mark": PULLBACK_MARK,
-        "pullback_mark_source": (
-            "msa.ops.readme_block.PULLBACK_MARK — 이 모듈이 만든 값이 아니다"
-        ),
+        "pullback_mark_source": ("msa.ops.readme_block.PULLBACK_MARK — 이 모듈이 만든 값이 아니다"),
         "excluded_inputs": [
             "s_pct",
             "t_pct",
@@ -394,9 +388,7 @@ def declared_constants() -> dict[str, Any]:
             "msa.l4.analyst.NOTE_TRUST — 설계 §9.2. 노트가 없으면 J = J_theme (특수해)"
         ),
         "regime_tilt": dict(_regime.REGIME_TILT),
-        "regime_tilt_source": (
-            "msa.l2.regime.REGIME_TILT — docs/25 §3.4 선언값. R 축에만 곱한다"
-        ),
+        "regime_tilt_source": ("msa.l2.regime.REGIME_TILT — docs/25 §3.4 선언값. R 축에만 곱한다"),
         "claim": (
             "읽는 순서 — 초과수익을 주장하지 않는다 "
             "(docs/superpowers/specs/2026-08-29-hedge-fund-evolution-design.md §3.3)"

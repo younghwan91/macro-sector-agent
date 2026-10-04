@@ -188,7 +188,7 @@ MOCK_OUTPUT: dict[str, Any] = {
             ],
         }
         for name in CYCLE_CLASSES
-    }
+    },
 }
 
 _roles.register_mock_output("macro_strategist", MOCK_OUTPUT)

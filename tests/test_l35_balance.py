@@ -206,9 +206,9 @@ def test_read_missing_is_none(tmp_path: Path) -> None:
 
 def test_staleness_uses_declared_days(tmp_path: Path) -> None:
     balance.write(tmp_path, _doc(asof="2026-01-01"))
-    assert balance.is_stale(
-        balance.read(tmp_path, "silver"), today=date(2026, 8, 29)
-    ), "90일 넘으면 낡았다"
+    assert balance.is_stale(balance.read(tmp_path, "silver"), today=date(2026, 8, 29)), (
+        "90일 넘으면 낡았다"
+    )
     balance.write(tmp_path, _doc(asof="2026-08-01"))
     assert not balance.is_stale(balance.read(tmp_path, "silver"), today=date(2026, 8, 29))
 
