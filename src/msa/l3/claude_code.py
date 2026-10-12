@@ -276,6 +276,10 @@ class ClaudeCodeProvider:
             self.models.effort_for(request.role),
             "--disallowed-tools",
             " ".join(DENIED_TOOLS),
+            # 판별 한 번이 세션 기록 하나다. 끄지 않으면 중립 작업 디렉터리마다
+            # ~/.claude/projects/-tmp-msa-l3-* 가 남는다(2026-10-12 실측 16개 · 8MB).
+            # 이 호출은 이어서 재개할 일이 없다 — 결과는 stdout 의 JSON 이 전부다.
+            "--no-session-persistence",
         ]
         if request.system:
             argv += ["--append-system-prompt", request.system]

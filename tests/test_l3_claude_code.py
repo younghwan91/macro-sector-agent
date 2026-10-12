@@ -134,6 +134,15 @@ def test_argv_opens_search_and_closes_mutation(
     assert argv[argv.index("--effort") + 1] == "high"
 
 
+def test_argv_does_not_persist_sessions(
+    monkeypatch: pytest.MonkeyPatch, req: CompletionRequest
+) -> None:
+    # 세션 기록이 ~/.claude/projects/-tmp-msa-l3-* 로 쌓이지 않게 한다
+    prov, rec = _provider(monkeypatch, [_envelope('{"verdict":"x","evidence":[]}')])
+    prov.complete(req)
+    assert "--no-session-persistence" in rec.calls[0]["argv"]
+
+
 def test_prompt_carries_schema_and_date_rule(
     monkeypatch: pytest.MonkeyPatch, req: CompletionRequest
 ) -> None:

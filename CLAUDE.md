@@ -1,203 +1,108 @@
 # macro-sector-agent — 작업 규약
 
-산업 사이클 → 테마 → 종목 → 포트폴리오 하향식 리서치 파이프라인.
-**현재 M3~M8 구현** (`src/msa/` — L0 데이터 · 테마 유니버스 · L1 스캐너 `msa scan` ·
-L4 종목 선정 `msa picks` · L5 포트 구성기 `msa portfolio` ·
-L3 에이전트 `msa research` · 운영 `msa check`/`msa journal`/`msa ops` · 케이던스 `msa run monthly|weekly`).
-**L2 거시 DAG 는 2026-08-23 에 제거됐다** (설계 질문 2 → C, `docs/13` §9 · `journal/2026-08-23-l2-removed.md`) —
-되살리려면 revert 가 아니라 새 설계 질문과 사전 등록이 필요하다.
-이후 단계는 `docs/11-roadmap.md`. 어느 계층이든 손대기 전에 해당 `docs/` 를 먼저 읽는다.
+산업 사이클 → 테마 → 종목 → 포트폴리오 하향식 리서치 파이프라인 (`src/msa/`, CLI `msa`).
+계층: L0 데이터 · L1 스캐너(`scan`) · L3 에이전트(`research`) · L3.5 수급(`balance`) ·
+P2 매크로(`regime`) · P3 종목 노트(`stock-notes`) · L4 종목(`picks`) · L5 포트(`portfolio`) ·
+운영(`check`/`journal`/`ops`) · 케이던스(`run monthly|weekly|daily|quarterly`) · 관문 0(`backtest`).
+**L2 거시 DAG 는 2026-08-23 에 제거됐다** (설계 질문 2 → C, `docs/13` §9 ·
+`journal/2026-08-23-l2-removed.md`) — 되살리려면 revert 가 아니라 새 설계 질문과 사전 등록이 필요하다.
+이후 단계는 `docs/11-roadmap.md`. **어느 계층이든 손대기 전에 해당 `docs/` 를 먼저 읽는다.**
 
 ## 절대 규칙
 
-### 1. 탐색으로 가중치를 정하지 않는다 — 이 저장소의 지배적 실패 유형
+코드·문서 주석 수백 곳이 `CLAUDE.md §N` 으로 이 번호를 가리킨다 — **번호를 바꾸지 않는다.**
+여기는 요약이고, 근거·사례를 담은 전문은 `docs/rules.md`.
 
-`portfolio-research` 의 지배적 실패는 "조용한 절단"이었다. 이 저장소의 지배적 실패는
-**오버피팅** 이 될 것이다.
+1. **탐색으로 가중치를 정하지 않는다 — 이 저장소의 지배적 실패 유형(오버피팅).**
+   L1 블록 가중치·L4 축 가중치·임계값은 **선언하고 근거를 적는다.** 근거가 없으면 없다고 적는다
+   (`src/msa/basis.py` `NoBasis`). 파라미터 스윕·그리드 서치·"성과가 좋아지는 방향으로" 는 금지.
+   과거 데이터로 확인하는 것은 허용(`docs/10` §2 관문이 요구) — 금지는 **확인 결과로 값을 바꾸는 것.**
+   검정이 "이 블록은 일하지 않는다" 고 하면 그 사실을 기록하고 가중치는 둔다.
+   구조를 바꾸려면 먼저 사전 등록 문서를 쓴다(`docs/12`·`14`·`15`·`17` 이 그 예).
+2. **조용한 절단 금지.** 요청한 것보다 적게 받으면 예외를 던지거나 경고를 남긴다. 제외한 것은 세어서
+   돌려준다. 테마 버킷 커버리지 감사(`docs/01`)는 매 적재마다 — 미분류 시총 비율이 임계를 넘으면 스캔 중단.
+3. **출처 없는 에이전트 주장은 저장되지 않는다.** L3 산출물의
+   `evidence: [{claim, source_url, date, reliability}]` 가 비면 스키마 거부. LLM 의 기억은 증거가 아니다.
+4. **에이전트는 테마만 고른다. 종목은 결정론적 계층이 고른다.** LLM 에게 종목 명단을 만들게 하지 않는다
+   (유명세 편향). L3 는 논지만, L4 랭킹·P3 후보 선정은 코드가 한다.
+5. **논지는 무효화 조건 없이 저장할 수 없다.** `thesis.invalidations` 가 비면 스키마 실패
+   (Tier-1 스탑의 근거, `docs/07` §4).
+6. **결정 저널은 append-only.** `journal/` 의 기존 파일을 수정·삭제하지 않는다. 생각이 바뀌면 새 항목을
+   추가하고 이전 항목을 링크한다. 항목은 `msa journal template <type>` → `msa journal new --from f.yaml`.
+   PreToolUse 훅 `.claude/hooks/journal-guard.sh` 가 커밋된 저널 파일의 Edit/Write 를 막는다(새 파일은 통과).
+7. **성과 수치를 광고하지 않는다.** README·리포트에 기대수익률·승률·수익 배수·전략 CAGR/Sharpe 를 쓰지
+   않는다. L1·L4 백테스트는 스코어의 예측력(rank-IC·분위 스프레드)이지 전략 수익률이 아니다.
+   쓸 수 있는 것: 검정 결과(IC 와 CI, 시도 수를 명시한 DSR·PBO)와 전향적 기록(트리거 충족률·Brier).
+8. **투자 조언이 아니다.** 산출물은 측정값과 명시된 가정이다. 집행은 사람이 하고, 자동 주문 기능은 만들지 않는다.
 
-결정론 계층(L1·L4)은 백테스트가 가능하고 DSR·PBO 관문이 붙는다
-(`docs/10-validation.md` §2). **그러나 그 관문이 이 규칙을 대체하지 않는다.**
-표본이 사실상 하나(1998~2026 미국 시장 단일 경로)이고, 사람이 표를 보고 손으로 가중치를
-옮기는 것은 **어디에도 기록되지 않는 시도**라 DSR 의 시도 수에 계상할 방법이 없다.
-`portfolio-research` 가 35회 탐색을 정산할 수 있었던 것은 그 35회가 스크립트로 남았기
-때문이다. 여기서 일어날 탐색은 사람의 머릿속에서 일어난다.
+## PIT 규약 (표·이유 전문: `docs/rules.md` 'PIT 규약')
 
-L3(에이전트 리서치)은 아예 백테스트가 불가능하다. 어느 쪽이든 결론은 같다 —
-**오버피팅할 기회 자체를 구조적으로 막아야 한다.**
+- **백테스트 경로**(`docs/10` §2): PIT 전부 필요, 예외 없음. `datekey` 기준 적재만 쓰고 `reportperiod` 로 정렬하지 않는다.
+- **오늘의 스캔 경로**: 자기이력 백분위(밸류·ROIC·마진)·자본 사이클 시계열(capex/D&A, 자산성장)은 PIT 필요,
+  오늘의 스냅샷(부채비율·현금 런웨이)은 불필요.
+- 코드는 각 지표가 **어느 쪽인지**와 **어느 경로에서 호출됐는지**를 명시한다(`src/msa/data/pit.py`).
+  그 분기를 호출자만 알고 있으면 몇 달 뒤 조용히 섞인다.
 
-> L1 블록 가중치, L4 축 가중치는 **선언하고 근거를 적는다.**
-> 데이터에 맞춰 조정하지 않는다. 조정하려면 그 근거를 커밋 메시지와 문서에 남긴다.
-
-- 파라미터 스윕 · 그리드 서치 · "성과가 좋아지는 방향으로" 는 이 저장소에서 금지된다.
-- 임계값(예: 낙폭 50%, RV 비율 0.8)은 **도메인 근거**에서 오거나, 없으면 그렇다고 적는다.
-- 과거 데이터로 확인하는 것은 허용된다 — 오히려 `docs/10-validation.md` §2 가 그것을
-  **관문으로 요구한다.** 금지는 그대로다: **확인의 결과로 값을 바꾸는 것.**
-  검정이 "이 블록은 일하지 않는다" 고 말하면 **그 사실을 기록**하고 가중치는 그대로 둔다.
-
-### 2. 조용한 절단 금지 (`portfolio-research` 에서 승계)
-
-데이터를 가져오는 코드는 요청한 것보다 적게 받으면 반드시 예외를 던지거나 경고를 남긴다.
-테마 버킷 커버리지 감사(§`docs/01-theme-universe.md`)는 매 적재마다 돈다 —
-**미분류 시총 비율이 임계를 넘으면 스캔을 진행하지 않는다.**
-
-### 3. 출처 없는 에이전트 주장은 저장되지 않는다
-
-L3 산출물은 `evidence: [{claim, source_url, date, reliability}]` 배열이 비어 있으면
-스키마 검증에서 거부된다. LLM 의 기억은 증거가 아니다.
-
-### 4. 에이전트는 테마만 고른다. 종목은 결정론적 계층이 고른다
-
-LLM 에게 종목을 물으면 훈련 데이터의 유명세 편향이 들어온다.
-L3 는 테마 논지만 산출하고, L4 는 그 논지를 입력으로 받되 **랭킹은 코드가 한다.**
-
-### 5. 논지는 무효화 조건 없이 저장할 수 없다
-
-`thesis.invalidations` 가 비면 스키마 검증 실패. 무효화 조건이 곧 Tier-1 스탑의 근거다
-(`docs/07-portfolio.md` §4). 무효화 조건을 못 쓰겠으면 그건 논지가 아니라 희망이다.
-
-### 6. 결정 저널은 append-only
-
-`journal/` 의 기존 파일을 수정하지 않는다. 생각이 바뀌면 새 항목을 추가하고 이전 항목을 링크한다.
-이 저장소에서 성과 검증을 하는 유일한 물건이므로, 사후 편집은 검증 자체를 파괴한다.
-
-### 7. 성과 수치를 광고하지 않는다
-
-전략 성과의 CAGR·Sharpe 를 말할 근거가 없다. L1·L4 의 백테스트는 **스코어의 예측력**
-(rank-IC·분위 스프레드)을 재는 것이지 전략의 수익률을 재는 것이 아니다 —
-L5(사이징·사다리·스탑)와 L3(확신도)이 백테스트 불가라 **전략 수익률이라는 물건 자체가
-만들어지지 않는다** (`docs/10-validation.md` §1·§2.5).
-
-README 와 리포트에 기대수익률·승률·수익 배수를 쓰지 않는다. 쓸 수 있는 것은
-**검정 결과**(IC 와 그 신뢰구간, 시도 수를 명시한 DSR·PBO)와
-**전향적 기록**(트리거 충족률, 캘리브레이션 Brier score)이며, 후자는 표본이 쌓인 뒤다.
-
-### 8. 투자 조언이 아니다
-
-산출물은 측정값과 명시된 가정이다. 집행은 사람이 하고, 자동 주문 기능은 만들지 않는다.
-
-## PIT 규약 — 두 경로가 다르다
-
-**이전 판은 "백테스트를 하지 않으므로 look-ahead 개념이 성립하지 않는다" 고 적었다. 틀렸다.**
-결정론 계층을 백테스트하기로 한 이상 look-ahead 는 정면으로 성립한다.
-
-경로가 둘이고 요구가 다르다.
-
-| 경로 | PIT | 이유 |
-|---|---|---|
-| **백테스트 경로** (`docs/10-validation.md` §2) | **전부 필요. 예외 없음** | look-ahead 가 IC 를 부풀리는 가장 흔한 방법이다. `datekey` 기준 적재만 쓰고 `reportperiod` 로 정렬하지 않는다 |
-| **오늘의 스캔 경로** (월간 운영) | 아래 표 | 미래를 보는 것이 불가능하므로 look-ahead 가 아니라 **분포 왜곡**이 문제다 |
-
-오늘의 스캔 경로 안에서:
-
-| 지표 종류 | PIT 필요 | 이유 |
-|---|---|---|
-| 자기이력 백분위 (밸류·ROIC·마진) | **필요** | 과거 시점 값을 정정치로 계산하면 백분위 분포가 왜곡되고, 오늘의 순위가 틀어진다 |
-| 자본 사이클 시계열 (capex/D&A, 자산성장) | **필요** | 같은 이유 |
-| 오늘의 스냅샷 (부채비율, 현금 런웨이) | 불필요 | 최신 정정치가 오히려 정확하다 |
-
-> 코드는 각 지표가 **어느 쪽인지 명시**하고, **어느 경로에서 호출됐는지**도 명시한다.
-> 같은 지표가 백테스트에서는 PIT 를 요구받고 오늘의 스캔에서는 아닌 경우가 있다 —
-> 그 분기를 코드가 아니라 호출자가 알고 있으면 몇 달 뒤 조용히 섞인다.
-
-## 명령어
+## 명령
 
 ```bash
-make install          # uv sync
-make check            # ruff + mypy + pytest (data/net 마커 제외)
-msa data status       # 스토어 상태·결측률 (M1)
-msa data audit        # 커버리지 감사 — 데이터 부분 (M1)
-msa scan              # L1 사이클 스캐너 → 테마 스코어보드 (M3). --asof --force --no-vcp
-                      #   산출물 state/scans/<date>/ (scoreboard·indicators·coverage·report·meta)
-msa data fred-fetch   # L1 이 쓰는 FRED 시리즈(CPI + 테마 physical_ref)를 state/physical/fred/ 에 캐시 (키 필요)
-msa data fred-lag     # 같은 목록의 발표 지연·개정 실측 (--vintage YYYY-MM-DD 로 ALFRED)
-msa portfolio --inputs <dir>   # L5 SOCP + 사다리·스탑·TP + 매매계획서 (M6). --asof --cases --capital
-                      #   --cluster-cap name=cap --no-write · 입력 계약: src/msa/l5/inputs.py
-                      #   산출물 state/portfolio/<date>/ (weights.csv·plan.md·diagnostics.json)
-                      #   --emit-positions: positions.yaml 모양의 미체결 제안(positions-proposal.yaml·.md)
-                      #   도 쓴다 — state/positions.yaml 은 건드리지 않는다, 승격(status open)은 사람이
-msa portfolio-inputs --asof DATE --themes a,b,c   # L4 picks + L3/사람 thesis → L5 입력 묶음 (배선 W1)
-                      #   [--human-theses DIR] [--top N] [--no-write] · 산출물 state/portfolio_inputs/<date>/
-                      #   (picks.csv·theses/·assemble_report.json·report.txt) → msa portfolio --inputs 그대로
-msa research <theme>  # L3 에이전트 4역할(supply·catalyst·bear·referee) → thesis 객체 (M7)
-                      #   **한 번에 하나씩 돌린다.** 2026-08-29 실측: 두 배치를 동시에 돌리자
-                      #   4건이 전부 ProviderError(종료코드 3)로 죽었다 — 속도 제한이다.
-                      #   순차로 돌리면 같은 테마가 그대로 통과한다. 종료코드: 2=스키마 거부
-                      #   (저장 안 함) · 3=제공자 오류(재시도하면 대개 된다)
-                      #   기본 --provider claude_code = 로컬 claude CLI 하위 프로세스 (API 크레딧 0).
-                      #   --provider anthropic 은 ANTHROPIC_API_KEY 로 크레딧을 쓴다
-                      #   오프라인: --dry-run (Mock) · --provider fixture (tests/fixtures/l3/)
-                      #   산출물 state/theses/<date>/ (thesis.yaml·report.md·rejections-pending·contested)
-msa balance [themes]  # L3.5 수급 균형 조사 — "수요 나누기 공급" (docs/26 사전 등록).
-                      #   판별기(L3)는 "안 죽었나" 만 묻는다. 이건 **"쓰는 양이 늘어나는가"** 다:
-                      #   향후 3~5년 실물 수요 증가율이 실물 공급 증가율을 앞지르는가.
-                      #   **가격이 아니라 물량 대 물량** — 목표가·기대수익을 담을 칸이 없다.
-                      #   **회전이다** — 테마를 안 주면 조사 없는 편입 가능 테마 먼저, 그다음
-                      #   90일(BALANCE_STALE_DAYS) 지난 것부터 n개. 매일 134 테마를 돌지 않는다.
-                      #   -n --unit --provider --dry-run --no-write --show
-                      #   산출물 state/balance/<theme>.balance.yaml · .report.md
-                      #   **트리아지 점수에 안 들어간다** (docs/26 §3.5) — 명단이 아니라 논지다.
-                      #   공급 경직성은 5유형 중 하나로 분류(byproduct·lead_time·permitting·
-                      #   capital·resource_depletion) — 분류 못 하면 그 주장을 안 싣는다
-                      #   → 관문 체인(msa.sector)의 ④ 관문이 이 판정을 읽는다
-msa regime            # P2 매크로 분석가 — cycle_class 8칸에 3값 판정 (docs/25 사전 등록).
-                      #   **주간 1회.** --week --asof --provider --dry-run --no-write --show
-                      #   산출물 state/regime/<YYYY-Www>.yaml. 트리아지 **R 축의 계수**로만 쓰인다
-                      #   (tailwind 1.00 · neutral 0.85 · headwind 0.70) — J·C·구획은 못 건드린다.
-                      #   L2(거시 인과 DAG)를 되살린 것이 아니다: 점수를 조정하지 않는다
-msa stock-notes       # P3 종목 분석가 — "이 회사의 재무가 무너지고 있는가" (설계 §9.2).
-                      #   **후보는 코드가 정한다** (구획 I-A 의 triage 상위 N) — LLM 은 명단을
-                      #   만들지 않고 받는다 (CLAUDE.md §4). --top-n --provider --refresh --show
-                      #   산출물 state/stock_notes/<TICKER>.yaml → 다음 daily 의 J 축에 반영.
-                      #   노트가 없으면 J = J_theme (오늘의 식이 특수해다)
-msa picks <theme>     # L4 종목 선정 — **하드 제외 통과 종목 전부 · 테마 내 동일가중** (2026-08-24,
-                      #   docs/06 §5.1·§6.1 · journal/2026-08-24-l4-selection-retired.md).
-                      #   S·T·M 3축 · 종합 · 순위 · 바벨 라벨은 함께 산출되나 **관찰 지표**이고
-                      #   선정에 쓰이지 않는다. --asof --top(관찰용 바벨 라벨 수) --no-write
-                      #   --no-physical. 산출물 state/picks/<date>/<theme>/ (ranking·excluded·report·meta)
-msa check             # 포지션 점검 (M8) — 트리거·무효화·Tier-2·사다리·시간스탑·TP. --asof --daily|--weekly
-                      #   산출물 state/checks/<date>/ (report·alerts.json·journal-draft). 주문은 내지 않는다
-msa journal new --from f.yaml   # 저널 항목 추가 (필수 필드 비면 거부 · 덮어쓰기 불가) — template <type>
-msa journal verify    # journal/ append-only 검사 (pre-commit: scripts/journal-precommit.sh · install-hook)
-msa journal diff <theme>        # 최근 두 thesis 스냅샷 필드 diff (논지 표류)
-msa ops schedule --print-cron   # 케이던스 → crontab/systemd 텍스트 (설치는 사람이) · ops due <cadence>
-msa ops calibration   # cycle_confidence 캘리브레이션 (N<20 → 결론 없음)
-msa ops rejections-update       # 기각 대장 r_12m/r_24m 갱신 + 세 질문 → state/rejections-summary.md
-msa ops ingest-theses --theses-dir state/theses/<date> [--scan state/scans/<date>] [--dry-run]
-                      #   L3 라운드 → 저널 기각 항목·기각 대장·관찰 목록·진입 초안(journal-draft-*.yaml).
-                      #   진입 항목은 쓰지 않는다 — 사람이 초안을 채워 msa journal new --from
-msa ops reproduce <date>        # state/scans/<date>/ 스냅샷만으로 리포트 재생성·대조
-msa run monthly       # 월간 한 번 (배선 W4): scan → 상위 K 선정 → research → ingest → picks →
-                      #   assemble → portfolio(제안). --asof --top-k 8 --themes a,b --provider none|mock|fixture|anthropic
-                      #   --human-theses DIR --capital N --skip-research/-picks/-portfolio --no-write
-                      #   산출물 state/runs/<date>/ (monthly-report.md·run.json) — 끝은 제안·초안, 집행은 사람.
-                      #   기본 --provider none = L3 미호출(키 없음): 사람 논지/직전 thesis 만 찾는다. exit 1 은 스캔 중단만
-msa run weekly        # 주간: 전수 스캔 + msa check --weekly + weekly-report.md. --asof --no-write
-msa run daily         # 일간: 후보 다이제스트 (스캔→상위 K→테마별 L4 랭킹→직전 diff→보유 점검).
-                      #   --asof --top-k 8 --themes a,b --per-theme 5 --no-write --send
-                      #   산출물 state/daily/<date>/ (digest.json·digest.md·report.txt·triage.csv)
-                      #   triage.csv — 구획(I-A 지금 볼 자리/I-B 고점권/II 판별 대기/III 판별 전) +
-                      #   **읽는 순서** 점수. 수익률 순서가 아니다 (docs/superpowers/specs/
-                      #   2026-08-29-hedge-fund-evolution-design.md §3.3). 참고 열(s_pct·composite·
-                      #   rs_rating)은 실리되 점수 입력이 아니다. 증거 처리 대장
-                      #   state/evidence_resolutions/<theme>.yaml 이 있으면 J 축에 반영된다 — 읽기 전용 후보 뷰,
-                      #   측정값·후보 목록이지 투자 조언이 아니다. 결정 케이던스는 월간 그대로
-                      #   --send 가 그 실행의 모든 발신(다이제스트 + 보유 점검 알림)을 지배한다 —
-                      #   없으면 아무것도 나가지 않고 alerts.json 만 남는다 (suppressed)
-msa run quarterly     # 분기 명령 목록 (ops calibration · ops rejections-update) — 나열만
-msa backtest l1       # L1 백테스트 관문 0 (M3.5) — rank-IC·스프레드·breadth_lead·DSR/PBO.
-                      #   산출물 state/backtests/l1/<date>/ · 판정 docs/backtest-l1.md. 튜닝 루프가 아니다
-msa backtest l1-structures  # L1 점수 구조 검정 — M3.6 S0/S1/S2 (docs/12 §4) + M3.7 S3(C 단독)/S2ʹ(C·E)
-                      #   (docs/17 §4 — 짝지은 스프레드 차 X−S2 의 CI 하한 > 0). 결과 docs/backtest-l1.md §12·§14
-msa backtest l4       # L4 종목 선정 백테스트 (docs/14 사전 등록의 집행) — 테마 내 rank-IC·축 단독·하드 필터.
-                      #   산출물 state/backtests/l4/<date>/ · --jobs 병렬 · 테마별 parquet 캐시라 중단해도 이어서 돈다
-msa backtest l4-structures  # L4 선정 구조 비교 (docs/15 사전 등록의 집행) — B0~B4 후보 규칙의 테마 EW 초과·
-                      #   사망률·회전율·PBO. 산출물 state/backtests/l4-structures/<date>/ · 판정 docs/15.
-                      #   --force --jobs --themes/--max-months(스모크, 판정 아님) --no-write.
-                      #   특성 패널 캐시는 `msa backtest l4` 의 것을 그대로 재사용한다
+make install     # uv sync — 패키지 관리는 uv. pip install 하지 않는다
+make check       # ruff check + ruff format --check + mypy(strict) + pytest -m "not data and not net" (~40초)
+make fmt         # ruff format + ruff check --fix — CI 가 format --check 로 막는다 (056f5ee)
+make test-all    # data·net 마커 포함 — 실제 DuckDB 스토어·FRED 키 필요
+uv run msa <cmd> --help
 ```
 
-텔레그램 배달은 `MSA_TELEGRAM_TOKEN` · `MSA_TELEGRAM_CHAT_ID` 가 둘 다 있을 때만 — 없으면 "not configured".
-보낼지 말지는 명령의 플래그가 정한다 (`msa check --no-send` · `msa run daily --send`) — 껐으면 "suppressed" 이고
-어느 경우든 `alerts.json` 은 쓴다.
+`msa` 각 명령의 옵션·산출물 경로·종료코드는 `docs/cli-reference.md` (옛 CLAUDE.md 명령 절 전문).
 
-패키지 관리는 **uv**. `pip install` 하지 않는다.
+## 운영 흐름과 함정
+
+- **`msa research` 는 한 번에 하나씩 돌린다.** 2026-08-29 두 배치를 동시에 돌리자 4건이 전부
+  ProviderError(종료코드 3, 속도 제한)로 죽었고 순차로 돌리니 통과했다(3956883). `docs/18` §4 의
+  병렬 예시보다 이 규칙이 우선. 종료코드 2=스키마 거부(저장 안 함) · 3=제공자 오류(재시도하면 대개 된다).
+- LLM 단계 기본 제공자는 `--provider claude_code`(로컬 `claude` CLI 하위 프로세스, API 크레딧 0). 키 없는
+  운영이 기본이라 새 LLM 단계도 이 제공자로 맞춘다(ed9f92f — 증거 트리아지만 API 직행이라 매번 기계 순서로 떨어졌다).
+  하위 프로세스는 중립 작업 디렉터리에서 돈다 — 저장소에서 돌리면 이 CLAUDE.md 가 실려 역할이 오염된다(`src/msa/l3/claude_code.py`).
+- **`state/` 는 `<repo>/state`(`MSA_STATE`)이고 대부분 gitignore 된 실행·LLM 산출물이다** — 워크트리에는
+  theses·balance·daily·scans 가 없다. 이전 산출물을 읽는 실행(`msa run daily`·`research`·`ops`)은
+  `~/git/macro-sector-agent` 본 체크아웃에서 돌린다. `state/evidence_resolutions/` 와 `journal/` 은 사람의
+  기록이라 커밋한다.
+- **스토어 `~/data/us_micro.duckdb`(`MSA_DUCKDB`)는 읽기 전용이고 2026-09-10 에서 멈춰 있다.** Sharadar
+  구독을 2026-09-14 해지했고 quant-airflow `dags/daily_sharadar.py` 가 꺼졌다(quant-airflow 86885b8).
+  `docs/18` §6 의 `opt-factor ingest` 일간 적재 안내는 그 이전 서술이다. 리포트의 낙폭·가격은 스토어
+  기준일 기준이라고 적는다 — 오늘 기준인 척하지 않는다.
+- **daily 리포트 커밋은 main 에 직접 들어간다.** `msa run daily` 는 `README.md` 의
+  `<!-- MSA:LATEST -->` … `<!-- /MSA:LATEST -->` 블록을 다시 쓴다(`--no-readme` 로 끔, 커밋은 사람이).
+  그 블록은 손으로 고치지 않고, 커밋 메시지는 `daily 리포트 자동 갱신 — <실행일> (스토어 기준일 <날짜>)`
+  (8d4358d·932ca3d). README 다른 부분을 고칠 때 블록 안을 건드리지 않는다.
+- 결과 해석: triage 는 **읽는 순서**이지 수익률 순서·매수 신호가 아니다. 편입 가능 ≠ 매수 신호(`docs/18` §7.5).
+- 텔레그램 발신은 `MSA_TELEGRAM_TOKEN`·`MSA_TELEGRAM_CHAT_ID` 가 둘 다 있고 명령 플래그가 켤 때만
+  (`msa run daily --send`, `msa check --no-send`) — 아니면 `alerts.json` 만 남는다.
+
+## 테스트·커밋
+
+- 임시 git 저장소를 만드는 테스트는 `tests/conftest.py` 의 autouse `_hermetic_git` 픽스처에 기댄다 — 지우지
+  않는다. 전역 `core.hooksPath` 의 커밋 신원 훅이 `t@example.com` 커밋을 거부해 `make check` 가 깨졌었다(8721201).
+- 커밋 신원은 레포 git 설정(`chyohw97@gmail.com`) 그대로. `git -c user.email=...` 로 덮지 않는다 —
+  세션 컨텍스트의 회사 이메일이 그렇게 섞인 사고가 있었고 `.github/workflows/commit-identity.yml` 이 거부한다.
+- 커밋 메시지는 한국어로, 무엇보다 **왜 문제였는지**를 쓴다(기존 로그 문체). 저널 커밋은 `저널 — <요지>`.
+- `journal/` append-only 검사 `msa journal verify` 는 로컬 훅에 **설치돼 있지 않다**(`msa journal install-hook`
+  으로 설치 — 사람이 결정). 저널을 건드린 커밋 전에는 직접 돌린다.
+
+## 문서 지도 — 해당 작업 전에 읽는다
+
+| 언제 | 문서 |
+|---|---|
+| 처음·전체 구조 | `README.md` → `docs/00-overview.md` → `docs/18-daily-run.md`(운영·읽는 법) |
+| 테마 유니버스·커버리지 | `docs/01-theme-universe.md`, `docs/theme-coverage-audit.md` |
+| L1 스캔 | `docs/02-cycle-state.md`, `docs/12`·`docs/17`(점수 구조 사전 등록), `docs/backtest-l1.md` |
+| 가치함정·L3 에이전트 | `docs/04-value-trap.md`, `docs/05-agent-research.md`, `docs/cases/`(few-shot) |
+| L4 종목 선정 | `docs/06-stock-selection.md`, `docs/14`·`docs/15`(사전 등록), `docs/backtest-l4.md` |
+| L5 포트·스탑 | `docs/07-portfolio.md` |
+| 데이터 계약 | `docs/08-data-contract.md` |
+| 운영·저널·케이던스 | `docs/09-operations.md` |
+| 검증 관문(DSR·PBO) | `docs/10-validation.md` |
+| 상수의 근거 | `docs/24-basis-registry.md` |
+| 설계 질문 | `docs/19`~`docs/23`, `docs/25`(매크로 regime), `docs/26`(수급), `docs/27` |
+| 헤지펀드 구조·triage 설계 | `docs/superpowers/specs/2026-08-29-hedge-fund-evolution-design.md` |
+| 모듈 감사 후속 | `docs/16-module-audit-2026-08-24.md` |
