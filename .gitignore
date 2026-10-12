@@ -33,5 +33,7 @@ state/calibration/
 state/logs/
 state/backtests/
 
-# Claude Code 워크트리·세션 산출물
-.claude/
+# Claude Code 워크트리·세션 산출물 — 단, 프로젝트 설정·훅은 커밋한다 (journal append-only 가드)
+.claude/*
+!.claude/settings.json
+!.claude/hooks/
