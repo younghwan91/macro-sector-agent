@@ -3,8 +3,6 @@
 [![CI](https://github.com/younghwan91/macro-sector-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/younghwan91/macro-sector-agent/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/younghwan91/macro-sector-agent?style=social)](https://github.com/younghwan91/macro-sector-agent)
-[![GitHub forks](https://img.shields.io/github/forks/younghwan91/macro-sector-agent?style=social)](https://github.com/younghwan91/macro-sector-agent)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-younghwan--chae-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/younghwan-chae/)
 
 **아무도 보지 않는 산업 테마를 찾아, 그것이 사이클 저점인지 구조적 사망인지를 가른 뒤, 그 테마 안에서 볼 만한 종목의 명단을 판단 재료와 함께 내놓는 하향식 리서치 파이프라인.**
@@ -560,13 +558,11 @@ L4 3축 · [07](docs/07-portfolio.md) L5 · [08](docs/08-data-contract.md) 데�
 자동 주문 기능은 만들지 않는다. 기대수익률·승률·수익 배수는 이 문서에도 리포트에도 쓰지
 않는다 (`CLAUDE.md` §7·§8).
 
-## ⭐ 도움이 되셨다면 (Star & 기여)
+## 기여 및 이슈 제보
 
-[![Star History Chart](https://api.star-history.com/svg?repos=younghwan91/macro-sector-agent&type=Date)](https://star-history.com/#younghwan91/macro-sector-agent&Date)
-
-`macro-sector-agent`가 탑다운 매크로 리서치나 산업 사이클 분석에 유용하셨다면 우측 상단의 **[⭐ Star](https://github.com/younghwan91/macro-sector-agent)** 를 눌러주세요!
-- 🐛 버그 제보 & 질문: [GitHub Issues](https://github.com/younghwan91/macro-sector-agent/issues)
+- 🐛 버그 제보, 질문, 기능 제안: [GitHub Issues](https://github.com/younghwan91/macro-sector-agent/issues)
 - 📈 업데이트 소식: [팔로우 @younghwan91](https://github.com/younghwan91)
+
 
 ## 관련 프로젝트 — 오픈소스 퀀트 스택
 
