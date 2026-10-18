@@ -5,6 +5,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-younghwan--chae-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/younghwan-chae/)
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
+  <img alt="연도별 시장 대비 상대성과 히트맵 — 미국 산업 테마 18개, 1999–2026" src="docs/images/hero-light.png" width="100%">
+</picture>
+
 **아무도 보지 않는 산업 테마를 찾아, 그것이 사이클 저점인지 구조적 사망인지를 가른 뒤, 그 테마 안에서 볼 만한 종목의 명단을 판단 재료와 함께 내놓는 하향식 리서치 파이프라인.**
 
 "지금 무엇을 사야 하는가" 를 먼저 묻지 않는다. **"지금 어느 테마가 잊혀졌는가"** → **"그것이
