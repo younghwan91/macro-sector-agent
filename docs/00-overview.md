@@ -103,7 +103,7 @@
 >
 > **주의 — 명단에 올랐다는 것은 "함정이 아니라고 판정됨" 이 아니다.** 가치함정 판별(L3)이
 > 실제로 돈 테마는 지금 2개뿐이고 나머지 132개는 판정받은 적이 없다. 일간(`msa run daily`)
-> 에는 `research` 단계가 **아예 없다** (`docs/09` §1). 자세히는 `README` §2.2.
+> 에는 `research` 단계가 **아예 없다** (`docs/09` §1). 자세히는 `README` §1.
 >
 > 정본: `journal/2026-08-24-role-boundary-fixed.md` · `journal/2026-08-24-l4-selection-retired.md` ·
 > `docs/06` §5.1·§6.1·§6.2 · `docs/backtest-l1.md` §14.
