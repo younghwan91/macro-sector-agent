@@ -267,12 +267,12 @@ def test_monthly_step_order_and_report_files(fakes: dict[str, Any], tmp_path: Pa
     assert res.theses["t_b"].status == "absent" and "관찰" in res.theses["t_b"].reason
     assert any("t_b" in x and "관찰" in x for x in rep.human_todo)
     assert any("positions-proposal.md" in x for x in rep.human_todo)
-    # 파일: state/runs/<asof>/monthly-report.md + run.json
+    # 파일: state/runs/<asof>/monthly-report.md + monthly-run.json
     out = fakes["state"] / "runs" / ASOF
     assert res.out_dir == out
     md = (out / "monthly-report.md").read_text(encoding="utf-8")
     assert "| scan | ok |" in md and "집행" in md and "사람이 한다" in md
-    js = json.loads((out / "run.json").read_text(encoding="utf-8"))
+    js = json.loads((out / "monthly-run.json").read_text(encoding="utf-8"))
     assert [s["name"] for s in js["steps"]] == list(R.MONTHLY_STEPS)
     assert js["exit_code"] == 0 and js["params"]["provider"] == "none"
     # 스캔은 state/scans 에, 포트는 state/portfolio 에 — 루트가 state 다
@@ -298,7 +298,7 @@ def test_monthly_scan_failure_stops_everything(
     assert fakes["calls"]["picks"] == []
     # 중단돼도 리포트는 남는다
     assert rep.step("report").status == "ok"  # type: ignore[union-attr]
-    assert (fakes["state"] / "runs" / ASOF / "run.json").exists()
+    assert (fakes["state"] / "runs" / ASOF / "monthly-run.json").exists()
 
 
 def test_monthly_has_no_macro_step(fakes: dict[str, Any]) -> None:
@@ -499,7 +499,7 @@ def test_weekly_is_scan_plus_check(fakes: dict[str, Any], monkeypatch: pytest.Mo
     assert any("thesis 스냅샷" in x for x in res.report.human_todo)
     assert any("미체결 제안" in x for x in res.report.human_todo)
     out = fakes["state"] / "runs" / ASOF
-    assert (out / "weekly-report.md").exists() and (out / "run.json").exists()
+    assert (out / "weekly-report.md").exists() and (out / "weekly-run.json").exists()
     assert res.out_dir == out
 
 
@@ -793,3 +793,62 @@ def test_weekly_only_sends_when_asked(
     R.run_weekly(asof=ASOF)
     R.run_weekly(asof=ASOF, send=True)
     assert seen == [False, True]
+
+
+# ---------------------------------------------------------------- 프로세스 그래프 감사 (2026-11-19)
+
+
+def _weekly_check_stub(monkeypatch: pytest.MonkeyPatch) -> None:
+    from datetime import date as _d
+
+    from msa.ops.check import CheckReport
+
+    def chk(asof_s: str, *, write: bool, send: bool = False) -> Any:
+        rep = CheckReport(
+            asof=_d.fromisoformat(asof_s), mode="weekly", positions=[], alerts=[], out_dir=None
+        )
+        return rep, {}
+
+    monkeypatch.setattr(R, "run_weekly_check", chk)
+
+
+def test_monthly_and_weekly_on_the_same_day_keep_both_step_tables(
+    fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """그 달 1영업일이 월요일이면 cron 이 07:00 월간 → 07:30 주간을 같은 asof 로 돌린다.
+
+    둘 다 `state/runs/<asof>/run.json` 에 쓰던 시절에는 주간이 월간의 단계 표를 덮어썼다.
+    """
+    _weekly_check_stub(monkeypatch)
+    R.run_monthly(asof=ASOF, provider="none")
+    R.run_weekly(asof=ASOF)
+    out = fakes["state"] / "runs" / ASOF
+    monthly = json.loads((out / R.run_json_name("monthly")).read_text(encoding="utf-8"))
+    weekly = json.loads((out / R.run_json_name("weekly")).read_text(encoding="utf-8"))
+    assert monthly["cadence"] == "monthly" and weekly["cadence"] == "weekly"
+    assert [s["name"] for s in monthly["steps"]] == list(R.MONTHLY_STEPS)
+
+
+def test_weekly_scan_step_says_when_asof_was_clamped(
+    fakes: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """주간만 스토어 최종일·기준일 내림을 적지 않았다 — 세 케이던스가 한 함수로 쓴다."""
+    _weekly_check_stub(monkeypatch)
+
+    def clamped(**kw: Any) -> _Scan:
+        sc = _fake_scan(kw.get("out_root"))
+        sc.meta.update(
+            asof="2026-09-10",
+            store_end="2026-09-10",
+            asof_requested="2026-11-16",
+            asof_clamped=True,
+        )
+        return sc
+
+    monkeypatch.setattr(R, "run_scan", clamped)
+    weekly = R.run_weekly(asof="2026-11-16").report.step("scan")
+    monthly = R.run_monthly(asof="2026-11-16", provider="none").report.step("scan")
+    assert weekly is not None and monthly is not None
+    assert "스토어 2026-09-10" in weekly.reason and "2026-11-16" in weekly.reason
+    assert weekly.details["asof_clamped"] is True
+    assert weekly.reason == monthly.reason  # 같은 사실은 같은 문구로

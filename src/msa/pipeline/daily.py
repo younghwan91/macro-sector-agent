@@ -60,7 +60,7 @@ import pandas as pd
 from msa import triage as triage_mod
 from msa.config import REPO_ROOT, paths, rel
 from msa.io import write_snapshot
-from msa.l1.scan import asof_note, run_scan, scan_dirs
+from msa.l1.scan import ScanResult, asof_note, run_scan, scan_dirs, write_scan_snapshot
 from msa.l1.scoreboard import BLOCKS
 from msa.l4 import axes
 from msa.l4.picks import (
@@ -83,7 +83,9 @@ from msa.pipeline.run import (
     _skip_rest,
     _Timer,
     run_cadence_check,
+    scan_step_result,
     select_themes,
+    write_run_files,
 )
 from msa.thesis import NO_THESIS_NOTE, all_theses, thesis_head
 
@@ -983,7 +985,13 @@ def unjudged_above_best(digest: dict[str, Any]) -> list[str]:
 
 
 def _research_until_eligible(
-    report: RunReport, digest: dict[str, Any], asof_s: str, *, enabled: bool, write: bool
+    report: RunReport,
+    digest: dict[str, Any],
+    asof_s: str,
+    *,
+    enabled: bool,
+    write: bool,
+    scan: ScanResult | None = None,
 ) -> tuple[str, ...]:
     """미판별 테마를 **위에서부터** 판별하고 **편입 가능이 나오면 멈춘다**.
 
@@ -997,16 +1005,32 @@ def _research_until_eligible(
     if not enabled:
         report.add(StepResult("research", "skipped", "--no-research", seconds=t.seconds))
         return ()
+    # no-write 면 판별하지 않는다. 판별 결과(thesis)는 `state/theses/` 에 저장돼야 다이제스트가
+    # 다시 읽어 반영한다(`all_theses`) — 저장하지 않으면 테마당 몇 분짜리 LLM 호출을 하고 결과를
+    # 버린다. 실사(`audit`)가 이미 같은 이유로 `write` 에 묶여 있다.
+    if not write:
+        report.add(
+            StepResult(
+                "research",
+                "skipped",
+                "no-write — 판별 결과를 저장할 수 없어 부르지 않았다",
+                seconds=t.seconds,
+            )
+        )
+        return ()
     # **없는 것과 실패한 것은 다르다.** 구독 CLI 가 안 깔린 환경(CI·합성 테스트)에서
     # 판별을 시도하면 매번 "failed" 가 뜬다 — 그것은 고장이 아니라 전제 미충족이다.
     import shutil
 
     if shutil.which("claude") is None:
+        # cron 의 PATH 는 `/usr/bin:/bin` 뿐이라 `~/.local/bin/claude` 를 못 찾는다 — 2026-08-28
+        # daily.log 의 판별이 매번 이 사유로 건너뛰어졌다. 사유에 원인과 처방을 같이 적는다.
         report.add(
             StepResult(
                 "research",
                 "skipped",
-                "`claude` CLI 가 없다 — 구독 경로로 판별할 수 없다",
+                "`claude` CLI 가 PATH 에 없다 — 구독 경로로 판별할 수 없다 "
+                "(cron 이면 `msa ops schedule --print-cron` 의 PATH 줄을 쓴다)",
                 seconds=t.seconds,
             )
         )
@@ -1024,11 +1048,47 @@ def _research_until_eligible(
         )
         return ()
 
-    from msa.l3.contracts import assemble_inputs
+    from msa.l3.contracts import InputsError, assemble_inputs, latest_scan_dir
     from msa.l3.pipeline import run_research
     from msa.l3.providers import make_provider
 
     p = paths()
+    # **판별 대상을 고른 스캔을 L3 입력으로도 쓴다.** 일간 스캔은 메모리에만 있고, L3 입력
+    # (`latest_scan_dir`)은 디스크의 최신 스캔을 읽는다. 저장하지 않으면 오늘 점수로 고른 테마를
+    # 주간 실행이 남긴 지난 스캔의 scorecard 로 판별한다.
+    snap: Path | None = None
+    if scan is not None:
+        try:
+            snap = write_scan_snapshot(scan)
+        except Exception as e:
+            report.add(
+                StepResult(
+                    "research",
+                    "failed",
+                    f"오늘 스캔을 저장하지 못해 판별하지 않았다 — {_err(e)}",
+                    seconds=t.seconds,
+                )
+            )
+            return ()
+        # 저장했다는 것과 L3 가 그것을 고른다는 것은 다른 사실이다 — 고르는 쪽에 물어 본다.
+        # asof 이하에 더 늦은 스캔이 있으면(다른 스토어로 돈 수동 실행 등) L3 는 그것을 읽는다.
+        try:
+            picked: Path | None = latest_scan_dir(p.scans, asof_s)
+        except InputsError:
+            picked = None
+        if picked is None or picked.resolve() != snap.resolve():
+            other = picked.name if picked is not None else "없음"
+            report.add(
+                StepResult(
+                    "research",
+                    "failed",
+                    f"L3 입력이 오늘 스캔({snap.name})이 아니라 {other} 을 읽는다 "
+                    "— 판별하지 않았다",
+                    [rel(snap)],
+                    t.seconds,
+                )
+            )
+            return ()
     done: list[str] = []
     found: str | None = None
     err: str | None = None
@@ -1039,7 +1099,7 @@ def _research_until_eligible(
                 inputs,
                 make_provider("claude_code", theme_id=theme),
                 theses_root=p.theses,
-                write=write,
+                write=True,
             )
         except Exception as e:  # 판별 실패가 다이제스트를 죽이지 않게
             err = f"{theme}: {_err(e)}"
@@ -1050,6 +1110,8 @@ def _research_until_eligible(
             break
 
     bit = f"판별 {len(done)}/{len(todo)}"
+    if snap is not None:
+        bit += f" · L3 입력 스캔 {snap.name}"
     if found:
         bit += f" · **{found} 편입 가능 — 여기서 멈췄다**"
     elif done:
@@ -1057,7 +1119,13 @@ def _research_until_eligible(
     if err:
         bit += f" · 중단: {err}"
     report.add(
-        StepResult("research", "failed" if err and not done else "ok", bit, seconds=t.seconds)
+        StepResult(
+            "research",
+            "failed" if err and not done else "ok",
+            bit,
+            [rel(snap)] if snap is not None else [],
+            t.seconds,
+        )
     )
     return tuple(done)
 
@@ -1133,6 +1201,11 @@ def _audit_eligible(
             "triage_fallback": why,
         }
     digest["evidence_audit"] = out
+    # 실패한 테마를 **센다.** 예전에는 모든 테마가 오류(네트워크·논지 없음)여도 "ok · 0테마
+    # 근거 0건" 처럼 보였다 — 실사를 안 한 것과 실사했는데 깨끗한 것이 구별되지 않았다 (§2).
+    errors = {k: str(v["error"]) for k, v in out.items() if "error" in v}
+    for k, why in errors.items():
+        report.notes.append(f"audit {k}: {why}")
     bad = sum(v.get("counts", {}).get("partial", 0) for v in out.values() if "counts" in v)
     n = sum(v.get("checked", 0) for v in out.values() if "checked" in v)
     first = sum(
@@ -1140,12 +1213,15 @@ def _audit_eligible(
     )
     fell_back = [k for k, v in out.items() if v.get("triage_fallback")]
     note = f" · 기계 순서로 내려감 {fell_back}" if fell_back else ""
+    if errors:
+        note += f" · 실사 실패 {len(errors)}테마 {sorted(errors)}"
     report.add(
         StepResult(
             "audit",
-            "ok",
+            "failed" if len(errors) == len(out) else "ok",
             f"{len(out)}테마 · 근거 {n}건 · 못 찾은 숫자 {bad}건 · **먼저 열 것 {first}건**{note}",
             seconds=t.seconds,
+            details={"failed": errors},
         )
     )
 
@@ -1494,25 +1570,11 @@ def run_daily(
         report.stopped = True
         report.stopped_reason = f"scan 실패 — {_err(e)}"
         _skip_rest(report, DAILY_STEPS, "scan 실패로 중단")
+        _write_daily_run(report, write=write)  # 중단도 기록한다 — 다이제스트는 쓰지 않는다
         return result
     result.scan = scan
     sb = scan.scoreboard.table
-    report.add(
-        StepResult(
-            "scan",
-            "ok",
-            f"테마 {len(sb)} · 스캔 기준일 {scan.meta.get('asof')} "
-            f"(스토어 {scan.meta.get('store_end')})"
-            + (f" · {asof_note(scan.meta)}" if scan.meta.get("asof_clamped") else ""),
-            seconds=t.seconds,
-            details={
-                "asof": scan.meta.get("asof"),
-                "store_end": scan.meta.get("store_end"),
-                "asof_requested": scan.meta.get("asof_requested"),
-                "asof_clamped": scan.meta.get("asof_clamped"),
-            },
-        )
-    )
+    report.add(scan_step_result(scan, t.seconds))
 
     # 2) select — 월간과 같은 규칙 (자격 상위 K + 지정; 풀 미달로 채우지 않는다)
     t = _Timer()
@@ -1674,7 +1736,9 @@ def run_daily(
 
     # 오늘 새로 판별한 것이 있으면 **다이제스트의 판정을 갱신한다.** 안 하면 방금 편입
     # 가능이 된 테마가 오늘 리포트에는 여전히 "판별 안 함" 으로 남는다.
-    newly = _research_until_eligible(report, digest, asof_s, enabled=research, write=write)
+    newly = _research_until_eligible(
+        report, digest, asof_s, enabled=research, write=write, scan=scan
+    )
     if newly:
         digest["judged"] = [
             {
@@ -1787,7 +1851,25 @@ def run_daily(
             dres = deliver([alert], out_dir, use_env=True)
             result.telegram = str(dres.status)
             report.notes.append(f"텔레그램: {dres.status}")
+    _write_daily_run(report, write=write)
     return result
+
+
+def _write_daily_run(report: RunReport, *, write: bool) -> None:
+    """단계 표를 `state/runs/<asof>/daily-report.md`·`daily-run.json` 에 남긴다.
+
+    월간·주간은 이미 남기는데 일간만 stdout(cron 이면 `daily.log`)에만 있었다 — 판별이
+    건너뛰어졌는지, 실사가 실패했는지를 나중에 기계가 읽을 수 없었다. `state/daily/` 가 아니라
+    `state/runs/` 에 쓰는 이유: 스캔 중단 때도 남겨야 하는데, `state/daily/<asof>/` 는 다이제스트의
+    자리라 거기에 파일이 생기면 다음 날 diff 의 기준이 흔들린다.
+    """
+    if not write:
+        return
+    try:
+        write_run_files(report, paths().runs, "daily-report.md")
+    except OSError as e:  # 기록 실패가 다이제스트를 죽이지 않게 — stdout 에는 남는다
+        log.warning("run daily: 단계 표를 쓰지 못했다 — %s", e)
+        report.notes.append(f"단계 표를 쓰지 못했다 — {e}")
 
 
 __all__ = [

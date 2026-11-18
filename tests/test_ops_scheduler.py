@@ -74,3 +74,21 @@ def test_run_tracker_marks_only_on_success(tmp_path: Path) -> None:
     assert tr.lookback_days(date(2026, 8, 25)) == 6  # 5일 공백 + 1일 겹침
     tr.store.set_meta("check.daily", "2025-01-01T00:00:00")
     assert tr.lookback_days(date(2026, 8, 25)) == MAX_LOOKBACK_DAYS
+
+
+def test_cron_and_systemd_carry_a_path_that_finds_uv_and_claude(tmp_path: Path) -> None:
+    """cron 의 PATH 는 `/usr/bin:/bin` 뿐이라 `~/.local/bin/claude` 를 못 찾았다 — 2026-08-28
+    daily.log 의 판별 단계가 매번 "claude CLI 가 없다" 로 skipped 였다."""
+    where = {"uv": "/home/u/.local/bin/uv", "claude": "/home/u/.npm/bin/claude"}
+    text = cron_lines(tmp_path, which=where.get)
+    assert "PATH=/home/u/.local/bin:/home/u/.npm/bin:/usr/local/bin:/usr/bin:/bin" in text
+    assert "경고" not in text
+    sd = systemd_units(tmp_path, which=where.get)
+    # 로그인 셸(`sh -l`)이 PATH 를 다시 정해도 이기도록 명령 안에서 export 한다
+    assert sd.count("ExecStart=/bin/sh -lc 'export PATH=/home/u/.local/bin:/home/u/.npm/bin:") == 4
+
+
+def test_cron_warns_when_claude_is_not_found(tmp_path: Path) -> None:
+    text = cron_lines(tmp_path, which={"uv": "/opt/uv/uv"}.get)
+    assert "PATH=/opt/uv:/usr/local/bin:/usr/bin:/bin" in text
+    assert "`claude` 를 PATH 에서 찾지 못했다" in text and "research" in text

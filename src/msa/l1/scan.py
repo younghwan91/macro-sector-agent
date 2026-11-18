@@ -24,6 +24,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -419,25 +420,37 @@ def run_scan(
         "ebitda_nonpos_share_median": float(sb.table["ebitda_nonpos_share"].median()),
     }
 
-    out_dir: Path | None = None
+    res = ScanResult(scoreboard=sb, indicators=ind, coverage=cov, meta=scan_meta, out_dir=None)
     if write:
-        root = out_root if out_root is not None else paths().scans
-        row = ind.at(sb.date)
-        ordered = [i for b in BLOCK_INDICATORS.values() for i in b if i in row.columns]
-        ordered += [c for c in (*TEXT_OUTPUTS, *FLAG_OUTPUTS) if c in row.columns]
-        out_dir = write_snapshot(
-            root / str(data_date.date()),
-            frames={
-                "scoreboard.csv": sb.table,
-                "indicators.csv": row[ordered],
-                "indicator_pct.csv": sb.indicator_pct,
-                "coverage.csv": cov,
-            },
-            jsons={"meta.json": scan_meta},
-            texts={"report.txt": render_report(sb, cov, scan_meta)},
-        )
-        log.info("scan: 저장 %s", out_dir)
-    return ScanResult(scoreboard=sb, indicators=ind, coverage=cov, meta=scan_meta, out_dir=out_dir)
+        res = dataclasses.replace(res, out_dir=write_scan_snapshot(res, out_root))
+    return res
+
+
+def write_scan_snapshot(scan: ScanResult, out_root: Path | None = None) -> Path:
+    """메모리의 스캔 결과 → `<out_root>/<데이터 기준일>/` 스냅샷 (`run_scan(write=True)` 와 같다).
+
+    `msa run daily` 는 스캔을 메모리에만 들고 있다가, 판별(L3)을 돌릴 때만 이것으로 저장한다.
+    L3 입력(`l3.contracts.latest_scan_dir`)은 **디스크의** 최신 스캔을 읽기 때문이다 — 저장하지
+    않으면 "오늘 점수로 골랐는데 지난주 스캔의 scorecard 로 판별하는" 어긋남이 생긴다.
+    """
+    sb, ind, cov, meta = scan.scoreboard, scan.indicators, scan.coverage, scan.meta
+    root = out_root if out_root is not None else paths().scans
+    row = ind.at(sb.date)
+    ordered = [i for b in BLOCK_INDICATORS.values() for i in b if i in row.columns]
+    ordered += [c for c in (*TEXT_OUTPUTS, *FLAG_OUTPUTS) if c in row.columns]
+    out_dir = write_snapshot(
+        root / str(meta["asof"]),
+        frames={
+            "scoreboard.csv": sb.table,
+            "indicators.csv": row[ordered],
+            "indicator_pct.csv": sb.indicator_pct,
+            "coverage.csv": cov,
+        },
+        jsons={"meta.json": meta},
+        texts={"report.txt": render_report(sb, cov, meta)},
+    )
+    log.info("scan: 저장 %s", out_dir)
+    return out_dir
 
 
 def scan_dirs(root: Path | None = None) -> list[tuple[date, Path]]:

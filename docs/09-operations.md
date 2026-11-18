@@ -8,7 +8,7 @@
 |---|---|---|---|
 | **월간** (1영업일) | L0 적재 → L1 전수 스캔 → 상위 K L3 → L4 → L5 | 사람 30~60분 검토 | 테마 스코어보드 + 매매계획서 |
 | **주간** (월요일) | 보유 포지션의 **트리거·무효화 점검** + L1 경량 갱신 (가격 블록만) | 사람 5~10분 | 점검 리포트 |
-| **일간** | **후보 다이제스트 + 무효화 점검** (기계) — 상위 K 테마·테마별 명단 상위 N·직전 대비 변화 · 사람은 **고르는 것·저널**만. **L3(LLM)는 돌지 않는다** (§1.1) | 0~5분 (읽기 전용) | `state/daily/<date>/digest.md` + 알림 |
+| **일간** | **후보 다이제스트 + 무효화 점검** (기계) — 상위 K 테마·테마별 명단 상위 N·직전 대비 변화 · 사람은 **고르는 것·저널**만. L3 는 **편입 가능 테마보다 위에 있는 미판별 테마만**, 편입 가능이 나올 때까지 판별한다(`research` 단계, 구독 CLI) — 그때 오늘 스캔을 `state/scans/<date>/` 에 저장해 L3 입력으로 쓴다. `--no-research`·`--no-write` 면 돌지 않는다 | 0~5분 | `state/daily/<date>/digest.md` + 알림 + 단계 표 `state/runs/<date>/daily-run.json` |
 | **분기** | 캘리브레이션 갱신(`10-validation.md` §4) + **기각 대장의 12·24M 수익률 갱신**(`10-validation.md` §5) — (L2 모순 감사는 2026-08-23 L2 제거로 없어졌다, `docs/13` §9) | 사람 1시간 | 감사 리포트 |
 | **수시** | 신규 테마 진입 검토 (사용자 발의) | | |
 
@@ -32,12 +32,18 @@
 
 | 케이던스 | 단계 (정본) | `research`(L3·LLM) |
 |---|---|---|
-| **일간** | `DAILY_STEPS = (scan, select, picks, diff, check, digest)` — `src/msa/pipeline/daily.py` | **없다.** 목록에 아예 존재하지 않는다 |
+| **일간** | `DAILY_STEPS = (scan, select, picks, diff, check, digest, research, audit, triage, readme)` — `src/msa/pipeline/daily.py` | **있다** (2026-08-29 `afc00ee` 부터 — 아래 정정) |
 | **월간** | `MONTHLY_STEPS = (scan, select, research, ingest, picks, assemble, portfolio, report)` — `src/msa/pipeline/run.py` | **있다** (셋째 단계) |
 | **주간** | `WEEKLY_STEPS = (scan, check, report)` | 없다 |
 
 **일간에는 LLM 이 한 번도 안 돈다.** 전 단계가 결정론이다 (`CLAUDE.md` §4). 그것은 설계이지
 결함이 아니다 — 일간은 **읽기 전용 후보 뷰**이고 결정 케이던스는 월간 그대로다.
+
+> **정정 (2026-11-19).** 위 문단은 2026-08-24 의 사실이다. 2026-08-29(`afc00ee`)부터 일간은
+> `research` 단계에서 **편입 가능 테마보다 위에 있는 미판별 테마**를 구독 CLI(`claude_code`)로
+> 판별하고, 첫 편입 가능에서 멈춘다. 그때 오늘 스캔을 `state/scans/<date>/` 에 저장해 L3 입력으로
+> 쓴다 — 저장하지 않으면 L3 가 지난 주간 스캔의 scorecard 를 읽었다. `--no-research`·`--no-write`
+> 면 돌지 않는다. 종목은 여전히 결정론 계층이 고른다 (`CLAUDE.md` §4).
 
 **그 귀결을 명시한다 — 일간 다이제스트에 오른 테마 대부분은 가치함정 판정을 받은 적이 없다.**
 
@@ -299,7 +305,7 @@ upsert (기존 `added_at` 유지). 스코어보드 순위는 `--scan` 의 `score
 | `ingest` | 이번 실행이 쓴 L3 라운드 → `ingest_round` (기각→저널+대장 · contested→관찰 · 통과→진입 초안) | `none` 이면 새 라운드가 없어 `skipped` |
 | `picks` | 게이트 편입 가능(`portfolio_eligible`) thesis 가 있는 테마만 `run_picks` | 테마별 격리 |
 | `assemble` · `portfolio` | `assemble_inputs` → `run_portfolio(emit_positions=True)` → `plan.md` · `positions-proposal.yaml` | 묶을 테마가 0 이면 `skipped` (오류가 아니다) |
-| `report` | `state/runs/<asof>/monthly-report.md` · `run.json` — 단계 표 + **사람이 할 것**(채울 초안 · 승격할 제안 · 관찰 행) | |
+| `report` | `state/runs/<asof>/monthly-report.md` · `monthly-run.json` — 단계 표 + **사람이 할 것**(채울 초안 · 승격할 제안 · 관찰 행) | |
 
 **오늘 `--provider none` 이 뜻하는 것.** `ANTHROPIC_API_KEY` 가 없는 현재 기본값이다. L3 를 부르지 않으므로
 새 thesis 는 생기지 않고, 사람이 쓴 논지 디렉터리나 직전 라운드의 thesis 가 있는 테마만 L4·L5 로 간다.

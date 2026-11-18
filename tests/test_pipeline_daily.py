@@ -864,3 +864,136 @@ def test_alert_pick_line_marks_new_from_the_diff() -> None:
     diff = {"stocks": {"uranium": {"new_in_top": ["UEC"]}}}
     assert D._new_top_for("uranium", picks, diff) == {"UEC"}
     assert D._new_top_for("copper", picks, diff) == set()
+
+
+# ---------------------------------------------------------------- 프로세스 그래프 감사 (2026-11-19)
+
+
+@dataclass
+class _Gate:
+    portfolio_eligible: bool
+
+
+@dataclass
+class _Res:
+    gate: _Gate
+
+
+def _fake_l3(monkeypatch: pytest.MonkeyPatch, order: list[str], eligible: set[str]) -> None:
+    """판별 경로의 L3 진입점을 기록만 하는 가짜로 — LLM 도 `claude` 도 없다."""
+    import msa.l3.contracts as C
+    import msa.l3.pipeline as P
+    import msa.l3.providers as PV
+
+    monkeypatch.setattr("shutil.which", lambda name: f"/fake/bin/{name}")
+
+    def snapshot(scan: Any, out_root: Path | None = None) -> Path:
+        order.append("snapshot")
+        d = paths().scans / str(scan.meta["asof"])
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "scoreboard.csv").write_text("theme\n", encoding="utf-8")  # latest_scan_dir 의 표지
+        return d
+
+    def inputs(theme: str, **kw: Any) -> str:
+        order.append(f"inputs:{theme}")
+        return theme
+
+    def research(theme: str, provider: Any, **kw: Any) -> _Res:
+        order.append(f"research:{theme}:write={kw['write']}")
+        return _Res(_Gate(theme in eligible))
+
+    monkeypatch.setattr(D, "write_scan_snapshot", snapshot)
+    monkeypatch.setattr(C, "assemble_inputs", inputs)
+    monkeypatch.setattr(P, "run_research", research)
+    monkeypatch.setattr(PV, "make_provider", lambda *a, **k: None)
+
+
+def test_daily_research_saves_todays_scan_before_l3_reads_it(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P1 — 일간 스캔은 메모리에만 있고 L3 입력은 디스크의 최신 스캔을 읽는다. 저장하지 않으면
+    오늘 점수로 고른 테마를 주간 실행이 남긴 지난 스캔으로 판별한다."""
+    order: list[str] = []
+    _fake_l3(monkeypatch, order, eligible={"t_b"})
+    res = D.run_daily(asof=ASOF1, top_k=3, readme=env["readme"], audit=False)
+    assert order[0] == "snapshot", order  # L3 입력 조립보다 먼저
+    assert order[1:] == [
+        "inputs:t_a",
+        "research:t_a:write=True",
+        "inputs:t_b",
+        "research:t_b:write=True",  # 편입 가능이 나오면 멈춘다 — t_c 는 판별하지 않는다
+    ]
+    step = res.report.step("research")
+    assert step is not None and step.status == "ok"
+    assert f"L3 입력 스캔 {ASOF1}" in step.reason
+
+
+def test_daily_research_refuses_when_l3_would_read_another_scan(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장했다는 것과 L3 가 그것을 고른다는 것은 다른 사실이다. asof 를 스토어 최종일로 내린
+    날(데이터 08-20, 요청 08-21)에 08-21 스캔이 이미 디스크에 있으면 L3 는 그것을 읽는다."""
+    order: list[str] = []
+    _fake_l3(monkeypatch, order, eligible=set())
+    env["data"]["scan_meta"] = {"asof": "2026-08-20", "asof_clamped": True}
+    later = paths().scans / ASOF1
+    later.mkdir(parents=True)
+    (later / "scoreboard.csv").write_text("theme\n", encoding="utf-8")
+    res = D.run_daily(asof=ASOF1, top_k=3, readme=env["readme"], audit=False)
+    assert order == ["snapshot"]  # L3 입력 조립·LLM 호출 없음
+    step = res.report.step("research")
+    assert step is not None and step.status == "failed"
+    assert "2026-08-20" in step.reason and ASOF1 in step.reason
+
+
+def test_daily_no_write_does_not_call_the_llm(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P2 — no-write 면 판별 결과를 저장할 수 없다. 예전에는 그래도 LLM 을 불렀고(테마당 몇
+    분), 결과는 버려져 다이제스트에 반영되지도 않았다."""
+    order: list[str] = []
+    _fake_l3(monkeypatch, order, eligible=set())
+    res = D.run_daily(asof=ASOF1, top_k=3, write=False, readme=env["readme"])
+    assert order == []
+    step = res.report.step("research")
+    assert step is not None and step.status == "skipped" and "no-write" in step.reason
+
+
+def test_audit_that_failed_for_every_theme_is_not_ok(env: dict[str, Any]) -> None:
+    """P3 — 편입 가능 테마 전부의 실사가 오류여도 단계가 ok 였다."""
+    report = D.RunReport(cadence="daily", asof=ASOF1, started_at="", write=True, state_root="")
+    digest: dict[str, Any] = {"judged": [{"theme": "t_a", "portfolio_eligible": True}]}
+    D._audit_eligible(report, digest, ASOF1, enabled=True)  # 논지 파일이 없다 → 오류
+    step = report.step("audit")
+    assert step is not None and step.status == "failed"
+    assert step.details["failed"] == {"t_a": "논지를 찾지 못했다"}
+    assert any("audit t_a" in n for n in report.notes)
+
+
+def test_daily_leaves_its_step_table_in_state_runs(env: dict[str, Any]) -> None:
+    """P4 — 월간·주간은 단계 표를 남기는데 일간만 stdout 에만 있었다."""
+    res = D.run_daily(asof=ASOF1, top_k=2, readme=env["readme"], research=False)
+    out = env["state"] / "runs" / ASOF1
+    js = json.loads((out / "daily-run.json").read_text(encoding="utf-8"))
+    assert js["cadence"] == "daily"
+    assert [s["name"] for s in js["steps"]] == list(D.DAILY_STEPS)
+    assert js["steps"] == res.report.as_dict()["steps"]
+    assert "# 일간 실행" in (out / "daily-report.md").read_text(encoding="utf-8")
+
+
+def test_daily_scan_failure_is_recorded_without_a_digest(
+    env: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def boom(**kw: Any) -> Any:
+        raise RuntimeError("커버리지 감사 실패")
+
+    monkeypatch.setattr(D, "run_scan", boom)
+    D.run_daily(asof=ASOF1, readme=env["readme"], research=False)
+    js = json.loads((env["state"] / "runs" / ASOF1 / "daily-run.json").read_text(encoding="utf-8"))
+    assert js["stopped"] and js["exit_code"] == 1
+    assert not (env["state"] / "daily").exists()  # 다이제스트 자리는 비워 둔다
+
+
+def test_daily_no_write_leaves_no_step_table(env: dict[str, Any]) -> None:
+    D.run_daily(asof=ASOF1, top_k=2, write=False, readme=env["readme"], research=False)
+    assert not (env["state"] / "runs").exists()
