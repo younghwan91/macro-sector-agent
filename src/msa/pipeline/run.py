@@ -21,7 +21,7 @@
 | `picks` | 게이트 편입 가능 테마만 `run_picks` | 테마별 격리 |
 | `assemble`·`portfolio` | `assemble_inputs` → `run_portfolio(emit_positions=True)` | 0 → skipped; |
 | | | **입력 계약 위반은 `failed` + 중단**(exit 1) |
-| `report` | `state/runs/<asof>/monthly-report.md` · `run.json` | |
+| `report` | `state/runs/<asof>/monthly-report.md` · `monthly-run.json` | |
 
 **끝은 제안과 초안이다.** 진입 초안(`journal-draft-*.yaml`)·미체결 제안(`positions-proposal.yaml`)·
 관찰 목록 행까지 만들고 멈춘다. 저널 확정·`positions.yaml` 승격·주문은 사람이 한다 (`CLAUDE.md` §8,
@@ -139,9 +139,9 @@ class StepResult:
 @dataclass
 class RunReport:
     """한 번의 실행 — 단계 목록 + 사람 몫 TODO + 비고. `render()` 가 마크다운, `as_dict()` 가
-    `run.json`."""
+    `<cadence>-run.json` (`run_json_name`)."""
 
-    cadence: str  # monthly | weekly
+    cadence: str  # monthly | weekly | daily
     asof: str
     started_at: str
     write: bool
@@ -200,7 +200,9 @@ class RunReport:
 
     def render(self) -> str:
         mode = "" if self.write else " (no-write — state/ 에 쓰지 않았다, 샌드박스)"
-        title = {"monthly": "월간 실행", "weekly": "주간 실행"}.get(self.cadence, self.cadence)
+        title = {"monthly": "월간 실행", "weekly": "주간 실행", "daily": "일간 실행"}.get(
+            self.cadence, self.cadence
+        )
         L = [
             f"# {title} · {self.asof}{mode}",
             "",
@@ -548,6 +550,33 @@ def _asof_str(asof: str | date | None) -> str:
     return s
 
 
+def scan_step_result(scan: ScanResult, seconds: float) -> StepResult:
+    """세 케이던스(월간·주간·일간)가 **같은 문구**로 쓰는 `scan` 단계 행.
+
+    예전에는 케이던스마다 따로 조립했고, 주간만 스토어 최종일과 **요청 asof 를 내렸다는
+    사실**(`asof_note`)을 빠뜨렸다 — 스토어가 2026-09-10 에 멈춘 뒤 주간 리포트는 매번 오늘
+    날짜를 달고 9월 데이터를 보여 주면서 그 사실을 적지 않았다 (`CLAUDE.md` §2). 한 곳에서
+    만들면 갈라질 수 없다.
+    """
+    sb = scan.scoreboard.table
+    meta = scan.meta
+    return StepResult(
+        "scan",
+        "ok",
+        f"테마 {len(sb)} · 자격 {_n_eligible(sb)} · "
+        f"스캔 기준일 {meta.get('asof')} (스토어 {meta.get('store_end')})"
+        + (f" · {asof_note(meta)}" if meta.get("asof_clamped") else ""),
+        [rel(scan.out_dir)] if scan.out_dir else [],
+        seconds,
+        {
+            "asof": meta.get("asof"),
+            "store_end": meta.get("store_end"),
+            "asof_requested": meta.get("asof_requested"),
+            "asof_clamped": meta.get("asof_clamped"),
+        },
+    )
+
+
 @dataclass
 class _Roots:
     """이번 실행이 쓰는 루트 — `write` 면 `state/`, 아니면 샌드박스. 계층들은 파일 계약으로
@@ -709,24 +738,8 @@ def _monthly_steps(
     result.scan = scan
     scan_dir = scan.out_dir
     sb = scan.scoreboard.table
-    report.add(
-        StepResult(
-            "scan",
-            "ok",
-            f"테마 {len(sb)} · 자격 {_n_eligible(sb)} · "
-            f"스캔 기준일 {scan.meta.get('asof')} (스토어 {scan.meta.get('store_end')})"
-            # 요청 asof 를 내렸으면 그 사실을 단계 노트에 싣는다 (`CLAUDE.md` §2)
-            + (f" · {asof_note(scan.meta)}" if scan.meta.get("asof_clamped") else ""),
-            [rel(scan_dir)] if scan_dir else [],
-            t.seconds,
-            {
-                "asof": scan.meta.get("asof"),
-                "store_end": scan.meta.get("store_end"),
-                "asof_requested": scan.meta.get("asof_requested"),
-                "asof_clamped": scan.meta.get("asof_clamped"),
-            },
-        )
-    )
+    # 요청 asof 를 내렸으면 그 사실을 단계 노트에 싣는다 (`CLAUDE.md` §2)
+    report.add(scan_step_result(scan, t.seconds))
 
     # 2) select — L1 순위(S2 자격)만으로 고른다
     t = _Timer()
@@ -1311,17 +1324,7 @@ def run_weekly(
             _skip_rest(report, WEEKLY_STEPS[:-1], "scan 실패로 중단")
         else:
             result.scan = scan
-            sb = scan.scoreboard.table
-            report.add(
-                StepResult(
-                    "scan",
-                    "ok",
-                    f"테마 {len(sb)} · 자격 {_n_eligible(sb)} · "
-                    f"스캔 기준일 {scan.meta.get('asof')}",
-                    [rel(scan.out_dir)] if scan.out_dir else [],
-                    t.seconds,
-                )
-            )
+            report.add(scan_step_result(scan, t.seconds))
             t = _Timer()
             try:
                 chk, info = run_weekly_check(asof_s, write=write, send=send)
@@ -1377,16 +1380,32 @@ def run_quarterly() -> str:
 # ---------------------------------------------------------------- 리포트 쓰기
 
 
+def run_json_name(cadence: str) -> str:
+    """`state/runs/<asof>/` 안의 단계 표 파일 이름 — **케이던스마다 다르다.**
+
+    예전에는 월간·주간이 둘 다 `run.json` 이었다. 그 달 1영업일이 월요일이면 cron 이 07:00 에
+    월간, 07:30 에 주간을 같은 `<asof>` 로 돌리고, 주간이 월간의 단계 표를 덮어쓴다
+    (`monthly-report.md` 만 남고 기계가 읽을 표가 사라진다).
+    """
+    return f"{cadence}-run.json"
+
+
+def write_run_files(report: RunReport, runs_root: Path, name: str) -> Path:
+    """`<runs_root>/<asof>/<name>` + `<cadence>-run.json` 을 쓰고 디렉터리를 돌려준다.
+    단계를 더하지 않는다 — 일간처럼 `report` 단계가 없는 케이던스도 같은 파일을 남긴다."""
+    return write_snapshot(
+        runs_root / report.asof,
+        texts={name: report.render()},
+        jsons={run_json_name(report.cadence): report.as_dict()},
+    )
+
+
 def _write_report(report: RunReport, roots: _Roots, name: str) -> None:
-    """`<roots.runs>/<asof>/<name>` + `run.json`. 샌드박스면 쓰긴 하되 `report.out_dir` 는
-    비운다."""
+    """`<roots.runs>/<asof>/<name>` + `<cadence>-run.json`. 샌드박스면 쓰긴 하되
+    `report.out_dir` 는 비운다."""
     step_t = _Timer()
     try:
-        d = write_snapshot(
-            roots.runs / report.asof,
-            texts={name: report.render()},
-            jsons={"run.json": report.as_dict()},
-        )
+        d = write_run_files(report, roots.runs, name)
     except Exception as e:  # 리포트를 못 쓴 것도 리포트에 남긴다 — 돌려주는 객체엔 있다
         report.add(StepResult("report", "failed", _err(e), seconds=step_t.seconds))
         return
@@ -1396,9 +1415,10 @@ def _write_report(report: RunReport, roots: _Roots, name: str) -> None:
         )
         return
     report.out_dir = str(d)
-    report.add(StepResult("report", "ok", "", [rel(d / name), rel(d / "run.json")], step_t.seconds))
+    js = run_json_name(report.cadence)
+    report.add(StepResult("report", "ok", "", [rel(d / name), rel(d / js)], step_t.seconds))
     # 단계 행이 하나 늘었으니 파일을 한 번 더 쓴다 — 파일과 객체가 같은 표를 갖게
-    write_snapshot(d, texts={name: report.render()}, jsons={"run.json": report.as_dict()})
+    write_run_files(report, roots.runs, name)
 
 
 __all__ = [
@@ -1417,9 +1437,12 @@ __all__ = [
     "WeeklyRunResult",
     "gate_eligible",
     "run_cadence_check",
+    "run_json_name",
     "run_monthly",
     "run_quarterly",
     "run_weekly",
     "run_weekly_check",
+    "scan_step_result",
     "select_themes",
+    "write_run_files",
 ]

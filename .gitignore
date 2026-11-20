@@ -37,3 +37,6 @@ state/backtests/
 .claude/*
 !.claude/settings.json
 !.claude/hooks/
+
+# archify 다이어그램 산출물(HTML·영수증) — 로컬 확인용, 커밋하지 않는다
+.archify/

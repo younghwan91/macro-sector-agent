@@ -17,10 +17,16 @@ cron 은 "1영업일" 을 표현하지 못하므로 1~3일에 매일 깨우고 `
 그 달의 첫 평일일 때만 0 을 돌려준다 (미국 공휴일은 보지 않는다 — 공휴일이 1일이면 하루 늦게 돈다.
 이 한계를 숨기지 않고 여기 적는다). **아무것도 설치하지 않는다** — 출력을 사람이 `crontab -e` 에
 붙인다.
+
+cron 의 PATH 는 `/usr/bin:/bin` 뿐이다. 그래서 출력에 `PATH=` 줄을 넣는다 — 만든 순간의 `uv`·
+`claude` 위치를 앞에 붙인다. 이 줄이 없던 시절(2026-08-28 daily.log) `msa run daily` 의 판별
+단계가 `claude` 를 못 찾아 매번 skipped 였다.
 """
 
 from __future__ import annotations
 
+import shutil
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -105,14 +111,55 @@ def is_due(cadence: str, today: date) -> bool:
     raise ValueError(f"cadence ∈ {CADENCES}: {cadence!r}")
 
 
+#: cron·systemd 가 기본으로 주는 PATH — 여기에 `uv`·`claude` 의 디렉터리를 앞에 붙인다.
+BASE_PATH: tuple[str, ...] = ("/usr/local/bin", "/usr/bin", "/bin")
+
+#: 케이던스가 PATH 에서 찾는 실행 파일 — `uv`(runner), `claude`(일간 판별의 구독 CLI).
+PATH_EXECUTABLES: tuple[str, ...] = ("uv", "claude")
+
+
+def job_path(which: Callable[[str], str | None] = shutil.which) -> tuple[str, list[str]]:
+    """(PATH 값, 못 찾은 실행 파일). 만든 순간의 위치를 박는다 — cron 은 `$HOME` 을 펴지 않는다."""
+    dirs: list[str] = []
+    missing: list[str] = []
+    for exe in PATH_EXECUTABLES:
+        found = which(exe)
+        if found is None:
+            missing.append(exe)
+            continue
+        d = str(Path(found).parent)
+        if d not in dirs:
+            dirs.append(d)
+    dirs += [d for d in BASE_PATH if d not in dirs]
+    return ":".join(dirs), missing
+
+
+def _missing_lines(missing: list[str]) -> list[str]:
+    return [
+        f"# 경고: `{exe}` 를 PATH 에서 찾지 못했다 — "
+        + (
+            "cron 이 msa 를 돌리지 못한다"
+            if exe == "uv"
+            else "일간 판별(research)이 skipped 로 남는다"
+        )
+        for exe in missing
+    ]
+
+
 def cron_lines(
-    repo: Path | None = None, runner: str = "uv run", log_dir: str = "state/logs"
+    repo: Path | None = None,
+    runner: str = "uv run",
+    log_dir: str = "state/logs",
+    which: Callable[[str], str | None] = shutil.which,
 ) -> str:
     root = repo or REPO_ROOT
+    path, missing = job_path(which)
     L = [
         "# macro-sector-agent 케이던스 (docs/09 §1) — `msa ops schedule --print-cron` 이 만들었다.",
         "# 설치는 사람이 한다: crontab -e 에 붙여 넣는다.",
         "# 텔레그램은 MSA_TELEGRAM_TOKEN / MSA_TELEGRAM_CHAT_ID 가 둘 다 있을 때만 보낸다.",
+        f"PATH={path}",
+        *_missing_lines(missing),
         f"MSA_REPO={root}",
         "# MSA_TELEGRAM_TOKEN=...",
         "# MSA_TELEGRAM_CHAT_ID=...",
@@ -128,13 +175,19 @@ def cron_lines(
     return "\n".join(L)
 
 
-def systemd_units(repo: Path | None = None, runner: str = "uv run") -> str:
+def systemd_units(
+    repo: Path | None = None,
+    runner: str = "uv run",
+    which: Callable[[str], str | None] = shutil.which,
+) -> str:
     """systemd 타이머 텍스트 (cron 대신 쓸 때). OnCalendar 로 1~3일 + due 게이트는 동일."""
     root = repo or REPO_ROOT
+    path, missing = job_path(which)
     out: list[str] = [
         "# systemd --user 타이머. 각 블록을 "
         "~/.config/systemd/user/msa-<cadence>.{service,timer} 로 "
         "저장한다.",
+        *_missing_lines(missing),
         "",
     ]
     for j in JOBS:
@@ -146,7 +199,9 @@ def systemd_units(repo: Path | None = None, runner: str = "uv run") -> str:
             "[Service]",
             "Type=oneshot",
             f"WorkingDirectory={root}",
-            f"ExecStart=/bin/sh -lc '{j.command_chain(runner)}'",
+            # `-l` 로그인 셸은 배포판에 따라 `/etc/profile` 이 PATH 를 다시 정한다 —
+            # `Environment=` 만으로는 덮일 수 있어 명령 안에서 export 한다.
+            f"ExecStart=/bin/sh -lc 'export PATH={path}; {j.command_chain(runner)}'",
             "",
             f"# --- msa-{j.cadence}.timer",
             "[Unit]",

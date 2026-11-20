@@ -73,12 +73,15 @@ msa ops reproduce <date>        # state/scans/<date>/ 스냅샷만으로 리포�
 msa run monthly       # 월간 한 번 (배선 W4): scan → 상위 K 선정 → research → ingest → picks →
                       #   assemble → portfolio(제안). --asof --top-k 8 --themes a,b --provider none|mock|fixture|anthropic
                       #   --human-theses DIR --capital N --skip-research/-picks/-portfolio --no-write
-                      #   산출물 state/runs/<date>/ (monthly-report.md·run.json) — 끝은 제안·초안, 집행은 사람.
+                      #   산출물 state/runs/<date>/ (monthly-report.md·monthly-run.json) — 끝은 제안·초안, 집행은 사람.
                       #   기본 --provider none = L3 미호출(키 없음): 사람 논지/직전 thesis 만 찾는다. exit 1 은 스캔 중단만
 msa run weekly        # 주간: 전수 스캔 + msa check --weekly + weekly-report.md. --asof --no-write
 msa run daily         # 일간: 후보 다이제스트 (스캔→상위 K→테마별 L4 랭킹→직전 diff→보유 점검).
                       #   --asof --top-k 8 --themes a,b --per-theme 5 --no-write --send
                       #   산출물 state/daily/<date>/ (digest.json·digest.md·report.txt·triage.csv)
+                      #   단계 표 state/runs/<date>/ (daily-report.md·daily-run.json — 스캔 중단 때도)
+                      #   판별(research)은 --no-write 면 돌지 않는다 — 결과를 저장할 수 없어서다.
+                      #   돌 때는 오늘 스캔을 state/scans/<date>/ 에 저장하고 그것을 L3 입력으로 쓴다
                       #   triage.csv — 구획(I-A 지금 볼 자리/I-B 고점권/II 판별 대기/III 판별 전) +
                       #   **읽는 순서** 점수. 수익률 순서가 아니다 (docs/superpowers/specs/
                       #   2026-08-29-hedge-fund-evolution-design.md §3.3). 참고 열(s_pct·composite·

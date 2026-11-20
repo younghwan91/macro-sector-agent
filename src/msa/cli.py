@@ -1114,7 +1114,7 @@ def run_monthly_cmd(
 ) -> None:
     """월간 실행 (docs/09 §1): scan → 상위 K → research → ingest → picks → assemble → L5.
 
-    산출물: state/runs/<date>/monthly-report.md · run.json (+ 각 계층의 state/ 산출물).
+    산출물: state/runs/<date>/monthly-report.md · monthly-run.json (+ 각 계층의 state/ 산출물).
     끝은 진입 초안·미체결 제안이다 — 저널 확정·positions.yaml 승격·주문은 사람이 한다.
     종료 코드 1 은 스캔 중단일 때만; 부분 가용(테마별 실패)은 0 + 리포트.
     """
@@ -1156,7 +1156,7 @@ def run_weekly_cmd(
 
     --send 없이는 아무것도 발신하지 않는다 (alerts.json 에만 남는다) — msa run daily 와 같다.
 
-    산출물: state/runs/<date>/weekly-report.md · run.json · state/checks/<date>/.
+    산출물: state/runs/<date>/weekly-report.md · weekly-run.json · state/checks/<date>/.
     """
     from msa.pipeline.run import RunError, run_weekly
 
@@ -1216,7 +1216,9 @@ def run_daily_cmd(
     """일간 후보 다이제스트 (docs/09 §1 일간 행): 스캔(캐시) → 상위 K → 테마별 L4 랭킹 →
     직전 다이제스트 diff → 보유 점검(positions.yaml 이 있을 때).
 
-    산출물: state/daily/<date>/digest.json · digest.md · report.txt. 읽기 전용 후보 뷰다 —
+    산출물: state/daily/<date>/digest.json · digest.md · report.txt · triage.csv, 단계 표
+    state/runs/<date>/daily-report.md · daily-run.json. 판별(research)이 돌면 오늘 스캔을
+    state/scans/<date>/ 에 저장해 L3 입력으로 쓴다. 후보 뷰다 —
     측정값·후보 목록이지 투자 조언이 아니다 (L1 점수 예측력 약함, docs/02 §7.1).
     결정 케이던스는 월간 그대로 (msa run monthly).
     --send 없이는 아무것도 발신하지 않는다 — 다이제스트도, 보유 점검 알림도 (파일에만 남는다).
