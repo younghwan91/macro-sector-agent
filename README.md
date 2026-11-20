@@ -21,10 +21,10 @@
 Python ≥3.12 · [uv](https://docs.astral.sh/uv/). `SHARADAR_API_KEY` 는 L0 적재에만 필요하고 스토어가 이미 있으면 스캔·백테스트는 키 없이 돈다. L3 판별기(`msa research`)는 기본 `--provider claude_code`(로컬 `claude` CLI)라 별도 API 키가 없다.
 
 ```bash
-git clone <이 저장소> && cd macro-sector-agent
+git clone https://github.com/younghwan91/macro-sector-agent && cd macro-sector-agent
 make install                 # uv sync
 make check                   # ruff + mypy + pytest — 설치 확인
-uv run msa run daily         # 첫 실행 — 읽기 전용 후보 뷰. 산출물 state/daily/<date>/
+uv run msa run daily         # 첫 실행 — 읽기 전용 후보 뷰. 산출물 state/daily/<date>/ (로컬 생성, 커밋 안 됨)
 ```
 
 `msa run daily` 한 번이 아래 §4 같은 다이제스트를 만든다. `research` 단계는 로컬 `claude` CLI 를 호출하므로 미설치면 제공자 오류(종료코드 3)로 끝난다. 명령 전체는 [`docs/cli-reference.md`](docs/cli-reference.md), 첫 운영 순서는 [`docs/18-daily-run.md`](docs/18-daily-run.md).
@@ -44,11 +44,11 @@ uv run msa run daily         # 첫 실행 — 읽기 전용 후보 뷰. 산출�
 | **L5 포트 구성기** | 사람이 고른 종목 + thesis + 자본 → 비중 · 사다리 3단 · 논지 스탑(무효화 1건이면 전량 청산) · 자본 스탑 · 시간 스탑 | SOCP |
 | **L6 운영** | 보유 포지션에 트리거·무효화 점검, append-only 결정 저널, 텔레그램 | 코드 |
 
-**깔때기 — 20,931 종목이 테마당 명단이 되기까지** (2026-08-14 실행 당시 산출 — 스토어 기준일 2026-08-14, 저장 산출물 `state/scans/2026-08-14/meta.json`)
+**깔때기 — 20,931 종목이 테마당 명단이 되기까지** (2026-08-14 실행 당시 산출 — 스토어 기준일 2026-08-14, 스캔 산출물 `meta.json` 기준 — `state/scans/` 는 저장소에 없고 스캔을 돌리면 생긴다)
 
 | 단계 | 숫자 | 출처 |
 |---|---|---|
-| 스캔 입력 → 테마 배정 | 19,717 → 134 버킷에 17,917 배정 · 미배정 141 · Shell 제외 1,659 · **미분류 시총 0.000%** (기준 <5%, 넘으면 스캔 중단) | `state/scans/2026-08-14/meta.json` |
+| 스캔 입력 → 테마 배정 | 19,717 → 134 버킷에 17,917 배정 · 미배정 141 · Shell 제외 1,659 · **미분류 시총 0.000%** (기준 <5%, 넘으면 스캔 중단) | 스캔 `meta.json` |
 | L1 자격 | 134 → **70** 테마. 나머지 64 는 관찰 목록(버린 것이 아니다) | `POOL_MIN = 0.5`, `src/msa/l1/scoreboard.py` |
 | L1 순위 | 상위 **8** | `--top-k 8` 기본값 |
 | L3 게이트 | `rejected` → 기각 대장 · `contested` → 관찰 목록. 둘 다 편입 불가 | `docs/04` |
@@ -275,6 +275,10 @@ make test-all    # data·net 포함 — 실제 DuckDB 스토어·FRED 키 필요
 ## 면책
 
 **투자 조언이 아니다.** 이 저장소는 측정값과 명시된 가정을 산출할 뿐이며 집행은 사람이 한다. 자동 주문 기능은 만들지 않는다. 기대수익률·승률·수익 배수는 이 문서에도 리포트에도 쓰지 않는다 (`CLAUDE.md` §7·§8).
+
+## 라이선스
+
+MIT — [LICENSE](LICENSE).
 
 ## 기여 및 이슈 제보
 
