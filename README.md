@@ -1,16 +1,18 @@
-# macro-sector-agent
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/brand/wordmark-dark.svg">
+  <img alt="macro-sector-agent" src="docs/images/brand/wordmark-light.svg" height="56">
+</picture>
+
+**한국어** | [English](README.en.md)
+
+**"뭘 사야 하나" 가 아니라 "지금 어느 산업이 잊혔나" 를 묻는 미국 주식 하향식 리서치 파이프라인.**
 
 [![CI](https://github.com/younghwan91/macro-sector-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/younghwan91/macro-sector-agent/actions/workflows/ci.yml)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-younghwan--chae-0A66C2?logo=linkedin&logoColor=white)](https://www.linkedin.com/in/younghwan-chae/)
 
-**"뭘 사야 하나" 가 아니라 "지금 어느 산업이 잊혔나" 를 묻는 미국 주식 하향식 리서치 파이프라인.** 잊힌 테마를 찾고, 사이클 저점인지 구조적 사망인지를 가른 뒤, 그 테마 안에서 하드 제외를 통과한 종목 전부를 판단 재료와 함께 명단으로 내놓는다. 고르는 것은 사람이다.
-
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
-  <img alt="연도별 시장 대비 상대성과 히트맵 — 미국 산업 테마 18개, 1999–2026" src="docs/images/hero-light.png" width="100%">
-</picture>
+잊힌 테마를 찾고, 사이클 저점인지 구조적 사망인지를 가른 뒤, 그 테마 안에서 하드 제외를 통과한 종목 전부를 판단 재료와 함께 명단으로 내놓는다. 고르는 것은 사람이다.
 
 - **위아래는 전부 결정론이고 LLM 은 판단 계층 중 L3 허리(가치함정 판별)에만 있다.** 뒤에 붙은 P2·P3·L3.5 는 새 축 없이 계수·논지로만 기여한다. 거기서도 증거만 따진다 — `evidence` 나 `invalidations` 가 비면 스키마가 저장을 거부한다.
 - **기계는 고르지 않고 제외만 한다.** 런웨이 <4분기 · ND/EBITDA >6× · 만기벽 >0.5 를 하드 제외하고 남은 적격 종목 전부를 동일가중으로 싣는다 — 사전 등록 검정에서 어떤 선정 규칙도 이것을 이기지 못했다(`docs/15`, `journal/2026-08-24-l4-selection-retired.md`).
@@ -28,6 +30,11 @@ uv run msa run daily         # 첫 실행 — 읽기 전용 후보 뷰. 산출�
 ```
 
 `msa run daily` 한 번이 아래 §4 같은 다이제스트를 만든다. `research` 단계는 로컬 `claude` CLI 를 호출하므로 미설치면 제공자 오류(종료코드 3)로 끝난다. 명령 전체는 [`docs/cli-reference.md`](docs/cli-reference.md), 첫 운영 순서는 [`docs/18-daily-run.md`](docs/18-daily-run.md).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/hero-dark.png">
+  <img alt="연도별 시장 대비 상대성과 히트맵 — 미국 산업 테마 18개, 1999–2026" src="docs/images/hero-light.png" width="100%">
+</picture>
 
 ## 1. 무엇을 하나
 
