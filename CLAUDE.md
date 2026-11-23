@@ -85,7 +85,7 @@ uv run msa <cmd> --help
   않는다. 전역 `core.hooksPath` 의 커밋 신원 훅이 `t@example.com` 커밋을 거부해 `make check` 가 깨졌었다(8721201).
 - 커밋 신원은 레포 git 설정(`chyohw97@gmail.com`) 그대로. `git -c user.email=...` 로 덮지 않는다 —
   세션 컨텍스트의 회사 이메일이 그렇게 섞인 사고가 있었고 `.github/workflows/commit-identity.yml` 이 거부한다.
-- 커밋 메시지는 한국어로, 무엇보다 **왜 문제였는지**를 쓴다(기존 로그 문체). 저널 커밋은 `저널 — <요지>`.
+- 커밋 메시지는 영어 Conventional Commits 로, 무엇보다 **왜 문제였는지**를 본문에 쓴다. 저널 커밋은 `journal: <summary>`.
 - `journal/` append-only 검사 `msa journal verify` 는 로컬 훅에 **설치돼 있지 않다**(`msa journal install-hook`
   으로 설치 — 사람이 결정). 저널을 건드린 커밋 전에는 직접 돌린다.
 

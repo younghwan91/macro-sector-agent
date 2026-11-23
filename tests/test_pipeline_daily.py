@@ -677,8 +677,10 @@ def test_readme_lists_the_real_daily_steps() -> None:
     from msa.pipeline.daily import DAILY_STEPS
 
     want = " · ".join(DAILY_STEPS)
-    readme = Path(__file__).resolve().parents[1] / "README.md"
-    assert want in readme.read_text(), f"README 의 `msa run daily` 단계 목록이 낡았다 — {want}"
+    guide = Path(__file__).resolve().parents[1] / "docs" / "guide.md"
+    assert want in guide.read_text(), (
+        f"docs/guide.md 의 `msa run daily` 단계 목록이 낡았다 — {want}"
+    )
 
 
 # ---------------------------------------------------------------- 트리아지 (P1)
