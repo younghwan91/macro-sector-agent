@@ -34,9 +34,10 @@ Requires Python 3.12+ and [uv](https://docs.astral.sh/uv/).
 ```bash
 git clone https://github.com/younghwan91/macro-sector-agent && cd macro-sector-agent
 make install                 # Install dependencies with uv sync
-make check                   # Verify installation with ruff + mypy + pytest
-uv run msa run daily         # Generate read-only candidate view in state/daily/<date>/
+make demo                    # Replay one L3 research round with no keys or data (synthetic demo)
 ```
+
+`make demo` prints a verdict report for the uranium theme (gate, 5-axis verdict, thesis, invalidations, bear case, sources) from a synthetic scan input and hand-written recorded responses. **Both input and responses are fake**; it only shows the output format. Verify the install with `make check`; the real daily run is `uv run msa run daily` (needs a local DuckDB store, writes to `state/daily/<date>/`).
 
 Running `msa run daily` writes theme rankings and stock shortlists to `state/daily/<date>/digest.md`. Scans and backtests run without API keys when a local DuckDB store is present, while `msa research` invokes the local `claude` CLI (`--provider claude_code`) by default.
 
@@ -50,6 +51,14 @@ Running `msa run daily` writes theme rankings and stock shortlists to `state/dai
 | **L4 · P1 Shortlist & Triage** | Applies runway, leverage, and maturity-wall exclusions, then orders reading | Code |
 | **L5 · L6 Portfolio & Ops** | Computes weights, entry ladders, and stops for human picks, plus journaling | SOCP · Code |
 | **Final Decision** | Selects tickers and chart entry timing from the shortlist | Human |
+
+## Key Results
+
+Pre-registered gates run as declared, failures recorded as they came out. These measure the score's predictive power (rank-IC), not strategy returns.
+
+- **L1 scoreboard: FAIL.** Mean 12M rank-IC since 2011 is +0.048, 95% CI [-0.024, +0.123], indistinguishable from zero. Demoted to an observation indicator. ([docs/backtest-l1.md](docs/backtest-l1.md))
+- **L4 stock selection: FAIL.** Within-theme IC of rank_score is +0.0144 [-0.0008, +0.0266] on the same window. Axes S and M work, T works in reverse; hard filters are survival filters, not alpha. ([docs/backtest-l4.md](docs/backtest-l4.md))
+- DSR counting every cell tried is about 0.02, so weights stay as declared rather than being tuned to the results. ([docs/rules.md](docs/rules.md))
 
 ## Design Principles
 
@@ -74,6 +83,13 @@ Running `msa run daily` writes theme rankings and stock shortlists to `state/dai
 | [Daily Run Guide](docs/18-daily-run.md) | Day-to-day operations and how to read the digest |
 | [Validation Gates](docs/10-validation.md) | DSR/PBO backtest gates and prospective verification |
 | [Basis Registry](docs/24-basis-registry.md) | Rationale for every declared threshold and weight |
+
+## More by the Same Author
+
+- [kiwoom-client](https://github.com/younghwan91/kiwoom-client) — unofficial Kiwoom REST API client for Python and AI agents (182 endpoints, MCP server)
+- [fin-checkup](https://github.com/younghwan91/fin-checkup) — free traffic-light reading of Korean listed-company financials, with formulas and thresholds
+- [portfolio-research](https://github.com/younghwan91/portfolio-research) — US equity factor research that charges for its own search (DSR/PBO gate, rejections published)
+- [sector-flow](https://github.com/younghwan91/sector-flow) — net buying by investor type as one sector map
 
 ## Contributing & Support
 

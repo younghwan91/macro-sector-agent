@@ -97,3 +97,12 @@ def test_backtest_subgroup_registered() -> None:
     assert r3.exit_code == 0
     for opt in ("--no-write", "--force", "--jobs", "--themes", "--max-months"):
         assert opt in r3.stdout
+
+
+def test_demo_script_runs_offline() -> None:
+    """`make demo` 는 키·스토어 없이 끝나고 합성임을 표시한다."""
+    import runpy
+    from pathlib import Path
+
+    mod = runpy.run_path(str(Path(__file__).resolve().parent.parent / "scripts" / "demo.py"))
+    assert mod["main"]() == 0

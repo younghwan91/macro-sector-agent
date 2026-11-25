@@ -1,7 +1,10 @@
-.PHONY: install test test-all lint typecheck fmt check
+.PHONY: demo install test test-all lint typecheck fmt check
 
 install:
 	uv sync
+
+demo:  ## L3 round on synthetic data, no keys
+	uv run python scripts/demo.py
 
 test:
 	uv run pytest -m "not data and not net"
