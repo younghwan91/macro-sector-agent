@@ -34,9 +34,10 @@ Python 3.12 이상과 [uv](https://docs.astral.sh/uv/)가 필요합니다.
 ```bash
 git clone https://github.com/younghwan91/macro-sector-agent && cd macro-sector-agent
 make install                 # uv sync로 의존성 설치
-make check                   # ruff + mypy + pytest로 설치 확인
-uv run msa run daily         # 읽기 전용 후보 뷰 생성 (state/daily/<date>/)
+make demo                    # 키·데이터 없이 L3 리서치 한 라운드 재생 (합성 데모)
 ```
+
+`make demo`는 합성 스캔 입력과 손으로 쓴 녹화 응답으로 우라늄 테마의 판정 리포트(게이트·5축 판정·논지·무효화 조건·반대 논거·출처)를 출력합니다. **입력과 응답이 모두 가짜**이며 형식을 보여 주는 용도입니다. 설치 확인은 `make check`, 실제 데이터로 돌리는 일일 실행은 `uv run msa run daily`(로컬 DuckDB 스토어 필요, 결과는 `state/daily/<date>/`)입니다.
 
 `msa run daily`를 실행하면 `state/daily/<date>/digest.md`에 테마 순위와 종목 명단이 생성됩니다. 스캔과 백테스트는 로컬 DuckDB 스토어만 있으면 API 키 없이 실행되며, `msa research`는 기본값인 로컬 `claude` CLI(`--provider claude_code`)를 호출합니다.
 
@@ -50,6 +51,14 @@ uv run msa run daily         # 읽기 전용 후보 뷰 생성 (state/daily/<dat
 | **L4 · P1 명단과 트리아지** | 런웨이·부채·만기벽 하드 제외 후 읽기 순서를 정리합니다 | 코드 |
 | **L5 · L6 포트폴리오와 운영** | 사람이 고른 종목의 비중·사다리·스탑을 계산하고 저널을 기록합니다 | SOCP · 코드 |
 | **최종 판단** | 명단에서 종목과 진입 시점을 차트로 결정합니다 | 사람 |
+
+## 핵심 결과
+
+사전 등록한 관문을 그대로 돌린 결과이며, 실패도 그대로 기록했습니다. 전략 수익률이 아니라 점수의 예측력(rank-IC)입니다.
+
+- **L1 스코어보드: 실패.** 2011년 이후 12개월 rank-IC 평균 +0.048, 95% CI [−0.024, +0.123]로 0과 구분되지 않습니다. 순위 산출이 아닌 관찰 지표로 강등했습니다. ([docs/backtest-l1.md](docs/backtest-l1.md))
+- **L4 종목 선정: 실패.** 같은 창에서 rank_score의 테마 내 IC는 +0.0144 [−0.0008, +0.0266]입니다. 축 단독으로는 S·M이 일하고 T는 반대로 일했습니다. 하드 필터는 알파가 아니라 생존 필터(사망률 차 확인)로 판정했습니다. ([docs/backtest-l4.md](docs/backtest-l4.md))
+- 시도한 모든 칸을 센 DSR은 0.02 수준이어서, 가중치는 결과를 보고 바꾸지 않고 선언 그대로 두었습니다. ([docs/rules.md](docs/rules.md))
 
 ## 설계 원칙
 
@@ -74,6 +83,13 @@ uv run msa run daily         # 읽기 전용 후보 뷰 생성 (state/daily/<dat
 | [일일 운영 가이드](docs/18-daily-run.md) | 실전 운영 순서와 다이제스트 해석 방법 |
 | [검증 관문](docs/10-validation.md) | DSR·PBO 백테스트 관문과 전향적 검증 기준 |
 | [상수 근거 레지스트리](docs/24-basis-registry.md) | 코드에 선언된 임계값과 가중치의 근거 목록 |
+
+## 같은 저자의 도구
+
+- [kiwoom-client](https://github.com/younghwan91/kiwoom-client) — 키움 REST API를 파이썬과 AI 에이전트로 쓰는 비공식 클라이언트 (엔드포인트 182개, MCP 서버)
+- [fin-checkup](https://github.com/younghwan91/fin-checkup) — 상장사 재무제표를 계산식·경계값과 함께 신호등으로 읽는 무료 도구
+- [portfolio-research](https://github.com/younghwan91/portfolio-research) — 탐색 비용을 스스로 치르는 미국 주식 팩터 리서치 (DSR·PBO 관문, 기각 결과 공개)
+- [sector-flow](https://github.com/younghwan91/sector-flow) — 투자 주체별 순매매를 섹터 지도 한 장으로 보기
 
 ## 기여 및 문의
 
